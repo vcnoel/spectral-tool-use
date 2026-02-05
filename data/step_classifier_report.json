@@ -1,0 +1,8 @@
+{
+  "per_step": {},
+  "aggregation": {
+    "auc": NaN,
+    "accuracy": 1.0,
+    "recall": 0.0
+  }
+}

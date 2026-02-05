@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+
+# Experiments and Logs
+experiments/
+logs/
+*.log
+wandb/
+
+# Data (keep inputs, ignore large outputs if any)
+# Assuming data/ contains inputs we want to keep, but maybe ignore large checkpoints
+*.pt
+*.bin
+*.ckpt

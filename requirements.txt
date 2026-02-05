@@ -1,0 +1,10 @@
+torch>=2.0.0
+transformers>=4.40.0
+datasets>=2.19.0
+accelerate>=0.30.0
+spectral-trust>=0.1.4
+scikit-learn
+pandas
+numpy
+tqdm
+bitsandbytes

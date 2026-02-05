@@ -1,0 +1,16 @@
+model,n_features,features,recall_%,detected,precision_%,fp,fn
+Qwen 2.5 0.5B (T=0.3),1,L7_Smoothness,78.0,156/200,40.0,234,44
+Qwen 2.5 0.5B (T=0.3),2,L7_Smoothness + L17_HFER,82.0,164/200,36.4,287,36
+Qwen 2.5 0.5B (T=0.3),3,L19_Smoothness + L17_Smoothness + L17_HFER,86.5,173/200,45.1,211,27
+Qwen 2.5 0.5B (T=0.3),4,L19_Smoothness + L0_Smoothness + L17_HFER + L22_HFER,86.5,173/200,43.8,222,27
+Qwen 2.5 0.5B (T=0.3),5,L20_Smoothness + L23_Smoothness + L21_Entropy + L18_HFER + L17_HFER,86.5,173/200,40.7,252,27
+Mistral v0.1 (T=0.3),1,L3_Entropy,94.7,196/207,22.0,693,11
+Mistral v0.1 (T=0.3),2,L0_Fiedler + L10_Fiedler,85.0,176/207,36.6,305,31
+Mistral v0.1 (T=0.3),3,L1_Fiedler + L5_Smoothness + L25_HFER,86.0,178/207,40.3,264,29
+Mistral v0.1 (T=0.3),4,L1_Fiedler + L5_Smoothness + L10_Fiedler + L25_HFER,90.8,188/207,38.3,303,19
+Mistral v0.1 (T=0.3),5,L1_Fiedler + L5_Smoothness + L10_Fiedler + L6_Fiedler + L25_HFER,91.3,189/207,38.3,304,18
+Llama 3.1 8B (T=0.3),1,L27_Entropy,95.8,587/613,64.4,325,26
+Llama 3.1 8B (T=0.3),2,L28_Fiedler + L30_Fiedler,89.7,550/613,69.4,243,63
+Llama 3.1 8B (T=0.3),3,L30_Fiedler + L1_Entropy + L25_HFER,86.1,528/613,81.0,124,85
+Llama 3.1 8B (T=0.3),4,L30_Smoothness + L30_Fiedler + L1_Entropy + L23_HFER,88.1,540/613,80.2,133,73
+Llama 3.1 8B (T=0.3),5,L29_Fiedler + L30_Smoothness + L28_Fiedler + L30_Fiedler + L19_HFER,88.7,544/613,79.6,139,69

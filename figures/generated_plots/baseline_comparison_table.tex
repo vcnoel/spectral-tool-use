@@ -1,0 +1,78 @@
+\begin{table*}[t]
+\centering
+\caption{Baseline Spectral Analysis. Comparison of single spectral features as hallucination detectors across models and domains. \textbf{Detected} shows the count of successfully identified hallucinations (TP). PPL and LogProb Min added as strong baselines.}
+\label{tab:baseline_spectral}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l l c c c c c c}
+\toprule
+Model & Feature & AUC & Recall & Precision & Detected & Cohen's $d$ & $p$-val \\
+\midrule
+\textbf{Llama-3.1 (Finance)} & HFER & 0.6487 & 0.6493 & 0.7145 & 398 & 0.486 & $<0.001$ \\
+ & Fiedler & 0.6957 & 0.7863 & 0.7281 & 482 & 0.662 & $<0.001$ \\
+ & Smoothness & 0.6864 & 0.6020 & 0.7531 & 369 & 0.606 & $<0.001$ \\
+ & Entropy & 0.6674 & 0.7047 & 0.7334 & 432 & 0.566 & $<0.001$ \\
+ & Perplexity & nan & 0.0000 & 0.0000 & 0 & 0.000 & nan \\
+ & Min LogProb & nan & 0.0000 & 0.0000 & 0 & 0.000 & nan \\
+\midrule
+\textbf{Llama-3.1 (General)} & HFER & 0.7736 & 0.7373 & 0.3902 & 160 & 1.152 & $<0.001$ \\
+ & Fiedler & 0.7766 & 0.8848 & 0.3569 & 192 & 1.063 & $<0.001$ \\
+ & Smoothness & 0.7613 & 0.7742 & 0.3529 & 168 & 1.006 & $<0.001$ \\
+ & Entropy & 0.7670 & 0.7650 & 0.3834 & 166 & 1.018 & $<0.001$ \\
+ & Perplexity & nan & 0.0000 & 0.0000 & 0 & 0.000 & nan \\
+ & Min LogProb & nan & 0.0000 & 0.0000 & 0 & 0.000 & nan \\
+\midrule
+\textbf{Mistral (General)} & HFER & 0.7537 & 0.6618 & 0.3971 & 137 & 0.984 & $<0.001$ \\
+ & Fiedler & 0.8012 & 0.7778 & 0.3898 & 161 & 1.108 & $<0.001$ \\
+ & Smoothness & 0.8040 & 0.7246 & 0.4615 & 150 & 1.291 & $<0.001$ \\
+ & Entropy & 0.7817 & 0.6570 & 0.4806 & 136 & 1.030 & $<0.001$ \\
+ & Perplexity & nan & 0.0000 & 0.0000 & 0 & 0.000 & nan \\
+ & Min LogProb & nan & 0.0000 & 0.0000 & 0 & 0.000 & nan \\
+\midrule
+\textbf{Qwen-2.5 (Finance)} & HFER & 0.6969 & 0.5402 & 0.3333 & 94 & 0.806 & $<0.001$ \\
+ & Fiedler & 0.6702 & 0.5172 & 0.6522 & 90 & 0.997 & $<0.001$ \\
+ & Smoothness & 0.8159 & 0.7529 & 0.4107 & 131 & 1.468 & $<0.001$ \\
+ & Entropy & 0.7285 & 0.6264 & 0.3865 & 109 & 0.842 & $<0.001$ \\
+ & Perplexity & nan & 0.0000 & 0.0000 & 0 & 0.000 & nan \\
+ & Min LogProb & nan & 0.0000 & 0.0000 & 0 & 0.000 & nan \\
+\midrule
+\textbf{Qwen-2.5 (General)} & HFER & 0.7052 & 0.6950 & 0.3484 & 139 & 0.778 & $<0.001$ \\
+ & Fiedler & 0.6573 & 0.4300 & 0.6277 & 86 & 0.749 & $<0.001$ \\
+ & Smoothness & 0.8118 & 0.7000 & 0.5385 & 140 & 1.448 & $<0.001$ \\
+ & Entropy & 0.7404 & 0.5900 & 0.5153 & 118 & 0.851 & $<0.001$ \\
+ & Perplexity & nan & 0.0000 & 0.0000 & 0 & 0.000 & nan \\
+ & Min LogProb & nan & 0.0000 & 0.0000 & 0 & 0.000 & nan \\
+\midrule
+\textbf{Llama-3.1 (Finance, T=1.0)} & HFER & 0.6310 & 0.5745 & 0.6387 & 297 & 0.439 & $<0.001$ \\
+ & Fiedler & 0.6743 & 0.8104 & 0.6081 & 419 & 0.680 & $<0.001$ \\
+ & Smoothness & 0.6495 & 0.5338 & 0.6571 & 276 & 0.495 & $<0.001$ \\
+ & Entropy & 0.6912 & 0.5725 & 0.6789 & 296 & 0.677 & $<0.001$ \\
+\midrule
+\textbf{Qwen-2.5 (General, T=0.7)} & HFER & 0.7113 & 0.7500 & 0.3261 & 15 & 0.765 & 0.006 \\
+ & Fiedler & 0.7238 & 0.5500 & 0.7333 & 11 & 1.020 & 0.004 \\
+ & Smoothness & 0.8000 & 0.7500 & 0.6522 & 15 & 1.482 & $<0.001$ \\
+ & Entropy & 0.7512 & 0.7500 & 0.5357 & 15 & 0.828 & 0.009 \\
+\midrule
+\textbf{Qwen-2.5 (General, T=1.0)} & HFER & 0.6678 & 0.7917 & 0.3333 & 19 & 0.729 & 0.006 \\
+ & Fiedler & 0.6820 & 0.5833 & 0.5600 & 14 & 0.830 & 0.008 \\
+ & Smoothness & 0.7478 & 0.7500 & 0.4865 & 18 & 0.743 & 0.004 \\
+ & Entropy & 0.6519 & 0.5833 & 0.3889 & 14 & 0.502 & 0.038 \\
+\midrule
+\textbf{Qwen-2.5 (General, T=1.5)} & HFER & 0.6413 & 0.7037 & 0.4222 & 19 & 0.505 & 0.032 \\
+ & Fiedler & 0.7473 & 0.7407 & 0.4878 & 20 & 0.856 & $<0.001$ \\
+ & Smoothness & 0.6672 & 0.7778 & 0.3889 & 21 & 0.667 & 0.012 \\
+ & Entropy & 0.6575 & 0.4815 & 0.5000 & 13 & 0.607 & 0.020 \\
+\midrule
+\textbf{Llama-3.2-3B (ToolBench)} & HFER & 0.6885 & 0.6066 & 0.8605 & 37 & 0.679 & 0.007 \\
+ & Fiedler & 0.6940 & 0.7541 & 0.8364 & 46 & -0.674 & 0.006 \\
+ & Smoothness & 0.6714 & 0.7869 & 0.8276 & 48 & -0.599 & 0.014 \\
+ & Entropy & 0.6817 & 0.5246 & 0.8889 & 32 & -0.667 & 0.010 \\
+\midrule
+\multicolumn{8}{l}{\textit{Reference Baselines \citet{healy2026internal}}} \\
+\midrule
+& Supervised MLP (Hidden States) & 61.0\% & --- & 71.0\% & --- & --- & --- \\
+& NCP (Noise Contrastive Probe) & 73.3\% & --- & \textbf{100.0\%} & --- & --- & --- \\
+& Semantic Similarity & 73.1\% & --- & \textbf{100.0\%} & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+}
+\end{table*}

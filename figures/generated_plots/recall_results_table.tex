@@ -1,0 +1,42 @@
+\begin{table*}[t]
+\caption{Recall optimized configurations. Spectral methods achieve superior recall (86.1\%) compared to all baselines. While baselines like NCP achieve high precision, they fail to detect over a quarter of hallucinations (Recall $\approx$ 73\%), whereas the spectral guardrail catches the vast majority.}
+\label{tab:recall_results}
+\begin{center}
+\begin{tabular}{llccc}
+\toprule
+Model & Configuration & Recall & Detected & Precision \\
+\midrule
+\multicolumn{5}{l}{\textit{Qwen 2.5 0.5B General/Mixed (200 hallucinations, 20.0\% rate)}} \\
+\midrule
+& L7 Smoothness (single) & 78.0\% & 156/200 & 40.0\% \\
+& L19 Sm.+L17 Sm.+L17 HFER (triplet) & 86.5\% & 173/200 & 45.1\% \\
+& L20 Sm.+L23 Sm.+L21 Ent.+L18 HFER+L17 HFER & 86.5\% & 173/200 & 40.7\% \\
+\midrule
+\multicolumn{5}{l}{\textit{Mistral 7B v0.1 General (207 hallucinations, 20.7\% rate)}} \\
+\midrule
+& L3 Entropy (single) & 94.7\% & 196/207 & 22.0\% \\
+& L1 Fied.+L5 Sm.+L10 Fied.+L25 HFER (4 feat.) & 90.8\% & 188/207 & 38.3\% \\
+& L1 Fied.+L5 Sm.+L10 Fied.+L6 Fied.+L25 HFER & 91.3\% & 189/207 & 38.3\% \\
+\midrule
+\multicolumn{5}{l}{\textit{Llama 3.1 8B General (217 hallucinations, 21.7\% rate)}} \\
+\midrule
+& L26 Smoothness (single) & \textbf{98.2\%} & 213/217 & 23.6\% \\
+& L0 Fied.+L1 Fied. (pair) & 94.5\% & 205/217 & 35.4\% \\
+& L0 Fied.+L21 Ent.+L1 Fied. (triplet) & 95.4\% & 207/217 & 35.1\% \\
+\midrule
+\multicolumn{5}{l}{\textit{Llama 3.1 8B Finance (613 hallucinations, 61.3\% rate)}} \\
+\midrule
+& L27 Entropy (single) & 95.8\% & 587/613 & 64.4\% \\
+& L28 Fiedler+L30 Fiedler (pair) & 89.7\% & 550/613 & 69.4\% \\
+& L30 Fied.+L1 Ent.+L25 HFER (triplet) & 86.1\% & 528/613 & 81.0\% \\
+& L29 Fied.+L30 Sm.+L28 Fied.+L30 Fied.+L19 HFER & 88.7\% & 544/613 & 79.6\% \\
+\midrule
+\multicolumn{5}{l}{\textit{Reference Baselines \citet{healy2026internal}}} \\
+\midrule
+& Supervised MLP (Hidden States) & 53.0 -- 62.0\% & --- & 71.0 -- 86.0\%  \\
+& NCP (Noise Contrastive Probe) & 73.3\% & --- & \textbf{100.0\%} \\
+& Semantic Similarity & 73.1\% & --- & \textbf{100.0\%} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{table*}

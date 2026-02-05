@@ -1,0 +1,6 @@
+config,features,n_samples,n_hallucinations,hallu_rate_%,auc,ci_95%,recall_%,detected,precision_%,f1,cohens_d_mean,cohens_d_max,p_value,tp,fp,tn,fn
+Best 1-feature,L27_Smoothness,1000,207,20.7,0.8040,"[0.7687, 0.8382]",72.5,150/207,46.2,0.564,1.291,1.291,1.96e-41,150,175,618,57
+Best 2-feature,"L1_Fiedler, L25_Smoothness",1000,207,20.7,0.8668,"[0.8377, 0.8937]",80.7,167/207,50.8,0.623,1.161,1.214,9.96e-41,167,162,631,40
+Best 3-feature,"L1_Fiedler, L5_Smoothness, L3_Smoothness",1000,207,20.7,0.8891,"[0.8638, 0.9122]",81.2,168/207,55.3,0.658,1.161,1.275,9.96e-41,168,136,657,39
+Best 4-feature,"L1_Fiedler, L25_Smoothness, L5_Smoothness, L3_Smoothness",1000,207,20.7,0.8957,"[0.8680, 0.9209]",75.8,157/207,68.3,0.719,1.174,1.275,9.96e-41,157,73,720,50
+Best 5-feature,"L1_Fiedler, L25_Smoothness, L5_Smoothness, L3_Smoothness, L24_Entropy",1000,207,20.7,0.9003,"[0.8739, 0.9246]",82.1,170/207,60.5,0.697,1.124,1.275,9.96e-41,170,111,682,37

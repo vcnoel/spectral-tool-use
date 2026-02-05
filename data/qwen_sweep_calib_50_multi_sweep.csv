@@ -1,0 +1,5 @@
+features,count,auc
+"['L7_Fiedler', 'L6_Smoothness']",2,0.8111999999999999
+"['L7_Fiedler', 'L1_HFER', 'L6_Smoothness']",3,0.7952
+"['L7_Fiedler', 'L1_HFER']",2,0.7936
+"['L1_HFER', 'L6_Smoothness']",2,0.7936
