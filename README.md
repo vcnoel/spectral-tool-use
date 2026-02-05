@@ -1,6 +1,6 @@
-# Spectral Features for Robust Hallucination Detection
+# Spectral Guardrails for Agents in the Wild
 
-This repository contains the official implementation of the paper **"Spectral Features for Robust Hallucination Detection in Large Language Models"**.
+This repository contains the official implementation of the paper **"Spectral Guardrails for Agents in the Wild: Detecting Tool Use Hallucinations via Attention Topology"**.
 
 We introduce a novel framework for detecting hallucinations in Large Language Models (LLMs) by analyzing the **spectral properties of their internal activation graphs**. By treating the attention mechanism as a graph and the hidden states as signals, we identify distinct "spectral fingerprints" that differentiate faithful generation from hallucinations.
 
