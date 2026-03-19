@@ -27,3 +27,7 @@ wandb/
 *.pt
 *.bin
 *.ckpt
+
+# Large files (>100MB)
+data/planbench_hyper_sweep_multi_sweep.csv
+data/planbench_hyper_sweep_partial_multi_sweep.csv
