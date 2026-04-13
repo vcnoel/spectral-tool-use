@@ -1,108 +1,69 @@
-# Spectral Guardrails for Agents in the Wild
+## Results Summary
 
-This repository contains the official implementation of the paper **"Spectral Guardrails for Agents in the Wild: Detecting Tool Use Hallucinations via Attention Topology"**.
+### Scaling Curve (N=100, General Domain)
 
-We introduce a novel framework for detecting hallucinations in Large Language Models (LLMs) by analyzing the **spectral properties of their internal activation graphs**. By treating the attention mechanism as a graph and the hidden states as signals, we identify distinct "spectral fingerprints" that differentiate faithful generation from hallucinations.
+| Model      | Best Feature            | AUC   | Cohen's d | Layers |
+|------------|-------------------------|-------|-----------|--------|
+| Llama-1B   | L4 HFER                 | 0.726 | 0.775     | 16     |
+| Llama-3B   | Smoothness Delta (MMT)  | 0.783 | 1.167     | 28     |
+| Qwen 3.5 2B| L12 Fiedler Value       | 0.812 | 1.214     | 28     |
 
-## Overview
+### Probe Performance (N=1000, 70/15/15 Split)
 
-### Key Contributions
-*   **Spectral Graph Signal Processing (GSP) for LLMs**: A rigorous mathematical framework to analyze the smoothness and energy distribution of token representations.
-*   **Unsupervised Hallucination Detection**: A set of spectral metrics (HFER, Fiedler Value, Smoothness) that detect errors without requiring ground-truth labels or external knowledge bases.
-*   **Robustness**: Demonstrated superior performance across multiple domains (Reasoning, Math, Finance) compared to traditional uncertainty baselines (Perplexity, LogProb).
-*   **Layer-Specific Insights**: Identification of specific "spectral bands" (layers) where truthful and hallucinated trajectories diverge significantly.
+Model   | Method          | AUC   | Halluc Recall | Halluc Prec
+--------|-----------------|-------|---------------|------------
+llama1b | Hidden probe    | 0.891 | 84.4%         | 61.3%
+llama1b | Spectral probe  | 0.703 | 95.6%         | 37.7%
+llama1b | Spectral sweep  | 0.773 | -             | -
+llama3b | Hidden probe    | 0.959 | 92.98%        | 84.1%
+llama3b | Spectral probe  | 0.776 | 84.2%         | 52.8%
+llama3b | Spectral sweep  | 0.767 | -             | -
 
-## Repository Structure
+> [!NOTE]
+> The scaling effect is dramatic — 1B to 3B jumps from 0.891 to 0.959 AUC on hidden probes. Qwen 3.5 2B is currently outperforming Llama-3B in raw spectral discriminability.
 
-The codebase is organized as follows:
-
-```
-.
-├── data/
-│   ├── baselines/          # Pre-computed baseline metrics (PPL, Min-LogProb)
-│   ├── categories_sweeps/  # Results of spectral parameter sweeps by category
-│   └── *.jsonl             # Datasets (General, Math, Finance)
-├── experiments/            # Raw logs and artifacts from large-scale runs
-├── figures/                # Generated plots and visualizations
-├── notebooks/
-│   └── reproduce_results.ipynb  # Main reproduction notebook for paper tables
-├── scripts/                # Analysis and utility scripts
-│   ├── 01_prepare_data.py       # Dataset generation and preprocessing
-│   ├── 02_run_sweep.py          # Core spectral feature extraction
-│   ├── 08_fiedler_optimization.py # Optimization of spectral cuts
-│   ├── 10_comprehensive_stats.py # Statistical analysis of results
-│   ├── calculate_baselines.py   # Baseline metric computation
-│   └── ...
-├── requirements.txt
-└── README.md
-```
-
-## Methodology
-
-Our approach leverages Graph Signal Processing to analyze the attention heads of the LLM.
-
-1.  **Graph Construction**: We construct a graph $G$ from the attention matrix $A$ at layer $l$, where tokens are nodes and attention weights differencing edges.
-2.  **Signal Definition**: The hidden state activation vectors $h$ are treated as signals defined on the nodes of $G$.
-3.  **Spectral Transform**: We compute the Graph Fourier Transform (GFT) of the signal to analyze it in the spectral domain.
-
-Key metrics derived include:
-*   **HFER (High Frequency Energy Ratio)**: Measures the proportion of energy in high-frequency components (associated with rapid changes or discontinuities).
-*   **Fiedler Value**: The second smallest eigenvalue of the Laplacian, serving as a proxy for algebraic connectivity and global coherence.
-*   **Graph Smoothness**: Quantifies how smoothly the signal transitions across the effective attention graph.
-
-## Getting Started
-
-### Prerequisites
-
-*   Python 3.8+
-*   PyTorch 2.0+ (with CUDA support recommended)
-
-### Installation
-
-1.  Clone the repository:
-    ```bash
-    git clone https://github.com/vcnoel/spectral-tool-use.git
-    cd spectral-tool-use
-    ```
-
-2.  Install dependencies:
-    ```bash
-    pip install -r requirements.txt
-    ```
 
 ## Reproduction
 
-To reproduce the main results reported in the paper:
-
-### 1. Data Preparation
-Ensure the datasets are present in the `data/` directory. If generating from scratch:
+### Environment
 ```bash
-python scripts/01_prepare_data.py
+conda activate gemma_spectral
 ```
 
-### 2. Run Spectral Analysis
-Execute the main sweep to compute spectral features across layers and datasets:
+### Quick Start (N=100)
 ```bash
-python scripts/02_run_sweep.py
+# Prepare data
+python cli.py prepare --domain general --n-samples 100 --output-dir data/n100/
+
+# Extract spectral features (requires GPU, ~10min per model)
+python cli.py extract --model llama1b --domain general \
+  --output-dir data/n100_gor/ --data-dir data/n100/
+
+# Run parameter sweep with plots
+python cli.py sweep --model llama1b --domain general \
+  --output-dir data/n100_gor/ --data-dir data/n100_gor/ --plots
+
+# Train probe
+python cli.py train-probe --model llama1b --domain general \
+  --feature-type spectral --output-dir data/n100_gor/ --data-dir data/n100_gor/
+
+# Full evaluation
+python cli.py evaluate --model llama1b --domain general \
+  --mode all --optimize-for recall80 \
+  --output-dir data/n100_gor/ --data-dir data/n100_gor/
 ```
 
-### 3. Calculate Baselines
-Compute Perplexity and Log-Probability baselines for comparison:
-```bash
-python scripts/calculate_baselines.py
-```
+### Supported Models
+| CLI key    | Model                              | VRAM  |
+|------------|------------------------------------|-------|
+| llama1b    | meta-llama/Llama-3.2-1B-Instruct  | ~2GB  |
+| llama3b    | meta-llama/Llama-3.2-3B-Instruct  | ~6GB  |
+| llama      | meta-llama/Llama-3.1-8B-Instruct  | ~16GB |
+| mistral    | mistralai/Mistral-7B-Instruct-v0.1| ~16GB |
+| qwen       | Qwen/Qwen2.5-0.5B-Instruct        | ~2GB  |
 
-### 4. Generate Results Table
-Use the provided notebook to aggregate results and generate the performance tables:
-```bash
-jupyter notebook notebooks/reproduce_results.ipynb
-```
-
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-
-## License
-
-This project is licensed under the GNU Affero General Public License v3.0 (AGPL-3.0). For commercial use, enterprise licensing, or closed-source integration (such as cloud deployment without open-sourcing your backend), please contact the author to arrange a commercial license.
+### Known Requirements
+- GPU with CUDA support (tested on RTX 4080 Super 16GB)
+- BitsAndBytes for 4-bit quantization
+- spectral-trust library (local dev install)
+- conda environment: gemma_spectral

@@ -12,6 +12,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 #!/usr/bin/env python3
+print("--- PIPELINE STARTING ---")
 """
 Autonomous pipeline executor for multi-model analysis.
 Monitors running jobs and launches next dataset when complete.
@@ -101,11 +102,40 @@ def process_dataset(config):
     print(f"Processing: {config['name']}")
     print(f"{'='*80}")
     
+    # Skip if final sweep exists
+    final_output = config['sweep_output'].replace('.csv', '_multi_sweep.csv')
+    if os.path.exists(final_output):
+        print(f"✓ Skipping {config['name']} (Result already exists: {final_output})")
+        return
+
     # Skip generation if already running
-    if config['status'] != 'running':
+    if config['status'] != 'running' and not os.path.exists(config['relabel_input']):
         print(f"Step 1: Generating samples...")
         subprocess.run(config['gen_cmd'], shell=True, check=True)
+    elif os.path.exists(config['relabel_input']):
+        # If partial, we should probably check line count, but for simplicity let's restart if < 500 lines?
+        # Actually, 01_prepare_data will overwrite it anyway if called.
+        # But if it's 'running', we'll skip generation. 
+        # For Job 1/2, input file exists and is 1000 lines. 
+        # For Job 3/4, input file exists but is small.
+        pass
     
+    # Actually, let's just force generation if result doesn't exist AND input is small
+    if not os.path.exists(final_output):
+         if not os.path.exists(config['relabel_input']):
+             print(f"Step 1: Generating samples...")
+             subprocess.run(config['gen_cmd'], shell=True, check=True)
+         else:
+             # Check if it's a full 1000-line file
+             try:
+                 with open(config['relabel_input'], 'r') as f:
+                     line_count = sum(1 for _ in f)
+                 if line_count < 950: # Buffer for slight variations
+                     print(f"Step 1: Resuming/Restarting generation (found partial file: {line_count} lines)...")
+                     subprocess.run(config['gen_cmd'], shell=True, check=True)
+             except:
+                 subprocess.run(config['gen_cmd'], shell=True, check=True)
+
     # Relabel
     print(f"Step 2: Relabeling...")
     relabel_cmd = f"python scripts/01_b_relabel_data.py --input {config['relabel_input']} --output {config['relabel_output']}"
