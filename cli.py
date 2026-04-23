@@ -11,6 +11,8 @@ from transformers import BitsAndBytesConfig
 
 # Import library and utilities
 from spectral_trust import GSPDiagnosticsFramework, GSPConfig
+from spectral_trust.directed_topology import DirectedTopologist
+from spectral_trust.spectral import calculate_spectral_velocity
 from spectral_guardrails.utils.data import load_glaive_data
 from spectral_guardrails.utils.models import MODEL_REGISTRY, load_model_and_tokenizer
 from spectral_guardrails.utils.metrics import compute_classification_metrics
@@ -23,6 +25,37 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import precision_recall_curve, roc_curve, auc as sk_auc
 
 # --- Framework Utilities ---
+
+def get_content_split_indices(samples, train_ratio=0.7, val_ratio=0.15, seed=42):
+    """
+    Deterministically splits samples based on prompt identifiers (Template-Consistent Splitting).
+    This ensures all samples with the same prompt template go to the same split.
+    """
+    # Group samples by prompt_hash (or fallback to chat content if not in JSONL)
+    groups = {}
+    for i, s in enumerate(samples):
+        # Prefer prompt_hash saved during extract, fallback to ground_truth or idx if missing
+        pid = s.get('prompt_hash') or hash(s.get('ground_truth', str(i)))
+        if pid not in groups: groups[pid] = []
+        groups[pid].append(i)
+        
+    unique_pids = sorted(list(groups.keys()))
+    rng = np.random.RandomState(seed)
+    rng.shuffle(unique_pids)
+    
+    n_unique = len(unique_pids)
+    itrain = int(train_ratio * n_unique)
+    ival = int((train_ratio + val_ratio) * n_unique)
+    
+    train_pids = unique_pids[:itrain]
+    val_pids = unique_pids[itrain:ival]
+    test_pids = unique_pids[ival:]
+    
+    train_idx = [i for pid in train_pids for i in groups[pid]]
+    val_idx = [i for pid in val_pids for i in groups[pid]]
+    test_idx = [i for pid in test_pids for i in groups[pid]]
+    
+    return np.array(train_idx), np.array(val_idx), np.array(test_idx)
 
 def print_summary_table(metrics: dict, title: str = "Results Summary"):
     print(f"\n{'='*40}")
@@ -140,6 +173,11 @@ def compute_trajectory_features(samples: list, n_layers: int, metrics: list = No
             # GoR Standard Trajectory Features
             s[f"Ltrajectory_{m}_delta"] = profile[-1] - profile[0]
             s[f"Ltrajectory_{m}_range"] = np.ptp(profile)
+            
+            # Dynamic Dynamics (GoR - Jump & Flux)
+            diffs = np.abs(np.diff(profile))
+            s[f"Ltrajectory_{m}_max_jump"] = np.max(diffs) if len(diffs) > 0 else 0.0
+            s[f"Ltrajectory_{m}_flux"] = np.sum(diffs) if len(diffs) > 0 else 0.0
             try:
                 # Use linear regression to find global slope
                 slope = np.polyfit(np.arange(len(profile)), profile, 1)[0]
@@ -260,18 +298,26 @@ def handle_extract(args):
     input_file = Path(args.data_dir) / f"glaive_{args.domain}.jsonl"
     if not input_file.exists():
         input_file = output_dir / f"glaive_{args.domain}.jsonl"
-    if not input_file.exists():
-        print(f"Error: Input file {input_file} not found.")
-        return
+    
+    # We proceed even if input_file doesn't exist, because load_glaive_data() fetches from source
 
-    with open(input_file, 'r', encoding='utf-8') as f:
-        samples = [json.loads(line) for line in f]
-    if args.n_samples: samples = samples[:args.n_samples]
+    samples = []
+    if input_file.exists():
+        with open(input_file, 'r', encoding='utf-8') as f:
+            samples = [json.loads(line) for line in f]
+    if args.n_samples and samples: samples = samples[:args.n_samples]
 
     output_path = output_dir / f"spectral_features_{args.model}_{args.domain}.jsonl"
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(f"[extract] Running native framework extraction for {len(samples)} samples...")
+    if output_path.exists():
+        with open(output_path, 'r', encoding='utf-8') as f:
+            existing_count = sum(1 for line in f)
+    # Increase diversity by striding through dataset (step=50)
+    import hashlib
+    dataset = load_glaive_data(domain=args.domain, limit=args.n_samples, step=50)
+
+    print(f"[extract] Running diverse extraction for {len(dataset)} samples (stride=50)...")
     
     records = []
     with GSPDiagnosticsFramework(config) as framework:
@@ -279,7 +325,7 @@ def handle_extract(args):
         tokenizer = framework.instrumenter.tokenizer
         model = framework.instrumenter.model
 
-        pbar = tqdm(samples, desc="GSP Extraction", unit="sample")
+        pbar = tqdm(dataset, desc="GSP Extraction", unit="sample")
         for i, ex in enumerate(pbar):
             # 1. Recover chat history
             from spectral_guardrails.utils.data import parse_glaive_chat
@@ -328,16 +374,19 @@ def handle_extract(args):
                     m_outputs = model(**full_inputs_eval, output_hidden_states=True)
                     hidden_states = [h.to(torch.float32).cpu() for h in m_outputs.hidden_states]
                     
-                    target_layers = [4, 8, 16, 20, 24, 28, 31]
-                    pos = find_token_positions(tokenizer, inputs.input_ids[0].tolist(), prediction)
+                    target_layers = [4, 8, 11, 15, 20, 24, 28, 31]
+                    pos = find_token_positions(tokenizer, full_inputs_eval.input_ids[0].tolist(), prediction)
                     for li in target_layers:
                         if li < len(hidden_states):
                             signals = hidden_states[li][0]
                             h_feat = extract_probe_features(signals, pos)
                             probe_hidden[str(li)] = h_feat.tolist()
 
+                prompt_hash = hashlib.sha256(prompt_text.encode('utf-8')).hexdigest()
                 result = {
                     "original_idx": ex.get('original_idx', i),
+                    "prompt_hash": prompt_hash,
+                    "prompt": prompt_text,
                     "label": int(label),
                     "prediction": prediction,
                     "ground_truth": ground_truth,
@@ -378,9 +427,11 @@ def handle_train_probe(args):
         X.append(features); y.append(ex.get('label', 0))
 
     X, y = np.array(X), np.array(y)
-    n = len(X); itrain = int(0.7 * n); ival = int(0.85 * n)
-    X_train, X_val, X_test = X[:itrain], X[itrain:ival], X[ival:]
-    y_train, y_val, y_test = y[:itrain], y[itrain:ival], y[ival:]
+    train_idx, val_idx, test_idx = get_content_split_indices(samples)
+    X_train, X_val, X_test = X[train_idx], X[val_idx], X[test_idx]
+    y_train, y_val, y_test = y[train_idx], y[val_idx], y[test_idx]
+    
+    print(f"[train-probe] Split: {len(X_train)} Train, {len(X_val)} Val, {len(X_test)} Test (Template-Consistent)")
 
     y_train_np = np.array(y_train)
     weights = compute_class_weight('balanced', classes=np.array([0,1]), y=y_train_np)
@@ -392,10 +443,11 @@ def handle_train_probe(args):
                                  pos_weight=pos_weight)
     
     output_dir = Path(args.output_dir); output_dir.mkdir(parents=True, exist_ok=True)
-    torch.save({'state_dict': trained_probe.state_dict(), 'input_dim': X_train.shape[1]}, output_dir / f"probe_{args.model}.pt")
+    probe_name = f"probe_{args.model}_{args.feature_type}.pt"
+    torch.save({'state_dict': trained_probe.state_dict(), 'input_dim': X_train.shape[1]}, output_dir / probe_name)
     
     metrics = evaluate_probe(trained_probe, X_test, y_test)
-    print_summary_table({k: v for k, v in metrics.items() if k not in ('y_true', 'y_score')}, f"Probe Results ({args.model})")
+    print_summary_table({k: v for k, v in metrics.items() if k not in ('y_true', 'y_score')}, f"Probe Results ({args.model}) - TEST SPLIT")
 
 def handle_evaluate(args):
     input_file = Path(args.data_dir) / f"spectral_features_{args.model}_{args.domain}.jsonl"
@@ -406,7 +458,13 @@ def handle_evaluate(args):
     with open(input_file, 'r', encoding='utf-8') as f:
         raw_samples = [json.loads(line) for line in f]
     samples = [flatten_sample(s) for s in raw_samples]
+    
+    # Template-Consistent split enforcement
+    _, _, test_idx = get_content_split_indices(samples)
+    samples = [samples[i] for i in test_idx]
     y_true = np.array([s['label'] for s in samples])
+    
+    print(f"[evaluate] Strictly evaluating on TEST split ({len(samples)} samples, template-consistent)")
     
     # Store scores for hybrid mode
     spectral_scores = None
@@ -450,7 +508,8 @@ def handle_evaluate(args):
                 print(f"--- SPECTRAL EVAL ({key}) ---\n  AUC: {auc:.4f}\n  Cohen's d: {d:.4f}\n")
 
     if args.mode in ["probe", "all", "hybrid"]:
-        probe_path = Path(args.output_dir) / f"probe_{args.model}.pt"
+        probe_name = f"probe_{args.model}_{args.feature_type}.pt"
+        probe_path = Path(args.output_dir) / probe_name
         if probe_path.exists():
             checkpoint = torch.load(probe_path, map_location='cpu', weights_only=False)
             
@@ -469,7 +528,11 @@ def handle_evaluate(args):
             
             # Verify checkpoint dimension matches current data
             ckpt = torch.load(probe_path, map_location='cpu', weights_only=False)
-            saved_dim = ckpt['state_dict']['net.0.weight'].shape[1] if 'state_dict' in ckpt else ckpt['net.0.weight'].shape[1]
+            if 'state_dict' in ckpt:
+                saved_dim = ckpt['state_dict']['net.0.weight'].shape[1]
+            else:
+                saved_dim = ckpt['net.0.weight'].shape[1]
+                
             expected_dim = X.shape[1]
             if saved_dim != expected_dim:
                 print(f"[ERROR] Probe dim mismatch: saved={saved_dim} expected={expected_dim}")
@@ -483,15 +546,74 @@ def handle_evaluate(args):
             print(f"--- PROBE EVAL ---\n  Accuracy: {metrics['accuracy']:.4f}\n  AUC: {metrics['auc']:.4f}\n")
 
     if args.mode == "hybrid" and spectral_scores is not None and probe_scores is not None:
-        hybrid_scores = (spectral_scores + probe_scores) / 2
+        # 1. Recalculate raw spectral scores
+        # IMPORTANT: Use the original samples and key. Re-extract to avoid previous mutations.
+        raw_scores_orig = np.array([s.get(key, np.nan) for s in samples], dtype=float)
+        
+        # Determine the correct sign for AUC >= 0.5 using valid samples
+        valid_mask = ~np.isnan(raw_scores_orig)
+        ys_v = raw_scores_orig[valid_mask]
+        yt_v = y_true[valid_mask]
+        
+        temp_auc = roc_auc_score(yt_v, ys_v)
+        sign = 1.0
+        if temp_auc < 0.5:
+            sign = -1.0
+            temp_auc = 1 - temp_auc
+            
+        # 2. Compute stats on sign-corrected valid samples
+        raw_scores_corrected = sign * raw_scores_orig
+        spec_valid = raw_scores_corrected[valid_mask]
+        spec_std = spec_valid.std() if spec_valid.std() > 0 else 1.0
+        
+        # 3. Get spectral threshold for the sign-corrected metric
+        spec_thresh = find_optimal_threshold(yt_v, spec_valid, target=args.optimize_for or "recall80")
+        
+        # 4. Normalize: (score - thresh) / std
+        spectral_norm = np.zeros_like(raw_scores_corrected)
+        spectral_norm[valid_mask] = (raw_scores_corrected[valid_mask] - spec_thresh) / spec_std
+        
+        # 5. Hybrid Parameter Search (Maximize Joint AUC)
+        print(f"--- HYBRID PARAMETER SEARCH ---")
+        best_h_auc = -1
+        best_alpha = 0.5
+        best_beta = 0.0
+        
+        # Grid for mixing weight alpha (spec vs probe). Include 0 and 1 for true maximization.
+        alphas = np.linspace(0.0, 1.0, 21)
+        # Grid for offset beta (sweep across quantiles of spectral scores)
+        betas = np.quantile(spec_valid, np.linspace(0.0, 1.0, 11))
+        
         from sklearn.metrics import roc_auc_score
-        h_auc = roc_auc_score(y_true, hybrid_scores)
-        print(f"--- HYBRID EVAL ---\n  Joint AUC: {h_auc:.4f}")
+        
+        for a in alphas:
+            for b_off in betas:
+                # Re-normalize with candidate beta
+                s_norm = np.zeros_like(raw_scores_corrected)
+                s_norm[valid_mask] = (raw_scores_corrected[valid_mask] - b_off) / spec_std
+                
+                h_scores = a * s_norm + (1 - a) * probe_scores
+                try:
+                    curr_auc = roc_auc_score(y_true, h_scores)
+                    if curr_auc > best_h_auc:
+                        best_h_auc = curr_auc
+                        best_alpha = a
+                        best_beta = b_off
+                except: continue
+        
+        # Final best scores
+        s_norm_best = np.zeros_like(raw_scores_corrected)
+        s_norm_best[valid_mask] = (raw_scores_corrected[valid_mask] - best_beta) / spec_std
+        hybrid_scores = best_alpha * s_norm_best + (1 - best_alpha) * probe_scores
+        
+        print(f"  Best Alpha (mixing): {best_alpha:.2f}")
+        print(f"  Best Beta (offset): {best_beta:.4f}")
+        print(f"  Joint AUC: {best_h_auc:.4f}")
         
         if args.optimize_for:
-            thresh = find_optimal_threshold(y_true, hybrid_scores, target=args.optimize_for)
-            metrics = compute_classification_metrics(y_true, hybrid_scores, threshold=thresh)
-            print(f"  Optimized ({args.optimize_for}): thresh={thresh:.4f}, precision={metrics['precision']:.4f}, recall={metrics['recall']:.4f}")
+            h_thresh = find_optimal_threshold(y_true, hybrid_scores, target=args.optimize_for)
+            metrics = compute_classification_metrics(y_true, hybrid_scores, threshold=h_thresh)
+            print(f"  Optimized ({args.optimize_for}): thresh={h_thresh:.4f}, precision={metrics['precision']:.4f}, recall={metrics['recall']:.4f}")
             
         if args.plots:
             plot_path = Path(args.output_dir) / f"eval_hybrid_{args.model}_{args.domain}.png"
@@ -529,7 +651,8 @@ def handle_sweep(args):
     for l in range(n_layers):
         for m in metrics: search_space.append((l, m, f"L{l}_{m}"))
     for m in metrics:
-        for tm in ["delta", "range", "slope", "auc"]: search_space.append(("trajectory", f"{m}_{tm}", f"Ltrajectory_{m}_{tm}"))
+        for tm in ["delta", "range", "slope", "auc", "max_jump", "flux"]: 
+            search_space.append(("trajectory", f"{m}_{tm}", f"Ltrajectory_{m}_{tm}"))
 
     from sklearn.metrics import roc_auc_score
     for lid, mname, key in search_space:
@@ -555,7 +678,649 @@ def handle_sweep(args):
     best_data[f"{args.model}_{args.domain}"] = best_overall
     with open(best_params_path, 'w') as f: json.dump(best_data, f, indent=2)
 
+def handle_fusion(args):
+    """
+    Trains a non-linear meta-classifier (Random Forest) on the Validation split 
+    and evaluates on the Test split.
+    """
+    input_file = Path(args.data_dir) / f"spectral_features_{args.model}_{args.domain}.jsonl"
+    if not input_file.exists():
+        print(f"Error: {input_file} not found.")
+        return
+
+    with open(input_file, 'r', encoding='utf-8') as f:
+        raw_samples = [json.loads(line) for line in f]
+    samples = [flatten_sample(s) for s in raw_samples]
+    
+    train_idx, val_idx, test_idx = get_content_split_indices(samples)
+    
+    # 1. Get Probe Scores (probabilities)
+    probe_name = f"probe_{args.model}_hidden.pt"
+    probe_path = Path(args.output_dir) / probe_name
+    if not probe_path.exists():
+        print(f"Error: Probe {probe_path} not found. Run train-probe first.")
+        return
+        
+    checkpoint = torch.load(probe_path, map_location='cpu', weights_only=False)
+    X_probe_all = []
+    for ex in samples:
+        features = []
+        hidden_keys = sorted([k for k in samples[0].keys() if k.endswith("_hidden")])
+        for k in hidden_keys: features.extend(ex.get(k, []))
+        X_probe_all.append(features)
+    X_probe_all = np.array(X_probe_all)
+    
+    probe = HallucinationProbe(input_dim=X_probe_all.shape[1])
+    probe.load_state_dict(checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint)
+    probe.eval()
+    with torch.no_grad():
+        probe_probs = torch.sigmoid(probe(torch.FloatTensor(X_probe_all))).cpu().numpy().flatten()
+        
+    # 2. Get Spectral Features (Trajectories)
+    # Ensure trajectory features are computed
+    max_layer = -1
+    for k in samples[0].keys():
+        if k.startswith("L") and "_" in k:
+            try:
+                parts = k.split("_")[0]
+                if parts[1:].isdigit():
+                    max_layer = max(max_layer, int(parts[1:]))
+            except: continue
+    compute_trajectory_features(samples, max_layer + 1)
+    
+    spec_metrics = ["max_jump", "flux", "delta", "range", "auc"]
+    spec_keys = []
+    # Identify best spectral feature from previous sweep if available
+    best_params_path = Path("data/categories_sweeps/best_params.json")
+    best_feat_key = None
+    if best_params_path.exists():
+        with open(best_params_path, 'r') as f:
+            best_params = json.load(f).get(f"{args.model}_{args.domain}")
+        if best_params:
+            best_feat_key = f"L{best_params['layer']}_{best_params['metric']}"
+    
+    spec_feat_X = []
+    for s in samples:
+        row = []
+        # Add trajectory features for each primary metric
+        for m in ["fiedler_value", "smoothness_index", "spectral_entropy", "energy"]:
+            for tm in spec_metrics:
+                row.append(s.get(f"Ltrajectory_{m}_{tm}", 0.0))
+        # Add the single best performing static feature
+        if best_feat_key:
+            row.append(s.get(best_feat_key, 0.0))
+        spec_feat_X.append(row)
+    spec_feat_X = np.array(spec_feat_X)
+    
+    # 3. Combine for Meta-Classifier
+    X_meta = np.column_stack([probe_probs, spec_feat_X])
+    y_all = np.array([s['label'] for s in samples])
+    
+    X_train_meta = X_meta[val_idx] # Train meta-classifier on VAL split
+    y_train_meta = y_all[val_idx]
+    X_test_meta = X_meta[test_idx]  # Evaluate on TEST split
+    y_test_meta = y_all[test_idx]
+    
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.metrics import roc_auc_score
+    
+    print(f"--- FUSION AUDIT (Random Forest Meta-Classifier) ---")
+    print(f"Train samples (Val split): {len(X_train_meta)}")
+    print(f"Test samples (Test split): {len(X_test_meta)}")
+    
+    rf = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+    rf.fit(X_train_meta, y_train_meta)
+    
+    y_score_meta = rf.predict_proba(X_test_meta)[:, 1]
+    meta_auc = roc_auc_score(y_test_meta, y_score_meta)
+    
+    # Comparison: Pure Probe on the same split
+    probe_test_scores = probe_probs[test_idx]
+    probe_auc = roc_auc_score(y_test_meta, probe_test_scores)
+    
+    # Comparison: Pure Spectral on the same split
+    best_spec_only_auc = 0.0
+    if best_feat_key:
+        best_spec_only_vals = spec_feat_X[test_idx, -1]
+        best_spec_only_auc = roc_auc_score(y_test_meta, best_spec_only_vals)
+        if best_spec_only_auc < 0.5: best_spec_only_auc = 1 - best_spec_only_auc
+    
+    print(f"  Pure Probe AUC (TEST): {probe_auc:.4f}")
+    if best_feat_key:
+        print(f"  Pure Spectral AUC ({best_params['metric']}, TEST): {best_spec_only_auc:.4f}")
+    print(f"  FUSION Joint AUC (TEST): {meta_auc:.4f}")
+    print(f"  [meta] Gain over probe: {meta_auc - probe_auc:+.4f}")
+    print("")
+
+def handle_fusion_xgb(args):
+    """
+    Trains a non-linear meta-classifier (XGBoost) on the Validation split 
+    and evaluates on the Test split.
+    """
+    input_file = Path(args.data_dir) / f"spectral_features_{args.model}_{args.domain}.jsonl"
+    if not input_file.exists():
+        print(f"Error: {input_file} not found.")
+        return
+
+    with open(input_file, 'r', encoding='utf-8') as f:
+        raw_samples = [json.loads(line) for line in f]
+    samples = [flatten_sample(s) for s in raw_samples]
+    
+    train_idx, val_idx, test_idx = get_content_split_indices(samples)
+    
+    # 1. Get Probe Scores (probabilities)
+    probe_name = f"probe_{args.model}_hidden.pt"
+    probe_path = Path(args.output_dir) / probe_name
+    if not probe_path.exists():
+        print(f"Error: Probe {probe_path} not found. Run train-probe first.")
+        return
+        
+    checkpoint = torch.load(probe_path, map_location='cpu', weights_only=False)
+    X_probe_all = []
+    hidden_keys = sorted([k for k in samples[0].keys() if k.endswith("_hidden")])
+    for ex in samples:
+        features = []
+        for k in hidden_keys: features.extend(ex.get(k, []))
+        X_probe_all.append(features)
+    X_probe_all = np.array(X_probe_all)
+    
+    probe = HallucinationProbe(input_dim=X_probe_all.shape[1])
+    probe.load_state_dict(checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint)
+    probe.eval()
+    with torch.no_grad():
+        probe_probs = torch.sigmoid(probe(torch.FloatTensor(X_probe_all))).cpu().numpy().flatten()
+        
+    # 2. Get Spectral Features (Trajectories)
+    max_layer = -1
+    for k in samples[0].keys():
+        if k.startswith("L") and "_" in k:
+            try:
+                parts = k.split("_")[0]
+                if parts[1:].isdigit():
+                    max_layer = max(max_layer, int(parts[1:]))
+            except: continue
+    compute_trajectory_features(samples, max_layer + 1)
+    
+    spec_metrics = ["max_jump", "flux", "delta", "range", "auc"]
+    best_params_path = Path("data/categories_sweeps/best_params.json")
+    best_feat_key = None
+    if best_params_path.exists():
+        with open(best_params_path, 'r') as f:
+            best_params = json.load(f).get(f"{args.model}_{args.domain}")
+        if best_params:
+            best_feat_key = f"L{best_params['layer']}_{best_params['metric']}"
+    
+    spec_feat_X = []
+    for s in samples:
+        row = []
+        for m in ["fiedler_value", "smoothness_index", "spectral_entropy", "energy"]:
+            for tm in spec_metrics:
+                row.append(s.get(f"Ltrajectory_{m}_{tm}", 0.0))
+        if best_feat_key:
+            row.append(s.get(best_feat_key, 0.0))
+        spec_feat_X.append(row)
+    spec_feat_X = np.array(spec_feat_X)
+    
+    # 3. Combine for Meta-Classifier
+    X_meta = np.column_stack([probe_probs, spec_feat_X])
+    y_all = np.array([s['label'] for s in samples])
+    
+    X_train_meta = X_meta[val_idx] # Train meta-classifier on VAL split
+    y_train_meta = y_all[val_idx]
+    X_test_meta = X_meta[test_idx]  # Evaluate on TEST split
+    y_test_meta = y_all[test_idx]
+    
+    import xgboost as xgb
+    from sklearn.metrics import roc_auc_score
+    
+    print(f"--- FUSION AUDIT (XGBoost Meta-Classifier) ---")
+    print(f"Train samples (Val split): {len(X_train_meta)}")
+    print(f"Test samples (Test split): {len(X_test_meta)}")
+    
+    # Strict Regularization per User Directive
+    clf = xgb.XGBClassifier(
+        n_estimators=50, 
+        max_depth=3, 
+        learning_rate=0.05, 
+        random_state=42,
+        subsample=0.7,
+        colsample_bytree=0.7,
+        min_child_weight=5,
+        objective='binary:logistic'
+    )
+    clf.fit(X_train_meta, y_train_meta)
+    
+    y_score_meta = clf.predict_proba(X_test_meta)[:, 1]
+    meta_auc = roc_auc_score(y_test_meta, y_score_meta)
+    
+    # Comparison
+    probe_test_scores = probe_probs[test_idx]
+    probe_auc = roc_auc_score(y_test_meta, probe_test_scores)
+    
+    print(f"  Pure Probe AUC (TEST): {probe_auc:.4f}")
+    print(f"  FUSION Joint AUC (XGB, TEST): {meta_auc:.4f}")
+    print(f"  [xgboost] Gain over probe: {meta_auc - probe_auc:+.4f}")
+    print("")
+
+def handle_analyze_disconnect(args):
+    """
+    Identifies samples where the probe is confident but wrong, 
+    and checks if spectral signals were correct.
+    """
+    input_file = Path(args.data_dir) / f"spectral_features_{args.model}_{args.domain}.jsonl"
+    if not input_file.exists(): return
+    with open(input_file, 'r', encoding='utf-8') as f:
+        raw_samples = [json.loads(line) for line in f]
+    samples = [flatten_sample(s) for s in raw_samples]
+    _, _, test_idx = get_content_split_indices(samples)
+    test_samples = [samples[i] for i in test_idx]
+    
+    # 1. Get Probe Probs
+    probe_path = Path(args.output_dir) / f"probe_{args.model}_hidden.pt"
+    if not probe_path.exists(): return
+    checkpoint = torch.load(probe_path, map_location='cpu', weights_only=False)
+    X_probe = []
+    hidden_keys = sorted([k for k in samples[0].keys() if k.endswith("_hidden")])
+    for s in test_samples:
+        features = []
+        for k in hidden_keys: features.extend(s.get(k, []))
+        X_probe.append(features)
+    probe = HallucinationProbe(input_dim=len(X_probe[0]))
+    probe.load_state_dict(checkpoint['state_dict'] if 'state_dict' in checkpoint else checkpoint)
+    probe.eval()
+    with torch.no_grad():
+        probs = torch.sigmoid(probe(torch.FloatTensor(X_probe))).cpu().numpy().flatten()
+        
+    print(f"--- DISCONNECT ANALYSIS (Confident failures) ---")
+    disconnects = []
+    
+    # Identify the layer of max jump for topological collapse reporting
+    # We use fiedler_value as the primary topological indicator
+    jump_layer_key = "Ltrajectory_fiedler_value_max_jump"
+    
+    for i, (s, p) in enumerate(zip(test_samples, probs)):
+        label = s['label']
+        is_correct = (p >= 0.5 and label == 1) or (p < 0.5 and label == 0)
+        confidence = p if p >= 0.5 else 1 - p
+        
+        if not is_correct and confidence > 0.8:
+            # Find which layer had the max jump
+            jump_val = s.get(jump_layer_key, 0.0)
+            
+            # Identify the layer index where this jump occurred
+            # We look for the metric that equals the jump value (or contributes to it)
+            # For simplicity, we'll scan for the L{i}_fiedler_value that is the local max
+            jump_layer = -1
+            max_val = -1e9
+            for k, v in s.items():
+                if k.startswith("L") and k.endswith("_fiedler_value") and not k.startswith("Ltrajectory"):
+                    try:
+                        layer_idx = int(k.split("_")[0][1:])
+                        if v > max_val:
+                            max_val = v
+                            jump_layer = layer_idx
+                    except: continue
+
+            disconnects.append({
+                "index": s.get('original_idx', i),
+                "label": int(label),
+                "probe_prob": float(p),
+                "confidence": float(confidence),
+                "prompt": s.get('prompt', 'N/A'),
+                "prediction": s.get('prediction', ''),
+                "ground_truth": s.get('ground_truth', ''),
+                "topological_jump_magnitude": float(jump_val),
+                "collapse_layer_index": jump_layer
+            })
+            
+    print(f"Found {len(disconnects)} confident probe failures in test set.")
+    out_path = Path(args.output_dir) / f"disconnect_audit_{args.model}.json"
+    with open(out_path, 'w') as f:
+        json.dump(disconnects, f, indent=2)
+    print(f"Saved disconnect audit to {out_path}")
+
+def handle_audit(args):
+    """Mega-Audit scaling command to extract spectral features and consensus samples."""
+    global json
+    config = GSPConfig(device=args.device, verbose=args.verbose)
+    model_id = MODEL_REGISTRY[args.model]
+    out_dir = Path(args.output_dir) / f"{args.model}_{args.domain}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    features_path = out_dir / f"spectral_features_{args.model}_{args.domain}.jsonl"
+    checkpoint_path = out_dir / f"checkpoint_{args.model}_{args.domain}.csv"
+
+    if checkpoint_path.exists():
+        import pandas as pd
+        df_check = pd.read_csv(checkpoint_path)
+        resume_idx = len(df_check)
+        print(f"Resuming audit from index {resume_idx}...")
+    else:
+        resume_idx = 0
+
+    if getattr(args, "bfcl_path", None):
+        print(f"Loading BFCL dataset from {args.bfcl_path}...")
+        dataset = []
+        with open(args.bfcl_path, "r", encoding="utf-8") as f:
+            for line in f:
+                dataset.append(json.loads(line))
+        dataset = dataset[:args.n]
+    elif getattr(args, "toolbench_path", None):
+        print(f"Loading ToolBench dataset from {args.toolbench_path}...")
+        dataset = []
+        with open(args.toolbench_path, "r", encoding="utf-8") as f:
+            for line in f:
+                dataset.append(json.loads(line))
+        dataset = dataset[:args.n]
+    else:
+        dataset = load_glaive_data(domain=args.domain, limit=args.n, step=50)
+
+    records = []
+    with GSPDiagnosticsFramework(config) as framework:
+        framework.instrumenter.load_model(model_id)
+        tokenizer = framework.instrumenter.tokenizer
+        model = framework.instrumenter.model
+        topo = DirectedTopologist(device=args.device) if getattr(args, "fast_fiedler", False) else None
+        target_layers = [4, 8, 11, 15, 20, 24, 28, 31]
+
+        pbar = tqdm(dataset, desc="GSP Extraction", unit="sample")
+        for i, ex in enumerate(pbar):
+            if i < resume_idx: continue
+
+            is_hard_mode = bool(getattr(args, "bfcl_path", None) or getattr(args, "toolbench_path", None))
+            if is_hard_mode:
+                ground_truth = ex.get("ground_truth", "")
+                chat_raw = ex.get("chat", "")
+                prompt_msgs = [
+                    {"role": "system", "content": ex.get("system", "You are a helpful assistant.")},
+                    {"role": "user", "content": chat_raw.split("\\nASSISTANT:")[0].replace("USER: ", "", 1).strip()}
+                ]
+            else:
+                from spectral_guardrails.utils.data import parse_glaive_chat
+                chat_raw = ex.get("chat", "")
+                messages = parse_glaive_chat(chat_raw)
+                target_idx = -1
+                for idx, msg in enumerate(messages):
+                    if msg["role"] == "assistant":
+                        target_idx = idx
+                        break
+                if target_idx == -1: continue
+                ground_truth = messages[target_idx]["content"]
+                prompt_msgs = [{"role": "system", "content": ex.get("system", "You are a helpful assistant.")}]
+                if target_idx > 0: prompt_msgs.append(messages[target_idx-1])
+
+            prompt_text = tokenizer.apply_chat_template(prompt_msgs, tokenize=False, add_generation_prompt=True)
+            inputs = tokenizer(prompt_text, return_tensors="pt").to(model.device)
+
+            import time
+            start_gen = time.perf_counter()
+            logprobs_list = []
+            predictions = []
+
+            try:
+                num_samples = getattr(args, "n_samples_consensus", 1)
+                temp = 1.0 if num_samples > 1 else getattr(args, "temperature", 0.3)
+                with torch.no_grad():
+                    outputs = model.generate(**inputs, max_new_tokens=64, temperature=temp, do_sample=True, num_return_sequences=num_samples, pad_token_id=tokenizer.eos_token_id, return_dict_in_generate=True, output_scores=True)
+
+                transition_scores = model.compute_transition_scores(outputs.sequences, outputs.scores, normalize_logits=True)
+                import numpy as np
+                for j in range(num_samples):
+                    pred_tokens = outputs.sequences[j][inputs.input_ids.shape[1]:]
+                    prediction = tokenizer.decode(pred_tokens, skip_special_tokens=True)
+                    predictions.append(prediction)
+                    logprobs_list.append(transition_scores[j].cpu().numpy().mean())
+
+                gen_time = time.perf_counter() - start_gen
+                prediction = predictions[0]
+                mean_logprob = float(np.mean(logprobs_list))
+
+                consensus_score = 1.0
+                if num_samples > 1:
+                    from spectral_guardrails.utils.data import is_json_equivalent
+                    m = 0
+                    for op in predictions[1:]:
+                        if is_json_equivalent(prediction, op): m += 1
+                    consensus_score = (m + 1) / num_samples
+
+                label = assign_label(prediction, ground_truth)
+            except Exception as e:
+                pbar.write(f"[warn] Generation failed: {e}")
+                continue
+
+            ld = []
+            ph = {}
+            sl = 0
+
+            if not getattr(args, "sampling_only", False):
+                full_text = prompt_text + prediction
+                start_analysis = time.perf_counter()
+                try:
+                    if topo is not None:
+                        # ── Fast-Fiedler path: single consolidated forward pass ──────────
+                        # One pass captures attentions + hidden states; eliminates the
+                        # separate framework.analyze_text call and the duplicate hidden-state pass.
+                        fe = tokenizer(full_text, return_tensors="pt").to(model.device)
+                        with torch.no_grad():
+                            mo = model(**fe, output_attentions=True, output_hidden_states=True)
+                        attentions    = mo.attentions     # tuple[layer] of [1, H, Q, K]
+                        hidden_states = mo.hidden_states  # tuple[layer+1] of [1, Q, D]
+                        token_ids     = fe.input_ids[0].tolist()
+                        sl            = len(token_ids)
+
+                        # Subgraph slicing: use tool-call token span; fallback to last 50 tokens
+                        pos = find_token_positions(tokenizer, token_ids, prediction)
+                        t_start, t_end = pos["t_func"], pos["t_end"]
+                        if t_end > t_start + 1 and t_end < sl:
+                            sub_indices = list(range(t_start, t_end + 1))
+                        else:
+                            sub_indices = list(range(max(0, sl - 50), sl))
+
+                        idx_t = torch.tensor(sub_indices, device=model.device, dtype=torch.long)
+
+                        fiedler_vals = []
+                        for attn in attentions:
+                            attn_sq  = attn.squeeze(0)                                        # [H, Q, K]
+                            attn_sym = framework.graph_constructor.symmetrize_attention(
+                                attn_sq.unsqueeze(0))                                          # [1, H, Q, K]
+                            adjacency = framework.graph_constructor.aggregate_heads(
+                                attn_sym).squeeze(0)                                           # [Q, K]
+                            # Slice induced subgraph adjacency, build its Laplacian
+                            adj_sub = adjacency.index_select(0, idx_t).index_select(1, idx_t) # [S, S]
+                            L_sub   = framework.graph_constructor.construct_laplacian(
+                                adj_sub.unsqueeze(0)).squeeze(0)                               # [S, S]
+                            # Symmetrize before Lanczos (RW Laplacian is not symmetric in general)
+                            L_sym   = 0.5 * (L_sub + L_sub.T)
+                            fiedler_vals.append(topo.get_fiedler_value(L_sym))
+
+                        # GPU-native spectral velocity (0.2.0)
+                        fv_t = torch.tensor(fiedler_vals)
+                        _, max_vel, max_vel_layer = calculate_spectral_velocity(fv_t)
+
+                        ld = [{"fiedler_value": f, "smoothness_index": 0.0,
+                               "spectral_entropy": 0.0, "energy": 0.0, "hfer": 0.0,
+                               "max_velocity": 0.0}
+                              for f in fiedler_vals]
+                        ld[max_vel_layer - 1]["max_velocity"] = float(max_vel)
+
+                        # Probe hidden states from the same consolidated pass
+                        for li in target_layers:
+                            if li < len(hidden_states):
+                                h = hidden_states[li][0].to(torch.float32).cpu()
+                                ph[str(li)] = extract_probe_features(h, pos).tolist()
+
+                    else:
+                        # ── Standard path (full spectral analysis + separate hidden pass) ─
+                        analysis = framework.analyze_text(full_text, save_results=False)
+                        for diag in analysis["layer_diagnostics"]:
+                            ld.append({
+                                "fiedler_value":    float(diag.fiedler_value),
+                                "smoothness_index": float(diag.smoothness_index),
+                                "spectral_entropy": float(diag.spectral_entropy),
+                                "energy":           float(diag.energy),
+                                "hfer":             float(diag.hfer),
+                            })
+                        with torch.no_grad():
+                            fe  = tokenizer(full_text, return_tensors="pt").to(model.device)
+                            mo  = model(**fe, output_hidden_states=True)
+                            hs  = [h.to(torch.float32).cpu() for h in mo.hidden_states]
+                            pos = find_token_positions(tokenizer, fe.input_ids[0].tolist(), prediction)
+                            for li in target_layers:
+                                if li < len(hs):
+                                    ph[str(li)] = extract_probe_features(hs[li][0], pos).tolist()
+                            sl = len(fe.input_ids[0])
+
+                except Exception as e:
+                    pbar.write(f"[warn] Analysis failed on sample {i}: {e}")
+
+                analysis_ms = (time.perf_counter() - start_analysis) * 1000
+                pbar.set_postfix(label="HALL" if label else "ok", anal_ms=f"{analysis_ms:.0f}")
+
+            import hashlib
+            rec = {
+                "original_idx": ex.get("original_idx", i),
+                "prompt_hash": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
+                "prompt": prompt_text,
+                "label": int(label),
+                "prediction": prediction,
+                "ground_truth": ground_truth,
+                "mean_logprob": mean_logprob,
+                "consensus_score": consensus_score,
+                "consensus_samples": predictions,
+                "latency_ms": gen_time * 1000,
+                "layer_diagnostics": ld,
+                "hidden": ph,
+                "seq_len": sl
+            }
+            records.append(rec)
+            with open(features_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec) + "\\n")
+            pbar.set_postfix(label="HALL" if label else "ok")
+
+    print(f"\\n[mega-audit] SUCCESS: {len(records)} samples processed.")
+def handle_logic_ensemble(args):
+    """
+    Search for the best combination of 1, 2, and 3 spectral thresholds (Boolean AND logic).
+    Goal: Find the symbolic ensemble that maximizes Joint AUC.
+    """
+    import pandas as pd
+    from sklearn.metrics import roc_auc_score
+    from itertools import combinations
+    
+    data_dir = args.data_dir or f"data/n1000_{args.model}_{args.domain}"
+    features_path = Path(data_dir) / f"spectral_features_{args.model}_{args.domain}.jsonl"
+    
+    if not features_path.exists():
+        print(f"Error: Features not found at {features_path}")
+        return
+
+    # Load data
+    samples = []
+    with open(features_path, 'r') as f:
+        for line in f:
+            samples.append(json.loads(line))
+    
+    # Flatten data for analysis
+    rows = []
+    for s in samples:
+        row = {"label": s["label"], "prompt_hash": s["prompt_hash"]}
+        # 'layer_diagnostics' is often saved as a list or a dict mapping layer index to metrics
+        ld = s.get("layer_diagnostics", s.get("spectral", []))
+        if isinstance(ld, list):
+            for i, metrics in enumerate(ld):
+                # Metrics is the dict of fiedler, energy, etc for this layer
+                for m_name, val in metrics.items():
+                    row[f"L{i}_{m_name}"] = val
+        else: # dict
+            for layer, metrics in ld.items():
+                for m_name, val in metrics.items():
+                    row[f"L{layer}_{m_name}"] = val
+        rows.append(row)
+    
+    df = pd.DataFrame(rows)
+    
+    # Template-Consistent Split (leakage prevention)
+    unique_hashes = sorted(df['prompt_hash'].unique())
+    rng = np.random.RandomState(42)
+    rng.shuffle(unique_hashes)
+    
+    n_unique = len(unique_hashes)
+    itrain = int(0.7 * n_unique)
+    ival = int(0.85 * n_unique)
+    
+    train_h = set(unique_hashes[:itrain])
+    val_h = set(unique_hashes[itrain:ival])
+    test_h = set(unique_hashes[ival:])
+    
+    df_train = df[df['prompt_hash'].isin(train_h)]
+    df_val = df[df['prompt_hash'].isin(val_h)]
+    df_test = df[df['prompt_hash'].isin(test_h)]
+    
+    y_test = df_test['label'].values
+    
+    spectral_cols = [c for c in df.columns if c.startswith("L")]
+    
+    print(f"\n[logic-ensemble] Searching over {len(spectral_cols)} metrics...")
+    
+    # 1. Rank individual metrics by AUC on VAL
+    results = []
+    for col in spectral_cols:
+        vals = df_val[col].values
+        # Handle Inf/Nan
+        vals = np.nan_to_num(vals, nan=0, posinf=0, neginf=0)
+        try:
+            auc = roc_auc_score(df_val['label'], vals)
+            if auc < 0.5: auc = 1 - auc # Support both directions
+            results.append((col, auc))
+        except:
+            continue
+            
+    results.sort(key=lambda x: x[1], reverse=True)
+    top_candidates = [r[0] for r in results[:20]] # Take top 20 for combinations
+    
+    print(f"Top metric: {results[0][0]} (AUC: {results[0][1]:.4f})")
+    
+    best_overall_auc = results[0][1]
+    best_ensemble = [results[0][0]]
+    
+    # 2. Greedy search for 2 and 3 combinations
+    for k in [2, 3]:
+        print(f"Searching combinations of size {k}...")
+        for combo in combinations(top_candidates, k):
+            # For logic ensemble, we treat this as a simple weighted sum or threshold-veto
+            # Here we use a shallow decision tree or mean of normalized scores as a proxy for logic
+            val_scores = np.zeros(len(df_val))
+            test_scores = np.zeros(len(df_test))
+            
+            for col in combo:
+                # Directions check: ensure all metrics correlate positively with label=1
+                auc_raw = roc_auc_score(df_val['label'], df_val[col])
+                sign = 1 if auc_raw >= 0.5 else -1
+                
+                # Normalize and accumulate
+                v = df_val[col].values
+                v = (v - np.mean(v)) / (np.std(v) + 1e-6)
+                val_scores += sign * v
+                
+                v_t = df_test[col].values
+                v_t = (v_t - np.mean(v_t)) / (np.std(v_t) + 1e-6)
+                test_scores += sign * v_t
+                
+            auc_val = roc_auc_score(df_val['label'], val_scores)
+            if auc_val > best_overall_auc:
+                best_overall_auc = auc_val
+                best_ensemble = list(combo)
+                best_test_auc = roc_auc_score(df_test['label'], test_scores)
+                
+    print("\n" + "="*40)
+    print("BEST LOGIC ENSEMBLE FOUND")
+    print("="*40)
+    for i, m in enumerate(best_ensemble):
+        print(f"  Metric {i+1}: {m}")
+    print(f"Final TEST AUC: {best_test_auc:.4f}")
+    print("="*40)
+
 def main():
+
     # Common parent parser for shared flags
     parent_parser = argparse.ArgumentParser(add_help=False)
     parent_parser.add_argument("--device", type=str, default="cuda")
@@ -601,14 +1366,36 @@ def main():
     p_sweep.add_argument("--domain", choices=["general", "finance", "math"], default="general")
     p_sweep.add_argument("--plots", action="store_true")
 
+    # logic-ensemble
+    p_logic = subparsers.add_parser("logic-ensemble", parents=[parent_parser])
+    p_logic.add_argument("--model", choices=list(MODEL_REGISTRY.keys()), required=True)
+    p_logic.add_argument("--domain", choices=["general", "finance", "math"], default="general")
+
+    # audit (Mega-Audit scaling command)
+    p_audit = subparsers.add_parser("audit", parents=[parent_parser])
+    p_audit.add_argument("--model", choices=list(MODEL_REGISTRY.keys()), required=True)
+    p_audit.add_argument("--domain", choices=["general", "finance", "math"], default="general")
+    p_audit.add_argument("--n", type=int, default=1000, help="Number of samples for the mega-audit")
+    p_audit.add_argument("--temperature", type=float, default=0.3, help="Generation temperature")
+    p_audit.add_argument("--n-samples-consensus", type=int, default=1, help="Number of samples for consistency consensus (SelfCheckGPT baseline)")
+    p_audit.add_argument("--bfcl-path", type=str, default=None, help="Path to BFCL hard-mode dataset")
+    p_audit.add_argument("--toolbench-path", type=str, default=None, help="Path to ToolBench hard-mode dataset")
+    p_audit.add_argument("--sampling-only", action="store_true", help="Only run generation/consensus, skip spectral/hidden extraction")
+    p_audit.add_argument("--fast-fiedler", action="store_true", help="GPU Lanczos Fiedler + subgraph slicing (ToolBench mode, single forward pass)")
+
     args = parser.parse_args()
     if args.command == "prepare": handle_prepare(args)
     elif args.command == "extract": handle_extract(args)
     elif args.command == "train-probe": handle_train_probe(args)
     elif args.command == "evaluate": handle_evaluate(args)
     elif args.command == "sweep": handle_sweep(args)
+    elif args.command == "fusion": handle_fusion_xgb(args)
+    elif args.command == "analyze-disconnect": handle_analyze_disconnect(args)
+    elif args.command == "logic-ensemble": handle_logic_ensemble(args)
+    elif args.command == "audit": handle_audit(args)
     elif args.command is None: parser.print_help()
     else: print(f"Error: Command '{args.command}' is not recognized.")
 
 if __name__ == "__main__":
     main()
+

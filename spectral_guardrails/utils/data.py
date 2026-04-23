@@ -51,15 +51,16 @@ def is_in_domain(example, domain="all"):
         
     return any(k in content for k in keywords)
 
-def load_glaive_data(domain="all", limit=1000, offset=0):
+def load_glaive_data(domain="all", limit=1000, offset=0, step=1):
     """
-    Loads and filters Glaive dataset.
+    Loads and filters Glaive dataset with support for strided sampling.
     """
-    print(f"Loading Glaive v2 dataset (domain={domain}, limit={limit})...")
+    print(f"Loading Glaive v2 dataset (domain={domain}, limit={limit}, step={step})...")
     ds = load_dataset("glaiveai/glaive-function-calling-v2", split="train")
     
     filtered = []
-    for i in range(offset, len(ds)):
+    # Use step-based iteration to ensure we pull from a wider range of the dataset
+    for i in range(offset, len(ds), step):
         ex = ds[i]
         if is_in_domain(ex, domain):
             filtered.append(ex)
@@ -67,3 +68,52 @@ def load_glaive_data(domain="all", limit=1000, offset=0):
             break
             
     return filtered
+
+def is_json_equivalent(pred1, pred2):
+    """
+    Checks if two tool calls are semantically equivalent by parsing JSON.
+    Assumes tool calls are in a format like: func_name(arg1="val1", arg2=2)
+    or just standard JSON if the model outputs it.
+    """
+    import json
+    import re
+
+    def parse_to_dict(s):
+        s = s.strip()
+        # Handle standard JSON objects
+        if s.startswith("{") and s.endswith("}"):
+            try: return json.loads(s)
+            except: pass
+        
+        # Handle common tool call format: name(args)
+        match = re.search(r"^([a-zA-Z0-9_]+)\((.*)\)$", s)
+        if match:
+            name = match.group(1)
+            args_str = match.group(2)
+            # Try to extract key-value pairs
+            # This is a heuristic parser for unformatted tool calls
+            kv_pairs = re.findall(r"([a-zA-Z0-9_]+)\s*=\s*([^,]+)", args_str)
+            if not kv_pairs:
+                return {"_name": name, "_raw_args": args_str}
+            
+            d = {"_name": name}
+            for k, v in kv_pairs:
+                v = v.strip().strip('"').strip("'")
+                # Try numeric conversion
+                try:
+                    if "." in v: d[k] = float(v)
+                    else: d[k] = int(v)
+                except:
+                    d[k] = v
+            return d
+            
+        return {"_raw": s}
+
+    d1 = parse_to_dict(pred1)
+    d2 = parse_to_dict(pred2)
+    
+    # If both couldn't be parsed meaningfully, fallback to normalized string match
+    if len(d1) <= 1 and len(d2) <= 1:
+        return "".join(pred1.split()) == "".join(pred2.split())
+
+    return d1 == d2
