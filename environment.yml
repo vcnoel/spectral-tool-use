@@ -1,0 +1,19 @@
+name: gemma-spectral
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch>=2.0
+  - cudatoolkit
+  - pip:
+    - transformers>=4.40
+    - datasets
+    - scikit-learn
+    - scipy
+    - numpy
+    - dtaidistance
+    - matplotlib
+    - jupyter
+    - flake8
