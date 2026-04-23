@@ -24,8 +24,9 @@ def run(cmd, log_file):
     return result.returncode
 
 models = [
-    ("llama1b", "data/n1000_gor/",    "data/full/"),
-    ("llama3b", "data/n1000_gor_3b/", "data/full/"),
+    ("llama1b",   "data/n1000_gor/",       "data/full/"),
+    ("llama3b",   "data/n1000_gor_3b/",    "data/full/"),
+    ("qwen35_2b", "data/n1000_gor_qwen/",  "data/full/"),
 ]
 
 for model, out_dir, data_dir in models:
