@@ -1193,7 +1193,7 @@ def handle_audit(args):
             }
             records.append(rec)
             with open(features_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(rec) + "\\n")
+                f.write(json.dumps(rec) + "\n")
             pbar.set_postfix(label="HALL" if label else "ok")
 
     print(f"\\n[mega-audit] SUCCESS: {len(records)} samples processed.")
