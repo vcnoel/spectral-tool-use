@@ -13,7 +13,7 @@
 
 State-of-the-art LLMs hallucinate tool calls not by hedging, but by generating *confidently wrong* structured outputs — a failure mode invisible to token-logprob and sampling-consensus baselines. When a model fabricates a function call, its attention graph undergoes a measurable topological transition: the Fiedler value (algebraic connectivity, λ₂) of the graph Laplacian collapses as the token-to-token information flow fragments across layers.
 
-**Spectral Veto** exploits this signal. It extracts the per-layer Fiedler trajectory from a single forward pass, applies GPU Lanczos on a tool-call subgraph (O(kN²) vs. O(N³) for dense eigendecomposition), and trains a lightweight linear probe on the resulting trajectory features. On the Glaive function-calling benchmark, spectral probes achieve AUC up to **0.971** and outperform SelfCheckGPT Consensus in hallucination recall at fixed precision.
+**Spectral Veto** exploits this signal. It extracts the per-layer Fiedler trajectory from a single forward pass, applies GPU Lanczos on a tool-call subgraph (O(kN²) vs. O(N³) for dense eigendecomposition), and trains a lightweight linear probe on the resulting trajectory features. On the Glaive function-calling benchmark, a logistic regression over rich spectral trajectories (FFT, segmental, cross-metric features) achieves **0.856–0.905** AUC from spectral signal alone; the hybrid system reaches **0.971** AUC — deployment-grade at 80% hallucination recall with 90% precision.
 
 ---
 
@@ -68,22 +68,26 @@ Evaluated on the same dataset with the same stored labels. Spectral Veto require
 
 ### Probe Performance (N=1000, 70/15/15 Template-Consistent Split, Glaive general domain)
 
-| Model           | Method         | AUC       | Halluc. Recall@P80 | Halluc. Prec@P80 |
-|-----------------|----------------|-----------|---------------------|-------------------|
-| Llama-1B        | Hidden probe   | **0.832** | —                   | —                 |
-| Llama-1B        | Spectral sweep | 0.773     | —                   | —                 |
-| Llama-1B        | Hybrid         | **0.971** | 80.0%               | 90.0%             |
-| Llama-3B        | Hidden probe   | **0.918** | —                   | —                 |
-| Llama-3B        | Spectral sweep | 0.767     | —                   | —                 |
-| Llama-3B        | Hybrid         | **0.925** | 80.0%               | 81.3%             |
-| Qwen 3.5-2B     | Hidden probe   | **0.955** | —                   | —                 |
-| Qwen 3.5-2B     | Spectral sweep | 0.818     | —                   | —                 |
-| Qwen 3.5-2B     | Hybrid         | **0.945** | 81.4%               | 82.8%             |
-| Llama-3.1-8B    | Hidden probe   | **0.871** | —                   | —                 |
-| Llama-3.1-8B    | Spectral sweep | 0.755     | —                   | —                 |
-| Llama-3.1-8B    | Hybrid         | **0.871** | 80.9%               | 70.8%             |
+| Model           | Method              | AUC       | Halluc. Recall@P80 | Halluc. Prec@P80 |
+|-----------------|---------------------|-----------|---------------------|-------------------|
+| Llama-1B        | Hidden probe        | **0.832** | —                   | —                 |
+| Llama-1B        | Spectral sweep      | 0.773     | —                   | —                 |
+| Llama-1B        | Spectral Rich (LR)  | **0.856** | —                   | —                 |
+| Llama-1B        | Hybrid              | **0.971** | 80.0%               | 90.0%             |
+| Llama-3B        | Hidden probe        | **0.918** | —                   | —                 |
+| Llama-3B        | Spectral sweep      | 0.767     | —                   | —                 |
+| Llama-3B        | Spectral Rich (LR)  | **0.896** | —                   | —                 |
+| Llama-3B        | Hybrid              | **0.925** | 80.0%               | 81.3%             |
+| Qwen 3.5-2B     | Hidden probe        | **0.955** | —                   | —                 |
+| Qwen 3.5-2B     | Spectral sweep      | 0.818     | —                   | —                 |
+| Qwen 3.5-2B     | Spectral Rich (LR)  | **0.905** | —                   | —                 |
+| Qwen 3.5-2B     | Hybrid              | **0.945** | 81.4%               | 82.8%             |
+| Llama-3.1-8B    | Hidden probe        | **0.871** | —                   | —                 |
+| Llama-3.1-8B    | Spectral sweep      | 0.755     | —                   | —                 |
+| Llama-3.1-8B    | Spectral Rich (LR)  | **0.888** | —                   | —                 |
+| Llama-3.1-8B    | Hybrid              | **0.871** | 80.9%               | 70.8%             |
 
-> All four models evaluated on held-out test split (template-consistent; no prompt template seen at training appears in test). Hidden probes reach AUC **0.832–0.955**; the 1B hybrid achieves **0.971** — deployment-grade at 80% hallucination recall with 90% precision. Spectral sweep alone (no training, no stored labels) consistently achieves **0.755–0.818** AUC, confirming the topological signal generalises across architectures and scales. For Qwen 3.5-2B and Llama-3.1-8B the optimal spectral mixing weight is 0 (pure probe at best), marking the frontier where richer hidden-state geometry supersedes sparse spectral features.
+> All four models evaluated on held-out test split (template-consistent; no prompt template seen at training appears in test). Hidden probes reach AUC **0.832–0.955**; the 1B hybrid achieves **0.971** — deployment-grade at 80% hallucination recall with 90% precision. **Spectral Rich** — a logistic regression over 135–200 multi-layer trajectory, segmental, and FFT features — reaches **0.856–0.905** from spectral features alone, closing most of the gap to hidden-state probes without any access to hidden representations. Spectral sweep alone (no training, no stored labels) consistently achieves **0.755–0.818** AUC, confirming the topological signal generalises across architectures and scales.
 
 ### Scaling: Spectral Discriminability vs. Model Capacity
 
@@ -159,10 +163,17 @@ python cli.py sweep \
   --data-dir data/n1000_gor_3b/ \
   --plots
 
-# Train linear probe
+# Train hidden-state probe
 python cli.py train-probe \
   --model llama3b \
   --feature-type hidden \
+  --output-dir data/n1000_gor_3b/ \
+  --data-dir data/n1000_gor_3b/
+
+# Train rich spectral probe (multi-layer traj + FFT + cross-metric, no GPU needed)
+python cli.py train-probe \
+  --model llama3b \
+  --feature-type spectral_rich \
   --output-dir data/n1000_gor_3b/ \
   --data-dir data/n1000_gor_3b/
 

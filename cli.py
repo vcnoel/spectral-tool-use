@@ -3,6 +3,7 @@ import sys
 import json
 import os
 import time
+import hashlib
 import torch
 import numpy as np
 from pathlib import Path
@@ -34,8 +35,11 @@ def get_content_split_indices(samples, train_ratio=0.7, val_ratio=0.15, seed=42)
     # Group samples by prompt_hash (or fallback to chat content if not in JSONL)
     groups = {}
     for i, s in enumerate(samples):
-        # Prefer prompt_hash saved during extract, fallback to ground_truth or idx if missing
-        pid = s.get('prompt_hash') or hash(s.get('ground_truth', str(i)))
+        # Prefer prompt_hash saved during extract; fallback is deterministic SHA256
+        # (never Python's hash(), which is randomized per-process since Python 3.3)
+        pid = s.get('prompt_hash') or hashlib.sha256(
+            s.get('ground_truth', str(i)).encode('utf-8', errors='replace')
+        ).hexdigest()
         if pid not in groups: groups[pid] = []
         groups[pid].append(i)
         
@@ -190,6 +194,98 @@ def compute_trajectory_features(samples: list, n_layers: int, metrics: list = No
                 s[f"Ltrajectory_{m}_auc"] = np.trapezoid(profile)
             else:
                 s[f"Ltrajectory_{m}_auc"] = np.trapz(profile)
+
+_SPECTRAL_METRICS = ["fiedler_value", "smoothness_index", "spectral_entropy", "energy", "hfer"]
+
+def compute_rich_spectral_features(raw_samples: list) -> np.ndarray:
+    """
+    Rich spectral feature matrix for spectral_rich probe mode.
+
+    For each sample, stacks:
+      - Trajectory stats (15 per metric × 5 metrics = 75 dim): mean, std, slope,
+        early-late delta, min-step, max-step, step-std, AUC, range, skew,
+        kurtosis, mid-mean, early/late ratio, inflection count, argmin position.
+      - Segmental features (8 per metric × 5 metrics = 40 dim): mean and std of
+        4 equal temporal segments.
+      - FFT magnitude (norm. by L, half-spectrum, per metric) concatenated.
+
+    Total dimension is 115 + L//2+1 per metric (architecture-dependent).
+    Returns (N, D) float32 array, NaN-safe.
+    """
+    from scipy import stats as sp_stats
+
+    N = len(raw_samples)
+    if N == 0:
+        return np.empty((0, 0), dtype=np.float32)
+
+    ld0 = raw_samples[0].get('layer_diagnostics', [])
+    L = len(ld0)
+    if L == 0:
+        return np.empty((N, 0), dtype=np.float32)
+
+    # Build (N, L, M) tensor
+    M = len(_SPECTRAL_METRICS)
+    T = np.zeros((N, L, M), dtype=np.float64)
+    for i, s in enumerate(raw_samples):
+        for li, layer in enumerate(s.get('layer_diagnostics', [])):
+            for mi, m in enumerate(_SPECTRAL_METRICS):
+                T[i, li, mi] = float(layer.get(m, 0.0) or 0.0)
+
+    feats = []
+
+    for mi in range(M):
+        traj = T[:, :, mi]          # (N, L)
+
+        # ── 15 trajectory statistics ──────────────────────────────────────────
+        x = np.arange(L, dtype=float)
+        q = max(1, L // 4)
+
+        feats.append(traj.mean(axis=1))
+        feats.append(traj.std(axis=1))
+        feats.append(np.array([np.polyfit(x, t, 1)[0] for t in traj]))
+        feats.append(traj[:, -q:].mean(axis=1) - traj[:, :q].mean(axis=1))
+
+        diffs = np.diff(traj, axis=1) if L > 1 else np.zeros((N, 1))
+        feats.append(diffs.min(axis=1))
+        feats.append(diffs.max(axis=1))
+        feats.append(diffs.std(axis=1))
+
+        auc_trap = np.trapz(traj, axis=1) if not hasattr(np, 'trapezoid') else np.trapezoid(traj, axis=1)
+        feats.append(auc_trap / max(L, 1))
+        feats.append(traj.max(axis=1) - traj.min(axis=1))
+        feats.append(sp_stats.skew(traj, axis=1))
+        feats.append(sp_stats.kurtosis(traj, axis=1))
+
+        m0, m1 = L // 3, max(L // 3 + 1, 2 * L // 3)
+        feats.append(traj[:, m0:m1].mean(axis=1))
+
+        early_m = traj[:, :q].mean(axis=1)
+        late_m  = traj[:, -q:].mean(axis=1)
+        feats.append(np.where(np.abs(early_m) > 1e-9, late_m / (early_m + 1e-9), 0.0))
+
+        if L > 2:
+            d2 = np.diff(traj, n=2, axis=1)
+            feats.append((np.diff(np.sign(d2), axis=1) != 0).sum(axis=1).astype(float))
+        else:
+            feats.append(np.zeros(N))
+
+        feats.append(traj.argmin(axis=1).astype(float) / max(L - 1, 1))
+
+        # ── 8 segmental features (4 segments × mean+std) ─────────────────────
+        segs = np.array_split(np.arange(L), 4)
+        for seg in segs:
+            sl = traj[:, seg]
+            feats.append(sl.mean(axis=1))
+            feats.append(sl.std(axis=1))
+
+        # ── FFT magnitude (half-spectrum, normalised) ─────────────────────────
+        fft_mag = np.abs(np.fft.rfft(traj, axis=1)) / max(L, 1)
+        for fi in range(fft_mag.shape[1]):
+            feats.append(fft_mag[:, fi])
+
+    X = np.column_stack(feats).astype(np.float32)
+    X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+    return X
 
 def flatten_sample(s: dict) -> dict:
     """
@@ -414,38 +510,75 @@ def handle_train_probe(args):
     with open(input_file, 'r', encoding='utf-8') as f:
         raw_samples = [json.loads(line) for line in f]
     samples = [flatten_sample(s) for s in raw_samples]
+    y = np.array([s['label'] for s in samples])
 
-    X, y = [], []
+    train_idx, val_idx, test_idx = get_content_split_indices(samples)
+    print(f"[train-probe] Split: {len(train_idx)} Train, {len(val_idx)} Val, {len(test_idx)} Test (Template-Consistent)")
+
+    if args.feature_type == "spectral_rich":
+        import pickle
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.preprocessing import StandardScaler
+        from sklearn.pipeline import Pipeline
+        from sklearn.metrics import roc_auc_score
+
+        X = compute_rich_spectral_features(raw_samples)
+        print(f"[spectral_rich] Feature matrix: {X.shape}")
+
+        best_C, best_val_auc = 1.0, 0.0
+        for C in [0.001, 0.01, 0.1, 1.0, 10.0]:
+            try:
+                pipe = Pipeline([('sc', StandardScaler()), ('lr', LogisticRegression(C=C, max_iter=1000, class_weight='balanced'))])
+                pipe.fit(X[train_idx], y[train_idx])
+                val_auc = roc_auc_score(y[val_idx], pipe.predict_proba(X[val_idx])[:, 1])
+                if val_auc > best_val_auc:
+                    best_val_auc, best_C = val_auc, C
+            except Exception:
+                pass
+
+        pipe = Pipeline([('sc', StandardScaler()), ('lr', LogisticRegression(C=best_C, max_iter=1000, class_weight='balanced'))])
+        trainval_idx = list(train_idx) + list(val_idx)
+        pipe.fit(X[trainval_idx], y[trainval_idx])
+        test_scores = pipe.predict_proba(X[test_idx])[:, 1]
+        test_auc = roc_auc_score(y[test_idx], test_scores)
+        print(f"[spectral_rich] Best C={best_C}  Val AUC={best_val_auc:.4f}  Test AUC={test_auc:.4f}")
+
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        probe_name = f"probe_{args.model}_spectral_rich.pkl"
+        with open(output_dir / probe_name, 'wb') as pf:
+            pickle.dump(pipe, pf)
+        print(f"[spectral_rich] Saved to {output_dir / probe_name}")
+        return
+
+    X, y_list = [], []
     for ex in samples:
         features = []
         if args.feature_type in ["hidden", "combined"]:
             hidden_keys = sorted([k for k in samples[0].keys() if k.endswith("_hidden")])
             for k in hidden_keys: features.extend(ex.get(k, []))
         if args.feature_type in ["spectral", "combined"]:
-            spec_keys = sorted([k for k in samples[0].keys() if any(k.endswith(f"_{m}") for m in ["hfer", "fiedler_value", "smoothness_index", "spectral_entropy"]) and k.startswith("L") and not k.endswith("_hidden")])
+            spec_keys = sorted([k for k in samples[0].keys() if any(k.endswith(f"_{m}") for m in ["hfer", "fiedler_value", "smoothness_index", "spectral_entropy", "energy"]) and k.startswith("L") and not k.endswith("_hidden")])
             features.extend([ex.get(k, 0.0) for k in spec_keys])
-        X.append(features); y.append(ex.get('label', 0))
+        X.append(features); y_list.append(ex.get('label', 0))
 
-    X, y = np.array(X), np.array(y)
-    train_idx, val_idx, test_idx = get_content_split_indices(samples)
+    X, y = np.array(X), np.array(y_list)
     X_train, X_val, X_test = X[train_idx], X[val_idx], X[test_idx]
     y_train, y_val, y_test = y[train_idx], y[val_idx], y[test_idx]
-    
-    print(f"[train-probe] Split: {len(X_train)} Train, {len(X_val)} Val, {len(X_test)} Test (Template-Consistent)")
 
     y_train_np = np.array(y_train)
     weights = compute_class_weight('balanced', classes=np.array([0,1]), y=y_train_np)
     pos_weight = torch.tensor(weights[1] / weights[0], dtype=torch.float32)
-    
+
     probe = HallucinationProbe(input_dim=X_train.shape[1])
-    trained_probe, _ = train_probe(probe, X_train, y_train, X_val, y_val, 
+    trained_probe, _ = train_probe(probe, X_train, y_train, X_val, y_val,
                                  epochs=args.epochs, patience=args.patience,
                                  pos_weight=pos_weight)
-    
+
     output_dir = Path(args.output_dir); output_dir.mkdir(parents=True, exist_ok=True)
     probe_name = f"probe_{args.model}_{args.feature_type}.pt"
     torch.save({'state_dict': trained_probe.state_dict(), 'input_dim': X_train.shape[1]}, output_dir / probe_name)
-    
+
     metrics = evaluate_probe(trained_probe, X_test, y_test)
     print_summary_table({k: v for k, v in metrics.items() if k not in ('y_true', 'y_score')}, f"Probe Results ({args.model}) - TEST SPLIT")
 
@@ -461,6 +594,7 @@ def handle_evaluate(args):
     
     # Template-Consistent split enforcement
     _, _, test_idx = get_content_split_indices(samples)
+    raw_samples_test = [raw_samples[i] for i in test_idx]
     samples = [samples[i] for i in test_idx]
     y_true = np.array([s['label'] for s in samples])
     
@@ -508,42 +642,57 @@ def handle_evaluate(args):
                 print(f"--- SPECTRAL EVAL ({key}) ---\n  AUC: {auc:.4f}\n  Cohen's d: {d:.4f}\n")
 
     if args.mode in ["probe", "all", "hybrid"]:
-        probe_name = f"probe_{args.model}_{args.feature_type}.pt"
-        probe_path = Path(args.output_dir) / probe_name
-        if probe_path.exists():
-            checkpoint = torch.load(probe_path, map_location='cpu', weights_only=False)
-            
-            # Reconstruct feature vector based on type (same logic as handle_train_probe)
-            X = []
-            for ex in samples:
-                features = []
-                if args.feature_type in ["hidden", "combined"]:
-                    hidden_keys = sorted([k for k in samples[0].keys() if k.endswith("_hidden")])
-                    for k in hidden_keys: features.extend(ex.get(k, []))
-                if args.feature_type in ["spectral", "combined"]:
-                    spec_keys = sorted([k for k in samples[0].keys() if any(k.endswith(f"_{m}") for m in ["hfer", "fiedler_value", "smoothness_index", "spectral_entropy"]) and k.startswith("L") and not k.endswith("_hidden")])
-                    features.extend([ex.get(k, 0.0) for k in spec_keys])
-                X.append(features)
-            X = np.array(X)
-            
-            # Verify checkpoint dimension matches current data
-            ckpt = torch.load(probe_path, map_location='cpu', weights_only=False)
-            if 'state_dict' in ckpt:
-                saved_dim = ckpt['state_dict']['net.0.weight'].shape[1]
+        if args.feature_type == "spectral_rich":
+            import pickle
+            from sklearn.metrics import roc_auc_score as sk_roc_auc
+            probe_name = f"probe_{args.model}_spectral_rich.pkl"
+            probe_path = Path(args.output_dir) / probe_name
+            if not probe_path.exists():
+                print(f"[ERROR] {probe_path} not found — run train-probe --feature-type spectral_rich first")
             else:
-                saved_dim = ckpt['net.0.weight'].shape[1]
-                
-            expected_dim = X.shape[1]
-            if saved_dim != expected_dim:
-                print(f"[ERROR] Probe dim mismatch: saved={saved_dim} expected={expected_dim}")
-                print(f"[ERROR] Delete {probe_path} and re-run train-probe")
-                return
-                
-            probe = HallucinationProbe(input_dim=X.shape[1])
-            probe.load_state_dict(ckpt['state_dict'] if 'state_dict' in ckpt else ckpt)
-            metrics = evaluate_probe(probe, X, y_true)
-            probe_scores = np.array(metrics['y_score'])
-            print(f"--- PROBE EVAL ---\n  Accuracy: {metrics['accuracy']:.4f}\n  AUC: {metrics['auc']:.4f}\n")
+                with open(probe_path, 'rb') as pf:
+                    pipe = pickle.load(pf)
+                X_rich = compute_rich_spectral_features(raw_samples_test)
+                probe_scores = pipe.predict_proba(X_rich)[:, 1]
+                test_auc = sk_roc_auc(y_true, probe_scores)
+                print(f"--- PROBE EVAL (spectral_rich) ---\n  AUC: {test_auc:.4f}  dim={X_rich.shape[1]}\n")
+        else:
+            probe_name = f"probe_{args.model}_{args.feature_type}.pt"
+            probe_path = Path(args.output_dir) / probe_name
+            if probe_path.exists():
+                checkpoint = torch.load(probe_path, map_location='cpu', weights_only=False)
+
+                # Reconstruct feature vector based on type (same logic as handle_train_probe)
+                X = []
+                for ex in samples:
+                    features = []
+                    if args.feature_type in ["hidden", "combined"]:
+                        hidden_keys = sorted([k for k in samples[0].keys() if k.endswith("_hidden")])
+                        for k in hidden_keys: features.extend(ex.get(k, []))
+                    if args.feature_type in ["spectral", "combined"]:
+                        spec_keys = sorted([k for k in samples[0].keys() if any(k.endswith(f"_{m}") for m in ["hfer", "fiedler_value", "smoothness_index", "spectral_entropy", "energy"]) and k.startswith("L") and not k.endswith("_hidden")])
+                        features.extend([ex.get(k, 0.0) for k in spec_keys])
+                    X.append(features)
+                X = np.array(X)
+
+                # Verify checkpoint dimension matches current data
+                ckpt = torch.load(probe_path, map_location='cpu', weights_only=False)
+                if 'state_dict' in ckpt:
+                    saved_dim = ckpt['state_dict']['net.0.weight'].shape[1]
+                else:
+                    saved_dim = ckpt['net.0.weight'].shape[1]
+
+                expected_dim = X.shape[1]
+                if saved_dim != expected_dim:
+                    print(f"[ERROR] Probe dim mismatch: saved={saved_dim} expected={expected_dim}")
+                    print(f"[ERROR] Delete {probe_path} and re-run train-probe")
+                    return
+
+                probe = HallucinationProbe(input_dim=X.shape[1])
+                probe.load_state_dict(ckpt['state_dict'] if 'state_dict' in ckpt else ckpt)
+                metrics = evaluate_probe(probe, X, y_true)
+                probe_scores = np.array(metrics['y_score'])
+                print(f"--- PROBE EVAL ---\n  Accuracy: {metrics['accuracy']:.4f}\n  AUC: {metrics['auc']:.4f}\n")
 
     if args.mode == "hybrid" and spectral_scores is not None and probe_scores is not None:
         # 1. Recalculate raw spectral scores
@@ -1347,7 +1496,7 @@ def main():
     p_probe = subparsers.add_parser("train-probe", parents=[parent_parser])
     p_probe.add_argument("--model", choices=list(MODEL_REGISTRY.keys()), required=True)
     p_probe.add_argument("--domain", choices=["general", "finance", "math"], default="general")
-    p_probe.add_argument("--feature-type", choices=["hidden", "spectral", "combined"], default="hidden")
+    p_probe.add_argument("--feature-type", choices=["hidden", "spectral", "combined", "spectral_rich"], default="hidden")
     p_probe.add_argument("--epochs", type=int, default=50)
     p_probe.add_argument("--patience", type=int, default=5)
     
@@ -1356,7 +1505,7 @@ def main():
     p_eval.add_argument("--model", choices=list(MODEL_REGISTRY.keys()), required=True)
     p_eval.add_argument("--domain", choices=["general", "finance", "math"], default="general")
     p_eval.add_argument("--mode", choices=["spectral", "probe", "all", "hybrid"], default="all")
-    p_eval.add_argument("--feature-type", choices=["hidden", "spectral", "combined"], default="hidden")
+    p_eval.add_argument("--feature-type", choices=["hidden", "spectral", "combined", "spectral_rich"], default="hidden")
     p_eval.add_argument("--optimize-for", type=str, choices=["recall80", "recall90", "precision80", "f1"], help="Target metric for threshold optimization")
     p_eval.add_argument("--plots", action="store_true", help="Generate performance visualization plots")
     
