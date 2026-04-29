@@ -54,26 +54,29 @@ Consensus at N=5 is essentially random (AUC ~0.50) at 5× inference cost. Spectr
 
 ### Probe Performance (N=1000, 70/15/15 template-consistent split)
 
-| Model        | Method             | AUC       | Halluc. Recall@P80 | Halluc. Prec@P80 |
-|--------------|--------------------|-----------|--------------------|------------------|
-| Llama-1B     | Hidden probe       | 0.832     | —                  | —                |
-| Llama-1B     | Spectral sweep     | 0.773     | —                  | —                |
-| Llama-1B     | Spectral Rich (LR) | **0.856** | —                  | —                |
-| Llama-1B     | Hybrid             | **0.971** | 80.0%              | 90.0%            |
-| Llama-3B     | Hidden probe       | **0.918** | —                  | —                |
-| Llama-3B     | Spectral sweep     | 0.767     | —                  | —                |
-| Llama-3B     | Spectral Rich (LR) | 0.896     | —                  | —                |
-| Llama-3B     | Hybrid             | **0.925** | 80.0%              | 81.3%            |
-| Qwen 3.5-2B  | Hidden probe       | **0.955** | —                  | —                |
-| Qwen 3.5-2B  | Spectral sweep     | 0.818     | —                  | —                |
-| Qwen 3.5-2B  | Spectral Rich (LR) | 0.905     | —                  | —                |
-| Qwen 3.5-2B  | Hybrid             | **0.945** | 81.4%              | 82.8%            |
-| Llama-3.1-8B | Hidden probe       | 0.871     | —                  | —                |
-| Llama-3.1-8B | Spectral sweep     | 0.755     | —                  | —                |
-| Llama-3.1-8B | Spectral Rich (LR) | **0.888** | —                  | —                |
-| Llama-3.1-8B | Hybrid             | 0.871     | 80.9%              | 70.8%            |
+| Model        | Method                        | AUC       | Halluc. Recall@P80 | Halluc. Prec@P80 |
+|--------------|-------------------------------|-----------|--------------------|------------------|
+| Llama-1B     | Hidden probe                  | 0.832     | —                  | —                |
+| Llama-1B     | Spectral sweep                | 0.773     | —                  | —                |
+| Llama-1B     | Spectral Rich (LR)            | **0.856** | —                  | —                |
+| Llama-1B     | Hybrid (hidden + sweep)       | **0.971** | 80.0%              | 90.0%            |
+| Llama-3B     | Hidden probe                  | **0.918** | —                  | —                |
+| Llama-3B     | Spectral sweep                | 0.767     | —                  | —                |
+| Llama-3B     | Spectral Rich (LR)            | 0.896     | —                  | —                |
+| Llama-3B     | Hybrid (hidden + sweep)       | **0.925** | 80.0%              | 81.3%            |
+| Qwen 3.5-2B  | Hidden probe                  | **0.955** | —                  | —                |
+| Qwen 3.5-2B  | Spectral sweep                | 0.818     | —                  | —                |
+| Qwen 3.5-2B  | Spectral Rich (LR)            | 0.905     | —                  | —                |
+| Qwen 3.5-2B  | Hybrid (hidden + sweep)       | 0.945     | 81.4%              | 82.8%            |
+| Qwen 3.5-2B  | Hybrid (spectral rich + sweep)| **0.949** | 80.0%              | 85.7%            |
+| Llama-3.1-8B | Hidden probe                  | 0.871     | —                  | —                |
+| Llama-3.1-8B | Spectral sweep                | 0.755     | —                  | —                |
+| Llama-3.1-8B | Spectral Rich (LR)            | **0.888** | —                  | —                |
+| Llama-3.1-8B | Hybrid (hidden + sweep)       | 0.871     | 80.9%              | 70.8%            |
 
 All results on held-out test split (template-consistent — no prompt template seen at training appears in test). **Spectral Rich** is a logistic regression over 135–200 multi-layer trajectory, segmental, and FFT features extracted purely from attention graphs; it requires no hidden-state access and closes most of the gap to hidden-state probes. The 1B hybrid achieves deployment-grade quality: 80% hallucination recall at 90% precision.
+
+For Qwen 3.5-2B, the spectral sweep (trajectory smoothness delta) and Spectral Rich probe capture complementary structure — their equal-weight hybrid reaches **0.949 AUC**, marginally exceeding the hidden+sweep hybrid from purely spectral features with no access to hidden states. For Llama models the Spectral Rich probe already absorbs the sweep signal (optimal α ≈ 0).
 
 ### Spectral Discriminability vs. Model Capacity
 
