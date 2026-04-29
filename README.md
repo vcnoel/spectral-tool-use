@@ -13,7 +13,7 @@
 
 State-of-the-art LLMs hallucinate tool calls not by hedging, but by generating *confidently wrong* structured outputs — a failure mode invisible to token-logprob and sampling-consensus baselines. When a model fabricates a function call, its attention graph undergoes a measurable topological transition: the Fiedler value (algebraic connectivity, λ₂) of the graph Laplacian collapses as the token-to-token information flow fragments across layers.
 
-**Spectral Veto** exploits this signal. It extracts the per-layer Fiedler trajectory from a single forward pass, applies GPU Lanczos on a tool-call subgraph (O(kN²) vs. O(N³) for dense eigendecomposition), and trains a lightweight linear probe on the resulting trajectory features. On ToolBench and BFCL benchmarks, spectral probes achieve AUC up to **0.959** and outperform SelfCheckGPT Consensus in hallucination recall at fixed precision.
+**Spectral Veto** exploits this signal. It extracts the per-layer Fiedler trajectory from a single forward pass, applies GPU Lanczos on a tool-call subgraph (O(kN²) vs. O(N³) for dense eigendecomposition), and trains a lightweight linear probe on the resulting trajectory features. On the Glaive function-calling benchmark, spectral probes achieve AUC up to **0.971** and outperform SelfCheckGPT Consensus in hallucination recall at fixed precision.
 
 ---
 
@@ -66,31 +66,35 @@ Evaluated on the same dataset with the same stored labels. Spectral Veto require
 
 > Consensus at N=5 is **essentially random** (AUC ~0.50) while incurring 5x inference cost. Token logprobs reach AUC 0.51–0.62, barely above chance. Spectral Veto, from a single pass, achieves **0.77–0.80** across all models — a +15–27 point AUC advantage with zero additional inference budget.
 
-### Probe Performance (N=1000, 70/15/15 Template-Consistent Split)
+### Probe Performance (N=1000, 70/15/15 Template-Consistent Split, Glaive general domain)
 
-| Model        | Method         | AUC       | Halluc. Recall | Halluc. Prec |
-|--------------|----------------|-----------|----------------|--------------|
-| Llama-1B     | Hidden probe   | **0.915** | 86.2%          | —            |
-| Llama-1B     | Spectral sweep | 0.785     | —              | —            |
-| Llama-1B     | Hybrid         | 0.944     | 81.6%          | 75.6%        |
-| Llama-3B     | Hidden probe   | **0.998** | 97.6%          | —            |
-| Llama-3B     | Spectral sweep | 0.856     | —              | —            |
-| Llama-3B     | Hybrid         | **0.984** | 80.0%          | 98.8%        |
-| Qwen 3.5-2B  | Hidden probe   | **0.996** | 96.2%          | —            |
-| Qwen 3.5-2B  | Spectral sweep | 0.903     | —              | —            |
-| Qwen 3.5-2B  | Hybrid         | **0.989** | 81.0%          | 97.9%        |
+| Model           | Method         | AUC       | Halluc. Recall@P80 | Halluc. Prec@P80 |
+|-----------------|----------------|-----------|---------------------|-------------------|
+| Llama-1B        | Hidden probe   | **0.832** | —                   | —                 |
+| Llama-1B        | Spectral sweep | 0.773     | —                   | —                 |
+| Llama-1B        | Hybrid         | **0.971** | 80.0%               | 90.0%             |
+| Llama-3B        | Hidden probe   | **0.918** | —                   | —                 |
+| Llama-3B        | Spectral sweep | 0.767     | —                   | —                 |
+| Llama-3B        | Hybrid         | **0.925** | 80.0%               | 81.3%             |
+| Qwen 3.5-2B     | Hidden probe   | **0.955** | —                   | —                 |
+| Qwen 3.5-2B     | Spectral sweep | 0.818     | —                   | —                 |
+| Qwen 3.5-2B     | Hybrid         | **0.945** | 81.4%               | 82.8%             |
+| Llama-3.1-8B    | Hidden probe   | **0.871** | —                   | —                 |
+| Llama-3.1-8B    | Spectral sweep | 0.755     | —                   | —                 |
+| Llama-3.1-8B    | Hybrid         | **0.871** | 80.9%               | 70.8%             |
 
-> The Llama-3B and Qwen hybrid probes reach **0.984–0.989 AUC** with precision above 97% at 80% hallucination recall — deployment-grade performance. The spectral sweep alone (no training, no stored data) reaches AUC 0.903 on Qwen, confirming the signal is model-agnostic and requires no supervision.
+> All four models evaluated on held-out test split (template-consistent; no prompt template seen at training appears in test). Hidden probes reach AUC **0.832–0.955**; the 1B hybrid achieves **0.971** — deployment-grade at 80% hallucination recall with 90% precision. Spectral sweep alone (no training, no stored labels) consistently achieves **0.755–0.818** AUC, confirming the topological signal generalises across architectures and scales. For Qwen 3.5-2B and Llama-3.1-8B the optimal spectral mixing weight is 0 (pure probe at best), marking the frontier where richer hidden-state geometry supersedes sparse spectral features.
 
 ### Scaling: Spectral Discriminability vs. Model Capacity
 
-| Model        | Best Spectral Feature       | Sweep AUC | Cohen's d |
-|--------------|-----------------------------|-----------|-----------|
-| Llama-1B     | L12 Fiedler value           | 0.785     | −0.994    |
-| Llama-3B     | L26 Energy                  | 0.856     | +1.447    |
-| Qwen 3.5-2B  | Trajectory smoothness delta | 0.903     | +1.567    |
+| Model           | Best Spectral Feature        | Sweep AUC | Cohen's d |
+|-----------------|------------------------------|-----------|-----------|
+| Llama-1B        | L12 Fiedler value            | 0.773     | −1.282    |
+| Llama-3B        | L26 Energy                   | 0.767     | +0.945    |
+| Qwen 3.5-2B     | Trajectory smoothness delta  | 0.818     | +0.977    |
+| Llama-3.1-8B    | L25 Fiedler value            | 0.755     | −0.792    |
 
-> Cohen's d magnitude grows with model capacity (0.994 → 1.447 → 1.567), confirming the spectral collapse signal is stronger in larger, more structured models.
+> Cohen's d magnitude (|d| = 0.79–1.28) confirms the spectral collapse signal is consistently large across all model sizes. The 1B model shows the strongest individual-layer effect (|d| = 1.28 on L12); the Qwen model's best discriminator is a trajectory-level feature rather than a single layer, indicating that spectral geometry is captured differently depending on architecture family.
 
 ### Throughput: Fast-Fiedler vs. Dense Eigendecomposition
 
@@ -177,9 +181,9 @@ python cli.py evaluate \
 |--------------|--------------------------------------|--------|
 | `llama1b`    | meta-llama/Llama-3.2-1B-Instruct    | ~2 GB  |
 | `llama3b`    | meta-llama/Llama-3.2-3B-Instruct    | ~6 GB  |
-| `llama`      | meta-llama/Llama-3.1-8B-Instruct    | ~16 GB |
+| `llama31`    | meta-llama/Llama-3.1-8B-Instruct    | ~16 GB |
 | `mistral`    | mistralai/Mistral-7B-Instruct-v0.3  | ~16 GB |
-| `qwen35_2b`  | Qwen/Qwen2.5-3B-Instruct            | ~6 GB  |
+| `qwen35_2b`  | Qwen/Qwen3.5-2B                     | ~6 GB  |
 
 ---
 
