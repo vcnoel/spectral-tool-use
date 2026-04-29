@@ -13,188 +13,138 @@
 
 State-of-the-art LLMs hallucinate tool calls not by hedging, but by generating *confidently wrong* structured outputs — a failure mode invisible to token-logprob and sampling-consensus baselines. When a model fabricates a function call, its attention graph undergoes a measurable topological transition: the Fiedler value (algebraic connectivity, λ₂) of the graph Laplacian collapses as the token-to-token information flow fragments across layers.
 
-**Spectral Veto** exploits this signal. It extracts the per-layer Fiedler trajectory from a single forward pass, applies GPU Lanczos on a tool-call subgraph (O(kN²) vs. O(N³) for dense eigendecomposition), and trains a lightweight linear probe on the resulting trajectory features. On the Glaive function-calling benchmark, a logistic regression over rich spectral trajectories (FFT, segmental, cross-metric features) achieves **0.856–0.905** AUC from spectral signal alone; the hybrid system reaches **0.971** AUC — deployment-grade at 80% hallucination recall with 90% precision.
+**Spectral Veto** exploits this signal. It extracts the per-layer Fiedler trajectory from a single forward pass, applies GPU Lanczos on a tool-call subgraph (O(kN²) vs. O(N³) for dense eigendecomposition), and trains a lightweight linear probe on the resulting trajectory features. On the Glaive function-calling benchmark, a logistic regression over rich spectral trajectories (FFT, segmental, and cross-metric features) achieves **0.856–0.905** AUC from spectral signal alone; the hybrid system reaches **0.971** AUC — deployment-grade at 80% hallucination recall with 90% precision.
 
 ---
 
 ## Architecture
 
-### Fast-Fiedler Pipeline
-
 ```mermaid
 flowchart LR
     A["LLM Forward Pass\n(single pass,\noutput_attentions=True)"] --> B
-
-    B["Tool-Call Token\nSpan Detection\nt_func -> t_end"] --> C
-
-    C["50-Token Subgraph\nSlicing\nA[t_func:t_end, t_func:t_end]"] --> D
-
-    D["Graph Laplacian\nL = D - W\n(sym. normalized)"] --> E
-
-    E["GPU Lanczos\nO(k*S^2), k=20, S<=50\nDirectedTopologist"] --> F
-
-    F["Fiedler Value\nlambda_2 per layer\n32-layer trajectory"] --> G
-
-    G["Spectral Veto\nLinear Probe\nAUC 0.891-0.959"]
+    B["Tool-Call Token\nSpan Detection\nt_func → t_end"] --> C
+    C["Subgraph Slicing\nS ≤ 50 tokens\nO(kS²) Lanczos"] --> D
+    D["Fiedler Trajectory\nλ₂ per layer\n(L layers)"] --> E
+    E["Rich Spectral Features\ntraj stats · FFT · segmental\ncross-metric ratios"] --> F
+    F["Spectral Veto\nLogistic Regression\nAUC 0.856–0.971"]
 ```
 
-### Full System
+**Pipeline:**
 
-```mermaid
-flowchart TD
-    DATA["Tool-Use Dataset\n(BFCL / ToolBench)"] --> PREP["cli.py prepare\nJSON schema bridge\nassign_label()"]
-    PREP --> EXTRACT["cli.py extract\n8-layer hidden states\n+ fast-fiedler GSP"]
-    EXTRACT --> PROBE["cli.py train-probe\nMMT trajectory features\n(delta, slope, flux, AUC)"]
-    PROBE --> EVAL["cli.py evaluate\nAUC, Recall@P80\nvs. SelfCheckGPT / Logprobs"]
-    EXTRACT --> SWEEP["cli.py sweep\nper-layer feature search\nbest lambda, metric, layer"]
+```
+cli.py prepare   →   cli.py extract   →   cli.py sweep
+                                      →   cli.py train-probe [--feature-type hidden|spectral_rich]
+                                      →   cli.py evaluate [--mode spectral|probe|hybrid]
 ```
 
 ---
 
 ## Results
 
-### vs. Industry Baselines (N=1000, single forward pass)
+### vs. Industry Baselines (N=1000, single forward pass, Glaive general domain)
 
-Evaluated on the same dataset with the same stored labels. Spectral Veto requires **no sampling overhead** — one forward pass, no additional generation.
+| Model        | Token Logprobs | SelfCheckGPT Consensus (N=5) | Spectral Veto | Best Spectral Feature |
+|--------------|:--------------:|:----------------------------:|:-------------:|-----------------------|
+| Llama-1B     | 0.510          | 0.508                        | **0.773**     | L12 Fiedler value     |
+| Llama-3B     | 0.615          | 0.505                        | **0.767**     | L26 Energy            |
+| Qwen 3.5-2B  | 0.579          | 0.512                        | **0.818**     | L3 Fiedler value      |
+| Llama-3.1-8B | 0.520          | —                            | **0.755**     | L25 Fiedler value     |
 
-| Model     | Token Logprobs | SelfCheckGPT Consensus (N=5) | Spectral Veto (ours) | Best Spectral Feature    |
-|-----------|:--------------:|:----------------------------:|:--------------------:|--------------------------|
-| Llama-1B  | 0.510          | 0.508                        | **0.770**            | L12 Fiedler value        |
-| Llama-3B  | 0.615          | 0.505                        | **0.766**            | L26 Energy               |
-| Llama-3.1 | 0.520          | —                            | **0.755**            | L25 Fiedler value        |
-| Qwen-2B   | 0.579          | 0.512                        | **0.801**            | L3 Fiedler value         |
+Consensus at N=5 is essentially random (AUC ~0.50) at 5× inference cost. Spectral Veto, from a single pass, achieves a +15–27 point AUC advantage with zero additional inference budget.
 
-> Consensus at N=5 is **essentially random** (AUC ~0.50) while incurring 5x inference cost. Token logprobs reach AUC 0.51–0.62, barely above chance. Spectral Veto, from a single pass, achieves **0.77–0.80** across all models — a +15–27 point AUC advantage with zero additional inference budget.
+### Probe Performance (N=1000, 70/15/15 template-consistent split)
 
-### Probe Performance (N=1000, 70/15/15 Template-Consistent Split, Glaive general domain)
+| Model        | Method             | AUC       | Halluc. Recall@P80 | Halluc. Prec@P80 |
+|--------------|--------------------|-----------|--------------------|------------------|
+| Llama-1B     | Hidden probe       | 0.832     | —                  | —                |
+| Llama-1B     | Spectral sweep     | 0.773     | —                  | —                |
+| Llama-1B     | Spectral Rich (LR) | **0.856** | —                  | —                |
+| Llama-1B     | Hybrid             | **0.971** | 80.0%              | 90.0%            |
+| Llama-3B     | Hidden probe       | **0.918** | —                  | —                |
+| Llama-3B     | Spectral sweep     | 0.767     | —                  | —                |
+| Llama-3B     | Spectral Rich (LR) | 0.896     | —                  | —                |
+| Llama-3B     | Hybrid             | **0.925** | 80.0%              | 81.3%            |
+| Qwen 3.5-2B  | Hidden probe       | **0.955** | —                  | —                |
+| Qwen 3.5-2B  | Spectral sweep     | 0.818     | —                  | —                |
+| Qwen 3.5-2B  | Spectral Rich (LR) | 0.905     | —                  | —                |
+| Qwen 3.5-2B  | Hybrid             | **0.945** | 81.4%              | 82.8%            |
+| Llama-3.1-8B | Hidden probe       | 0.871     | —                  | —                |
+| Llama-3.1-8B | Spectral sweep     | 0.755     | —                  | —                |
+| Llama-3.1-8B | Spectral Rich (LR) | **0.888** | —                  | —                |
+| Llama-3.1-8B | Hybrid             | 0.871     | 80.9%              | 70.8%            |
 
-| Model           | Method              | AUC       | Halluc. Recall@P80 | Halluc. Prec@P80 |
-|-----------------|---------------------|-----------|---------------------|-------------------|
-| Llama-1B        | Hidden probe        | **0.832** | —                   | —                 |
-| Llama-1B        | Spectral sweep      | 0.773     | —                   | —                 |
-| Llama-1B        | Spectral Rich (LR)  | **0.856** | —                   | —                 |
-| Llama-1B        | Hybrid              | **0.971** | 80.0%               | 90.0%             |
-| Llama-3B        | Hidden probe        | **0.918** | —                   | —                 |
-| Llama-3B        | Spectral sweep      | 0.767     | —                   | —                 |
-| Llama-3B        | Spectral Rich (LR)  | **0.896** | —                   | —                 |
-| Llama-3B        | Hybrid              | **0.925** | 80.0%               | 81.3%             |
-| Qwen 3.5-2B     | Hidden probe        | **0.955** | —                   | —                 |
-| Qwen 3.5-2B     | Spectral sweep      | 0.818     | —                   | —                 |
-| Qwen 3.5-2B     | Spectral Rich (LR)  | **0.905** | —                   | —                 |
-| Qwen 3.5-2B     | Hybrid              | **0.945** | 81.4%               | 82.8%             |
-| Llama-3.1-8B    | Hidden probe        | **0.871** | —                   | —                 |
-| Llama-3.1-8B    | Spectral sweep      | 0.755     | —                   | —                 |
-| Llama-3.1-8B    | Spectral Rich (LR)  | **0.888** | —                   | —                 |
-| Llama-3.1-8B    | Hybrid              | **0.871** | 80.9%               | 70.8%             |
+All results on held-out test split (template-consistent — no prompt template seen at training appears in test). **Spectral Rich** is a logistic regression over 135–200 multi-layer trajectory, segmental, and FFT features extracted purely from attention graphs; it requires no hidden-state access and closes most of the gap to hidden-state probes. The 1B hybrid achieves deployment-grade quality: 80% hallucination recall at 90% precision.
 
-> All four models evaluated on held-out test split (template-consistent; no prompt template seen at training appears in test). Hidden probes reach AUC **0.832–0.955**; the 1B hybrid achieves **0.971** — deployment-grade at 80% hallucination recall with 90% precision. **Spectral Rich** — a logistic regression over 135–200 multi-layer trajectory, segmental, and FFT features — reaches **0.856–0.905** from spectral features alone, closing most of the gap to hidden-state probes without any access to hidden representations. Spectral sweep alone (no training, no stored labels) consistently achieves **0.755–0.818** AUC, confirming the topological signal generalises across architectures and scales.
+### Spectral Discriminability vs. Model Capacity
 
-### Scaling: Spectral Discriminability vs. Model Capacity
+| Model        | Best Single Feature         | Sweep AUC | Cohen's d |
+|--------------|-----------------------------|-----------|-----------|
+| Llama-1B     | L12 Fiedler value           | 0.773     | −1.282    |
+| Llama-3B     | L26 Energy                  | 0.767     | +0.945    |
+| Qwen 3.5-2B  | Trajectory smoothness delta | 0.818     | +0.977    |
+| Llama-3.1-8B | L25 Fiedler value           | 0.755     | −0.792    |
 
-| Model           | Best Spectral Feature        | Sweep AUC | Cohen's d |
-|-----------------|------------------------------|-----------|-----------|
-| Llama-1B        | L12 Fiedler value            | 0.773     | −1.282    |
-| Llama-3B        | L26 Energy                   | 0.767     | +0.945    |
-| Qwen 3.5-2B     | Trajectory smoothness delta  | 0.818     | +0.977    |
-| Llama-3.1-8B    | L25 Fiedler value            | 0.755     | −0.792    |
-
-> Cohen's d magnitude (|d| = 0.79–1.28) confirms the spectral collapse signal is consistently large across all model sizes. The 1B model shows the strongest individual-layer effect (|d| = 1.28 on L12); the Qwen model's best discriminator is a trajectory-level feature rather than a single layer, indicating that spectral geometry is captured differently depending on architecture family.
+Cohen's d magnitude (|d| = 0.79–1.28) is consistently large across all model sizes, confirming the spectral collapse signal generalises across architectures.
 
 ### Throughput: Fast-Fiedler vs. Dense Eigendecomposition
 
-| Configuration                      | Spectral Step | End-to-End  |
-|------------------------------------|---------------|-------------|
-| Dense eigh x2 (N=468, 32 layers)   | 3359 ms       | ~11.4 s     |
-| GPU Lanczos (S=50, 32 layers)      | 19 ms         | ~8.0 s      |
-| **Speedup**                        | **177x**      | **~30%**    |
-
-Worst-case ToolBench records (previously 12 min/sample) now complete in **~8 seconds** end-to-end.
+| Configuration                     | Spectral step | End-to-end |
+|-----------------------------------|---------------|------------|
+| Dense eigh × 2 (N=468, 32 layers) | 3359 ms       | ~11.4 s    |
+| GPU Lanczos (S=50, 32 layers)     | 19 ms         | ~8.0 s     |
+| **Speedup**                       | **177×**      | **~30%**   |
 
 ---
 
 ## Installation
 
 ```bash
-# Core dependency (PyPI)
 pip install spectral_trust==0.2.1
-
-# Clone and install this repo
 git clone https://github.com/vcnoel/spectral-tool-use.git
 cd spectral-tool-use
 pip install -r requirements.txt
 ```
 
-**Hardware requirements:**
-- CUDA GPU (tested on RTX 4080 Super 16 GB)
-- BitsAndBytes for 4-bit NF4 quantization (7B+ models)
-- 8 GB+ VRAM for 1B-3B models; 16 GB for 7B
+**Hardware:** CUDA GPU required. ~2–6 GB VRAM for 1B–3B models; ~16 GB for 8B. BitsAndBytes 4-bit NF4 quantization enabled automatically for 7B+.
 
 ---
 
 ## Quickstart
 
-### ToolBench Audit (Fast-Fiedler, single forward pass)
-
 ```bash
-python cli.py audit \
-  --dataset data/hard_mode_datasets/toolbench_hard.jsonl \
-  --model mistralai/Mistral-7B-Instruct-v0.3 \
-  --output gsp_results/toolbench_fast_fiedler.jsonl \
-  --fast-fiedler \
-  --device cuda
-```
-
-### Full Extraction Pipeline
-
-```bash
-# Prepare labelled dataset
+# 1. Prepare labelled dataset from Glaive function-calling v2
 python cli.py prepare --domain general --n-samples 1000 --output-dir data/n1000/
 
-# Extract spectral + hidden-state features (~10 min/model on A100)
-python cli.py extract \
-  --model llama3b \
-  --output-dir data/n1000_gor_3b/ \
-  --data-dir data/n1000/
+# 2. Extract spectral + hidden-state features (~10 min/model on RTX 4080)
+python cli.py extract --model llama3b --output-dir data/n1000_3b/ --data-dir data/n1000/
 
-# Sweep for best layer/metric combination
-python cli.py sweep \
-  --model llama3b \
-  --output-dir data/n1000_gor_3b/ \
-  --data-dir data/n1000_gor_3b/ \
-  --plots
+# 3. Find best single layer/metric
+python cli.py sweep --model llama3b --output-dir data/n1000_3b/ --data-dir data/n1000_3b/ --plots
 
-# Train hidden-state probe
-python cli.py train-probe \
-  --model llama3b \
-  --feature-type hidden \
-  --output-dir data/n1000_gor_3b/ \
-  --data-dir data/n1000_gor_3b/
+# 4a. Train hidden-state probe
+python cli.py train-probe --model llama3b --feature-type hidden \
+  --output-dir data/n1000_3b/ --data-dir data/n1000_3b/
 
-# Train rich spectral probe (multi-layer traj + FFT + cross-metric, no GPU needed)
-python cli.py train-probe \
-  --model llama3b \
-  --feature-type spectral_rich \
-  --output-dir data/n1000_gor_3b/ \
-  --data-dir data/n1000_gor_3b/
+# 4b. Train rich spectral probe (no GPU needed at inference)
+python cli.py train-probe --model llama3b --feature-type spectral_rich \
+  --output-dir data/n1000_3b/ --data-dir data/n1000_3b/
 
-# Evaluate against baselines
-python cli.py evaluate \
-  --model llama3b \
-  --mode all \
-  --optimize-for recall80 \
-  --output-dir data/n1000_gor_3b/ \
-  --data-dir data/n1000_gor_3b/
+# 5. Evaluate (spectral sweep + probe + hybrid)
+python cli.py evaluate --model llama3b --mode all --optimize-for recall80 \
+  --output-dir data/n1000_3b/ --data-dir data/n1000_3b/
 ```
+
+To reproduce all four models at once, use `run_eval_all.py` (skips extraction, assumes features already extracted).
 
 ### Supported Models
 
-| CLI key      | Model                                | VRAM   |
-|--------------|--------------------------------------|--------|
-| `llama1b`    | meta-llama/Llama-3.2-1B-Instruct    | ~2 GB  |
-| `llama3b`    | meta-llama/Llama-3.2-3B-Instruct    | ~6 GB  |
-| `llama31`    | meta-llama/Llama-3.1-8B-Instruct    | ~16 GB |
-| `mistral`    | mistralai/Mistral-7B-Instruct-v0.3  | ~16 GB |
-| `qwen35_2b`  | Qwen/Qwen3.5-2B                     | ~6 GB  |
+| CLI key      | Model                               | VRAM   |
+|--------------|-------------------------------------|--------|
+| `llama1b`    | meta-llama/Llama-3.2-1B-Instruct   | ~2 GB  |
+| `llama3b`    | meta-llama/Llama-3.2-3B-Instruct   | ~6 GB  |
+| `llama31`    | meta-llama/Llama-3.1-8B-Instruct   | ~16 GB |
+| `mistral`    | mistralai/Mistral-7B-Instruct-v0.3 | ~16 GB |
+| `qwen35_2b`  | Qwen/Qwen3.5-2B                    | ~6 GB  |
 
 ---
 
@@ -202,30 +152,30 @@ python cli.py evaluate \
 
 ### Spectral Graph Signal Processing on Attention
 
-For each transformer layer l, the multi-head attention matrix A_h in R^(NxN) (N = sequence length) is aggregated across heads and symmetrized to form an undirected graph adjacency W_l. The graph Laplacian is:
+For each transformer layer l, the multi-head attention matrix A_h ∈ ℝ^(N×N) is aggregated across heads and symmetrized to form an undirected adjacency W_l. The graph Laplacian is:
 
 ```
-L_l = D_l - W_l
+L_l = D_l − W_l
 ```
 
-where D_l is the degree matrix. The Fiedler value λ₂(L_l) — the second-smallest eigenvalue — measures the algebraic connectivity of the attention graph. A drop in λ₂ indicates the graph is approaching disconnection: information pathways between tokens are severing.
+The Fiedler value λ₂(L_l) — the second-smallest eigenvalue — measures algebraic connectivity. A drop in λ₂ indicates the attention graph is approaching disconnection: information pathways between tokens are severing.
 
-### The Fiedler Trajectory
+### The Spectral Collapse Signature
 
-Across 32 layers, λ₂ traces a trajectory. Hallucinated tool calls exhibit a characteristic **spectral collapse signature**: a sharp drop in λ₂ at mid-to-late layers (layers 8-20), corresponding to the point where the model has committed to a syntactically valid but semantically incorrect function name before resolving arguments.
+Across L layers, λ₂ traces a trajectory. Hallucinated tool calls exhibit a characteristic **spectral collapse**: a sharp drop in λ₂ at mid-to-late layers, corresponding to the point where the model has committed to a syntactically valid but semantically incorrect function name before resolving arguments.
 
-The trajectory features (Multi-Modal Trajectory, MMT) — delta, slope, flux, max_jump, range, AUC — are the input to the linear probe.
+**Spectral Rich features** capture this collapse via five spectral metrics (Fiedler value, energy, smoothness index, spectral entropy, HFER), each represented by 15 trajectory statistics (mean, slope, delta, skewness, FFT harmonics, inflection count, …), 8 segmental means/stds, and the full FFT half-spectrum — 135–200 dimensions depending on model depth.
 
 ### Fast-Fiedler: Subgraph Lanczos
 
-For ToolBench records with N > 200 tokens, the full N×N Laplacian is intractable at inference time. Fast-Fiedler:
+For long sequences (N > 200 tokens), the full N×N Laplacian is intractable. Fast-Fiedler:
 
-1. Detects the tool-call token span `[t_func, t_end]` in the generated output
-2. Extracts the induced S×S subgraph (S ≤ 50) from the full attention adjacency
-3. Runs GPU Lanczos (k=20 Krylov steps) on L_sub — O(k·S²) instead of O(N³)
-4. Resolves the k×k tridiagonal T via `torch.linalg.eigvalsh`
+1. Detects the tool-call token span `[t_func, t_end]`
+2. Extracts the induced S×S subgraph (S ≤ 50)
+3. Runs GPU Lanczos (k=20 Krylov steps) — O(k·S²) instead of O(N³)
+4. Resolves the k×k tridiagonal via `torch.linalg.eigvalsh`
 
-This reduces the per-layer spectral step from 3.3 seconds to 19 ms (177×) with no loss in discriminative power for the tool-call-localized signal.
+This reduces the per-layer spectral step from 3.3 s to 19 ms (177×).
 
 ---
 
@@ -233,20 +183,28 @@ This reduces the per-layer spectral step from 3.3 seconds to 19 ms (177×) with 
 
 ```
 spectral-glaive/
-├── cli.py                          # Main CLI: prepare, extract, train-probe,
-│                                   #   evaluate, sweep, audit, logic-ensemble
+├── cli.py                           # All CLI commands: prepare, extract,
+│                                    #   sweep, train-probe, evaluate, audit
+├── run_eval_all.py                  # Reproduces all 4-model eval (no extraction)
 ├── spectral_guardrails/
 │   ├── probes/
-│   │   ├── features.py             # extract_probe_features, find_token_positions
-│   │   └── labeling.py             # assign_label (JSON-aware schema bridge)
+│   │   ├── features.py              # extract_probe_features, find_token_positions
+│   │   ├── labeling.py              # assign_label (JSON-aware schema bridge)
+│   │   └── mlp.py                   # HallucinationProbe (MLP), train_probe
 │   └── utils/
-│       ├── models.py               # load_model_and_tokenizer (BnB 4-bit NF4)
-│       └── data.py                 # normalize_tool_call, dataset loaders
-├── data/
-│   ├── hard_mode_datasets/         # ToolBench hard split (500 records)
-│   └── ...
-└── scratch/
-    └── eval_baselines.py           # SelfCheckGPT Consensus, Token Logprobs
+│       ├── models.py                # load_model_and_tokenizer (BnB 4-bit NF4)
+│       ├── data.py                  # normalize_tool_call, dataset loaders
+│       ├── metrics.py               # AUC, Cohen's d, threshold optimisation
+│       └── stats.py                 # summary stats helpers
+├── scratch/
+│   ├── eval_baselines.py            # SelfCheckGPT Consensus, Token Logprobs
+│   └── spectral_feature_mining.py   # Exhaustive multi-feature AUC sweep
+├── tests/
+│   ├── test_diagnostics.py
+│   └── test_labeling.py
+├── requirements.txt
+├── environment.yml
+└── CITATION.cff
 ```
 
 The `spectral_trust` library (graph construction, Laplacian, eigendecomposition, DirectedTopologist) lives at [github.com/vcnoel/spectral-trust](https://github.com/vcnoel/spectral-trust) and is installed via `pip install spectral_trust==0.2.1`.
