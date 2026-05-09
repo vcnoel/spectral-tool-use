@@ -1,90 +1,157 @@
-# Geometry of Reason: Spectral Guardrails for LLM Tool-Use
+# Does the Optimal Hallucination Detector for LLM Tool Calls Depend on Model Scale?
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![spectral-trust](https://img.shields.io/badge/spectral--trust-0.2.1-green)](https://pypi.org/project/spectral_trust/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![GPU: CUDA](https://img.shields.io/badge/GPU-CUDA-76b900.svg)](https://developer.nvidia.com/cuda-toolkit)
+[![ICML 2026](https://img.shields.io/badge/ICML-2026-purple.svg)](https://icml.cc/2026)
 
-> **Spectral Veto** detects LLM tool-use hallucination by measuring topological collapse in transformer attention graphs — catching confident, structurally wrong tool calls that consensus-based methods systematically miss.
+> **Short answer: yes, and the dependence is non-monotone.** This repository contains the code for the first controlled head-to-head comparison of spectral attention-graph detectors and token-role hidden-state probes for LLM tool-use hallucination across seven models (1B–14B).
 
 ---
 
 ## Abstract
 
-State-of-the-art LLMs hallucinate tool calls not by hedging, but by generating *confidently wrong* structured outputs — a failure mode invisible to token-logprob and sampling-consensus baselines. When a model fabricates a function call, its attention graph undergoes a measurable topological transition: the Fiedler value (algebraic connectivity, λ₂) of the graph Laplacian collapses as the token-to-token information flow fragments across layers.
+When an LLM agent hallucinates a tool call, it executes — no hedge, no uncertainty signal. Standard detection approaches fail structurally: token log-probabilities and sampling consensus score near chance (AUC 0.51–0.62) because hallucinated calls are syntactically valid and high-confidence.
 
-**Spectral Veto** exploits this signal. It extracts the per-layer Fiedler trajectory from a single forward pass, applies GPU Lanczos on a tool-call subgraph (O(kN²) vs. O(N³) for dense eigendecomposition), and trains a lightweight linear probe on the resulting trajectory features. On ToolBench and BFCL benchmarks, spectral probes achieve AUC up to **0.959** and outperform SelfCheckGPT Consensus in hallucination recall at fixed precision.
+Two independently developed supervised approaches can detect these failures from a single forward pass:
+- **Spectral attention topology** — tracks algebraic connectivity of per-layer attention graphs without accessing hidden states.
+- **Token-role hidden-state probing** — supervises an MLP on structural positions within the generated call.
 
----
+We provide the first head-to-head comparison across **seven models (1B to 14B)** on identical data, splits, and labels. The answer is **non-monotone**:
 
-## Architecture
+| Scale | Best Detector | AUC |
+|-------|--------------|-----|
+| ≤ 2B | Hidden (token-role probe) | 0.922–0.967 |
+| 3B | **LMM-GBT** (spectral, attention-only) | **0.957** |
+| 8B | SpRich (spectral trajectory) | 0.888 |
+| 14B | **LMM-GBT** | **0.917** |
 
-### Fast-Fiedler Pipeline
+Architecture matters independently: **grouped-query attention (GQA) collapses spectral trajectory statistics to near chance (AUC 0.432)** while per-layer LMM remains robust. Merging the two signals never helps.
 
-```mermaid
-flowchart LR
-    A["LLM Forward Pass\n(single pass,\noutput_attentions=True)"] --> B
-
-    B["Tool-Call Token\nSpan Detection\nt_func -> t_end"] --> C
-
-    C["50-Token Subgraph\nSlicing\nA[t_func:t_end, t_func:t_end]"] --> D
-
-    D["Graph Laplacian\nL = D - W\n(sym. normalized)"] --> E
-
-    E["GPU Lanczos\nO(k*S^2), k=20, S<=50\nDirectedTopologist"] --> F
-
-    F["Fiedler Value\nlambda_2 per layer\n32-layer trajectory"] --> G
-
-    G["Spectral Veto\nLinear Probe\nAUC 0.891-0.959"]
-```
-
-### Full System
-
-```mermaid
-flowchart TD
-    DATA["Tool-Use Dataset\n(BFCL / ToolBench)"] --> PREP["cli.py prepare\nJSON schema bridge\nassign_label()"]
-    PREP --> EXTRACT["cli.py extract\n8-layer hidden states\n+ fast-fiedler GSP"]
-    EXTRACT --> PROBE["cli.py train-probe\nMMT trajectory features\n(delta, slope, flux, AUC)"]
-    PROBE --> EVAL["cli.py evaluate\nAUC, Recall@P80\nvs. SelfCheckGPT / Logprobs"]
-    EXTRACT --> SWEEP["cli.py sweep\nper-layer feature search\nbest lambda, metric, layer"]
-```
+**The practical implication**: match the guardrail to model depth and attention architecture, not to signal combination.
 
 ---
 
-## Results
+## Key Findings
 
-### Scaling Curve (N=100, General Domain)
+### 1. Standard Signals Fail
 
-| Model        | Best Feature            | AUC   | Cohen's d | Layers |
-|--------------|-------------------------|-------|-----------|--------|
-| Llama-1B     | L4 HFER                 | 0.726 | 0.775     | 16     |
-| Llama-3B     | Smoothness Delta (MMT)  | 0.783 | 1.167     | 28     |
-| Qwen 3.5-2B  | L12 Fiedler Value       | 0.812 | 1.214     | 28     |
+Token log-probabilities and N=5 sampling consensus are near chance on every tested model. A single spectral metric with **no training** (Sweep) exceeds both baselines by 15–26 AUC points:
 
-> Fiedler value discriminability scales superlinearly with model capacity. The Cohen's d jump from 1B to 3B (0.775 to 1.167) indicates the signal strengthens as the model develops more structured internal representations.
+| Model | Logprobs | Consensus | Sweep (no training) |
+|-------|----------|-----------|---------------------|
+| Llama-1B | 0.510 | 0.508 | **0.773** |
+| Gemma 4 2B | 0.672† | 0.820†‡ | **0.874** |
+| Llama-3B | 0.615 | 0.505 | **0.767** |
+| Qwen-2.5-3B | 0.579 | 0.512 | **0.818** |
+| Phi-4 (14B) | 0.655†‡ | 0.500† | **0.850** |
 
-### Probe Performance (N=1000, 70/15/15 Template-Consistent Split)
+† Teacher-forcing logprob. ‡ Reversed scoring direction (model commits confidently to wrong calls).
 
-| Model    | Method          | AUC   | Halluc. Recall | Halluc. Prec |
-|----------|-----------------|-------|----------------|--------------|
-| Llama-1B | Hidden probe    | 0.891 | 84.4%          | 61.3%        |
-| Llama-1B | Spectral probe  | 0.703 | 95.6%          | 37.7%        |
-| Llama-1B | Spectral sweep  | 0.773 | —              | —            |
-| Llama-3B | Hidden probe    | 0.959 | 92.98%         | 84.1%        |
-| Llama-3B | Spectral probe  | 0.776 | 84.2%          | 52.8%        |
-| Llama-3B | Spectral sweep  | 0.767 | —              | —            |
+### 2. Scale-Dependent Crossover (Main Results)
 
-> The 1B spectral probe achieves **95.6% hallucination recall** — highest across all methods and models — at the cost of precision. For safety-critical pipelines where false negatives are catastrophic, the spectral probe is the dominant choice.
+Test AUC with 95% bootstrap CIs (1,000 resamples). **Bold** = best per row.
 
-### Throughput: Fast-Fiedler vs. Dense Eigendecomposition
+| Model | Hidden | LMM-GBT | SpRich |
+|-------|--------|---------|--------|
+| Llama-1B | **0.922** [.873,.963] | 0.918 [.857,.971] | 0.856 [.784,.919] |
+| Gemma 4 2B | **0.967** [.935,.990] | 0.918 [.858,.969] | 0.894 [.827,.950] |
+| Llama-3B | 0.947 [.908,.980] | **0.957** [.922,.985] | 0.896 [.833,.944] |
+| Qwen-2.5-3B | **0.948** [.909,.982] | 0.933† [.885,.974] | 0.905 [.854,.955] |
+| Phi-4 Mini (3.8B) | **0.969** [.934,.999] | 0.924 [.865,.972] | 0.432§ [.327,.543] |
+| Llama-8B | 0.848 [.778,.911] | 0.870 [.811,.922] | **0.888** [.831,.935] |
+| Phi-4 (14B) | 0.882 [.824,.933] | **0.917** [.873,.959] | 0.907 [.853,.953] |
 
-| Configuration                      | Spectral Step | End-to-End  |
-|------------------------------------|---------------|-------------|
-| Dense eigh x2 (N=468, 32 layers)   | 3359 ms       | ~11.4 s     |
-| GPU Lanczos (S=50, 32 layers)      | 19 ms         | ~8.0 s      |
-| **Speedup**                        | **177x**      | **~30%**    |
+† Qwen uses LMM-LR (GBT overfits reduced feature space of this hybrid architecture).  
+§ Phi-4 Mini uses GQA (8 KV heads, 32 query heads): queries sharing a KV pair produce identical rows in the attention matrix, making the graph Laplacian rank-deficient. SpRich collapses; LMM-GBT stays robust.
 
-Worst-case ToolBench records (previously 12 min/sample due to 4000+ token schemas) now complete in **~8 seconds** end-to-end. 1000-sample overnight run: 3.2 hrs down to 2.2 hrs.
+### 3. Merging Never Helps
+
+A convex merger (α* tuned on validation) never statistically outperforms the stronger standalone method. The two signals detect **overlapping** failure populations, not complementary ones. Confidence intervals always overlap the best standalone.
+
+### 4. Cross-Benchmark Transfer (BFCL v3)
+
+Detectors trained on single-call data transfer to multi-call BFCL hard mode (parallel, multiple, parallel_multiple categories) without modification — confirming the spectral hallucination signature is **call-local** rather than context-global:
+
+| Model | LMM-GBT | Hidden | Merger |
+|-------|---------|--------|--------|
+| Llama-3B | 0.894 | **0.898** | **0.898** |
+| Qwen-2.5-3B | 0.742 | 0.800 | **0.838** |
+| Llama-8B | **0.842** | 0.679 | **0.842** |
+
+---
+
+## Method
+
+### Detection Signals
+
+#### Signal 1: Spectral Attention Topology
+
+For each layer ℓ, multi-head attention matrices are averaged and symmetrized to form an adjacency W_ℓ. The graph Laplacian L_ℓ = D_ℓ − W_ℓ yields the **Fiedler value λ₂(L_ℓ)**, measuring algebraic connectivity. Low values indicate fragmented routing — a pattern associated with hallucination.
+
+Five spectral metrics per layer (Fiedler value, energy, smoothness index, spectral entropy, high-frequency energy ratio) are represented via 15 trajectory statistics, giving a 135–200 dimensional feature vector.
+
+**Fast-Fiedler** reduces per-sample spectral cost from **3.3 s → 19 ms** via GPU Lanczos on subgraphs:
+1. Detect tool-call token span `[t_func, t_end]` in the generated output
+2. Extract the S×S subgraph (S ≤ 50) from the full attention adjacency
+3. Run GPU Lanczos (k=20 Krylov steps) on L_sub — O(k·S²) instead of O(N³)
+4. Resolve the tridiagonal T via `torch.linalg.eigvalsh`
+
+This signal requires **only attention weight matrices** — no hidden-state access, a critical advantage for API-served models.
+
+#### Signal 2: Token-Role Hidden-State Probe (Hidden)
+
+Token-role representations at three structural positions:
+
+```
+z_ℓ = h_ℓ[t_func] || mean(h_ℓ[T_args]) || h_ℓ[t_end]
+```
+
+Concatenated across 8 evenly spaced layers, fed to a single-hidden-layer MLP (512 units, AdamW, cosine schedule, early stopping).
+
+#### Layerwise Multi-Metric (LMM) Probe
+
+Trajectory aggregation (SpRich) reduces λ₂ across all layers to summary statistics, discarding which layers exhibit anomalous routing. **LMM** treats the raw L×5 matrix of per-layer metric values as a direct feature vector. Two variants:
+- **LMM-LR**: logistic regression
+- **LMM-GBT**: gradient-boosted trees (depth 3, 200 estimators) — each split is a learned threshold on a specific (layer, metric) pair. No hidden-state access required.
+
+### Architecture Overview
+
+```
+Tool Call → Single Forward Pass
+                │
+    ┌───────────┴───────────┐
+    ▼                       ▼
+Attention Routing      Hidden States
+(Graph Laplacian Lℓ)  (Token-role hℓ)
+    │                       │
+    ▼                       ▼
+Spectral Trajectory    Token-Role Probe
+(SpRich / LMM)         (Hidden)
+    │                       │
+    └───────────┬───────────┘
+                ▼
+         Convex Merger (α* tuned)
+                │
+                ▼
+           Guardrail
+```
+
+---
+
+## Deployment Rule
+
+```
+if model uses GQA:
+    → use LMM-GBT (SpRich collapses)
+elif model_size <= 2B:
+    → use Hidden (token-role probe)
+elif model_size == 3B or model_size >= 14B:
+    → use LMM-GBT (attention-only)
+elif model_size == 8B:
+    → use SpRich (hallucination signal is too diffuse for per-layer GBT)
+```
 
 ---
 
@@ -95,141 +162,119 @@ Worst-case ToolBench records (previously 12 min/sample due to 4000+ token schema
 pip install spectral_trust==0.2.1
 
 # Clone and install this repo
-git clone https://github.com/vcnoel/spectral-tool-use.git
+git clone <repo-url>
 cd spectral-tool-use
 pip install -r requirements.txt
 ```
 
 **Hardware requirements:**
 - CUDA GPU (tested on RTX 4080 Super 16 GB)
-- BitsAndBytes for 4-bit NF4 quantization (7B+ models)
-- 8 GB+ VRAM for 1B-3B models; 16 GB for 7B
+- BitsAndBytes for 4-bit NF4 quantization (14B models)
+- ~2 GB VRAM for 1B models; ~6 GB for 3B; ~16 GB for 8B; 14B runs in 4-bit NF4
 
 ---
 
 ## Quickstart
 
-### ToolBench Audit (Fast-Fiedler, single forward pass)
+### Full Extraction Pipeline (Glaive benchmark)
 
 ```bash
-python cli.py audit \
-  --dataset data/hard_mode_datasets/toolbench_hard.jsonl \
-  --model mistralai/Mistral-7B-Instruct-v0.3 \
-  --output gsp_results/toolbench_fast_fiedler.jsonl \
-  --fast-fiedler \
-  --device cuda
-```
-
-### Full Extraction Pipeline
-
-```bash
-# Prepare labelled dataset
+# Prepare labelled dataset (N=750-1000 samples per model)
 python cli.py prepare --domain general --n-samples 1000 --output-dir data/n1000/
 
-# Extract spectral + hidden-state features (~10 min/model on A100)
+# Extract spectral + hidden-state features
 python cli.py extract \
   --model llama3b \
-  --output-dir data/n1000_gor_3b/ \
+  --output-dir data/n1000_llama3b/ \
   --data-dir data/n1000/
 
-# Sweep for best layer/metric combination
+# Sweep for best layer/metric combination (no training)
 python cli.py sweep \
   --model llama3b \
-  --output-dir data/n1000_gor_3b/ \
-  --data-dir data/n1000_gor_3b/ \
+  --output-dir data/n1000_llama3b/ \
+  --data-dir data/n1000_llama3b/ \
   --plots
 
-# Train linear probe
+# Train LMM-GBT probe
 python cli.py train-probe \
   --model llama3b \
-  --feature-type hidden \
-  --output-dir data/n1000_gor_3b/ \
-  --data-dir data/n1000_gor_3b/
+  --feature-type lmm-gbt \
+  --output-dir data/n1000_llama3b/ \
+  --data-dir data/n1000_llama3b/
 
 # Evaluate against baselines
 python cli.py evaluate \
   --model llama3b \
   --mode all \
   --optimize-for recall80 \
-  --output-dir data/n1000_gor_3b/ \
-  --data-dir data/n1000_gor_3b/
+  --output-dir data/n1000_llama3b/ \
+  --data-dir data/n1000_llama3b/
 ```
 
 ### Supported Models
 
-| CLI key      | Model                                | VRAM   |
-|--------------|--------------------------------------|--------|
-| `llama1b`    | meta-llama/Llama-3.2-1B-Instruct    | ~2 GB  |
-| `llama3b`    | meta-llama/Llama-3.2-3B-Instruct    | ~6 GB  |
-| `llama`      | meta-llama/Llama-3.1-8B-Instruct    | ~16 GB |
-| `mistral`    | mistralai/Mistral-7B-Instruct-v0.3  | ~16 GB |
-| `qwen35_2b`  | Qwen/Qwen2.5-3B-Instruct            | ~6 GB  |
+| CLI key | Model | Params | VRAM |
+|---------|-------|--------|------|
+| `llama1b` | meta-llama/Llama-3.2-1B-Instruct | 1B | ~2 GB |
+| `gemma2b` | google/gemma-4-2b-it | 2B | ~4 GB |
+| `llama3b` | meta-llama/Llama-3.2-3B-Instruct | 3B | ~6 GB |
+| `qwen3b` | Qwen/Qwen2.5-3B-Instruct | 3B | ~6 GB |
+| `phi4mini` | microsoft/Phi-4-mini-instruct | 3.8B (GQA) | ~8 GB |
+| `llama8b` | meta-llama/Llama-3.1-8B-Instruct | 8B | ~16 GB |
+| `phi4` | microsoft/Phi-4 | 14B (NF4) | ~10 GB |
 
 ---
 
-## Method
+## Concurrent Baselines
 
-### Spectral Graph Signal Processing on Attention
+We evaluate three concurrent spectral/hidden-state baselines on identical template-consistent splits:
 
-For each transformer layer l, the multi-head attention matrix A_h in R^(NxN) (N = sequence length) is aggregated across heads and symmetrized to form an undirected graph adjacency W_l. The graph Laplacian is:
+| Method | 1B | 3B | Q-3B | 8B |
+|--------|----|----|------|----|
+| HSAD (Li et al., 2025) | 0.624 | 0.888 | 0.823 | 0.686 |
+| Cross-Layer Agreement (Badash et al., 2026) | 0.814 | 0.894 | 0.839 | 0.659 |
+| LapEigvals (Binkowski et al., 2025) | 0.772 | 0.899 | 0.623 | 0.851 |
+| **LMM-GBT [ours]** | 0.918 | **0.957** | 0.933 | 0.870 |
+| **SpRich [ours]** | 0.856 | 0.896 | 0.905 | **0.888** |
+| **Hidden [ours]** | **0.922** | 0.947 | **0.948** | 0.848 |
 
-```
-L_l = D_l - W_l
-```
-
-where D_l is the degree matrix. The Fiedler value λ₂(L_l) — the second-smallest eigenvalue — measures the algebraic connectivity of the attention graph. A drop in λ₂ indicates the graph is approaching disconnection: information pathways between tokens are severing.
-
-### The Fiedler Trajectory
-
-Across 32 layers, λ₂ traces a trajectory. Hallucinated tool calls exhibit a characteristic **spectral collapse signature**: a sharp drop in λ₂ at mid-to-late layers (layers 8-20), corresponding to the point where the model has committed to a syntactically valid but semantically incorrect function name before resolving arguments.
-
-The trajectory features (Multi-Modal Trajectory, MMT) — delta, slope, flux, max_jump, range, AUC — are the input to the linear probe.
-
-### Fast-Fiedler: Subgraph Lanczos
-
-For ToolBench records with N > 200 tokens, the full N×N Laplacian is intractable at inference time. Fast-Fiedler:
-
-1. Detects the tool-call token span `[t_func, t_end]` in the generated output
-2. Extracts the induced S×S subgraph (S ≤ 50) from the full attention adjacency
-3. Runs GPU Lanczos (k=20 Krylov steps) on L_sub — O(k·S²) instead of O(N³)
-4. Resolves the k×k tridiagonal T via `torch.linalg.eigvalsh`
-
-This reduces the per-layer spectral step from 3.3 seconds to 19 ms (177×) with no loss in discriminative power for the tool-call-localized signal.
+LMM-GBT outperforms all concurrent baselines at every scale. HSAD and Cross-Layer show high sensitivity to model scale (AUC ranges of 0.26 and 0.24 respectively).
 
 ---
 
 ## Repository Structure
 
 ```
-spectral-glaive/
+spectral-tool-use/
 ├── cli.py                          # Main CLI: prepare, extract, train-probe,
-│                                   #   evaluate, sweep, audit, logic-ensemble
+│                                   #   evaluate, sweep, audit
 ├── spectral_guardrails/
-│   ├── probes/
-│   │   ├── features.py             # extract_probe_features, find_token_positions
-│   │   └── labeling.py             # assign_label (JSON-aware schema bridge)
-│   └── utils/
-│       ├── models.py               # load_model_and_tokenizer (BnB 4-bit NF4)
-│       └── data.py                 # normalize_tool_call, dataset loaders
-├── data/
-│   ├── hard_mode_datasets/         # ToolBench hard split (500 records)
-│   └── ...
-└── scratch/
-    └── eval_baselines.py           # SelfCheckGPT Consensus, Token Logprobs
+│   ├── probes/                     # Feature extraction and labeling
+│   ├── spectral/                   # Laplacian construction, Fast-Fiedler
+│   ├── trajectory/                 # SpRich and LMM trajectory statistics
+│   ├── guardrail/                  # Probe training and inference
+│   └── utils/                      # Model loading, data normalization
+├── data/                           # Glaive / BFCL datasets and extracted features
+├── figures/                        # Paper figures
+├── notebooks/                      # Analysis notebooks
+├── scripts/                        # Helper scripts
+├── tests/                          # Unit tests
+└── run_overnight.py                # Batch overnight experiment runner
 ```
 
-The `spectral_trust` library (graph construction, Laplacian, eigendecomposition, DirectedTopologist) lives at [github.com/vcnoel/spectral-trust](https://github.com/vcnoel/spectral-trust) and is installed via `pip install spectral_trust==0.2.1`.
+The `spectral_trust` library (graph construction, Laplacian, eigendecomposition) is installed via `pip install spectral_trust==0.2.1`.
 
 ---
 
 ## Citation
 
 ```bibtex
-@misc{noel2026geometry,
-  title   = {Geometry of Reason: Spectral Guardrails for {LLM} Tool-Use},
-  author  = {No\"{e}l, Valentin},
-  year    = {2026},
-  note    = {Preprint}
+@inproceedings{anonymous2026scale,
+  title   = {Does the Optimal Hallucination Detector for {LLM} Tool Calls
+             Depend on Model Scale?},
+  author  = {Anonymous},
+  booktitle = {Proceedings of the 43rd International Conference on Machine Learning},
+  year    = {2026}
 }
 ```
 
@@ -240,4 +285,4 @@ The `spectral_trust` library (graph construction, Laplacian, eigendecomposition,
 Dual-licensed:
 
 - **Open source:** [AGPL-3.0](LICENSE) for academic and non-commercial use.
-- **Commercial:** Contact [val.noel@proton.me](mailto:val.noel@proton.me) for a commercial license.
+- **Commercial:** Contact the authors for a commercial license (details available after de-anonymization).
