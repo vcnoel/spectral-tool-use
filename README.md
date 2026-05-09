@@ -265,21 +265,7 @@ spectral-tool-use/
 
 The `spectral_trust` library (graph construction, Laplacian, eigendecomposition) is installed via `pip install spectral_trust==0.2.1`.
 
----
 
-## Citation
-
-```bibtex
-@inproceedings{anonymous2026scale,
-  title   = {Does the Optimal Hallucination Detector for {LLM} Tool Calls
-             Depend on Model Scale?},
-  author  = {Anonymous},
-  booktitle = {Proceedings of the 43rd International Conference on Machine Learning},
-  year    = {2026}
-}
-```
-
----
 
 ## License
 
