@@ -1,0 +1,553 @@
+\documentclass{article}
+
+\usepackage{icml2026}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage{booktabs,graphicx,xcolor,microtype}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{url}
+\usepackage{multirow}
+\usepackage{wrapfig}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,arrows.meta,positioning}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage{pgfplots}
+\usepgfplotslibrary{fillbetween}
+\usepgfplotslibrary{groupplots}
+\pgfplotsset{compat=1.18}
+\graphicspath{{../figures/}}
+
+\input{math_commands.tex}
+
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\diag}{\mathrm{diag}}
+
+\icmltitlerunning{Does the Optimal Hallucination Detector Depend on Model Scale?}
+
+\begin{document}
+
+\twocolumn[
+\icmltitle{Does the Optimal Hallucination Detector for LLM Tool Calls\\
+  Depend on Model Scale?}
+
+\begin{icmlauthorlist}
+\icmlauthor{Anonymous}{}
+\end{icmlauthorlist}
+
+%% De-anonymize after acceptance:
+\icmlaffiliation{devoteam}{Devoteam, Paris}
+\icmlaffiliation{aws}{Amazon Web Services}
+\icmlaffiliation{openai}{OpenAI}
+\icmlcorrespondingauthor{Valentin No\"{e}l}{val.noel@proton.me}
+
+\icmlkeywords{agentic AI, tool-use hallucination, safety, spectral graph theory, interpretability}
+
+\vskip 0.3in
+]
+
+\printAffiliationsAndNotice{}
+
+%══════════════════════════════════════════════════════════════════════════════
+\begin{abstract}
+%══════════════════════════════════════════════════════════════════════════════
+When an LLM agent hallucinates a tool call, it executes, no hedge,
+no uncertainty signal.  Standard detection approaches fail structurally:
+token log-probabilities and sampling consensus score near chance
+(AUC 0.51\,--\,0.62) because hallucinated calls are syntactically valid
+and high-confidence.  Two independently developed supervised approaches
+can detect these failures from a single forward pass: \emph{spectral
+attention topology}, which tracks algebraic connectivity of per-layer
+attention graphs without accessing hidden states, and \emph{token-role
+hidden-state probing}, which supervises an MLP on structural positions
+within the generated call.  The natural question, which one to
+deploy?, has had no controlled answer.
+
+We provide the first head-to-head comparison across seven models
+(1B to 14B) on identical data, splits, and labels.  The answer is
+non-monotone.  Our \textbf{Layerwise Multi-Metric} (LMM) probe reaches
+AUC 0.957 at 3B using only attention weights, exceeding Hidden (0.947);
+at 8B, hallucination signal diffuses broadly across 32 layers (mean
+per-layer AUC 0.59) and trajectory aggregation (SpRich, AUC 0.888)
+dominates; at 14B, deeper layer specialisation re-concentrates the
+signal and LMM recovers its lead (0.917 vs.\ 0.882).  Architecture
+matters independently: grouped-query attention (GQA) collapses spectral
+trajectory statistics to near chance (0.432) while per-layer LMM
+remains robust.  Merging the two signals never helps.
+
+The practical implication is precise: match the guardrail to model
+depth and attention architecture, not to signal combination.
+\end{abstract}
+
+%══════════════════════════════════════════════════════════════════════════════
+\section{Introduction}
+\label{sec:intro}
+%══════════════════════════════════════════════════════════════════════════════
+
+LLM agents that invoke external tools (APIs, databases, privileged
+actions) fail silently when they hallucinate a tool call.  Unlike
+open-ended generation, the output is syntactically valid and
+high-confidence, a plausible function name and argument schema that
+happens to be wrong.  Downstream pipeline steps consume it without
+question, so a malformed transaction or misconfigured
+infrastructure command can execute before any human reviews it.
+
+Detection must therefore happen at generation time, from a single
+forward pass, with no ground-truth oracle and no extra sampling budget.
+Standard uncertainty signals fail structurally on this task: token
+log-probabilities reach AUC 0.51\,--\,0.62 and $N{=}5$ sampling
+consensus is no better at $5\times$ the cost
+(Table~\ref{tab:baselines}).  The reason is not noise, a model does
+not express uncertainty when hallucinating a tool call it is confident
+about.
+
+Two independent lines of work have shown that supervised signals from
+the same forward pass can break through this barrier.  Spectral
+attention-graph diagnostics \cite{noel2026geometry} track algebraic
+connectivity (Fiedler value $\lambda_2$) of per-layer graph Laplacians
+with no hidden-state access.  A token-role hidden-state probe
+\cite{healy2026internal} supervises an MLP on the function-name,
+argument-value, and closing-delimiter positions of the generated call.
+Both approaches read different tensors from the same pass and were
+developed independently.  The question they leave open, \emph{which
+one to deploy, and do they complement each other?}, is what this
+paper answers.
+
+Our three contributions:
+\begin{enumerate}[noitemsep,topsep=2pt,leftmargin=*]
+  \item A \textbf{controlled head-to-head} across seven models (1B to
+    14B), identical splits and labels, including three concurrent
+    spectral and hidden-state baselines
+    \cite{binkowski2025hallucination,li2025llm,badash2026between}.
+  \item A \textbf{Layerwise Multi-Metric} (LMM) probe that evaluates
+    spectral features per layer, recovering signal that trajectory
+    aggregation discards.
+  \item A \textbf{precise deployment rule}: LMM dominates at
+    ${\leq}$3B and ${\geq}$14B; trajectory aggregation (SpRich)
+    dominates at 8B; GQA attention architecture
+    collapses SpRich while leaving LMM robust; merging never helps.
+\end{enumerate}
+
+\begin{figure*}[t]
+    \centering
+    \begin{tikzpicture}[
+    node distance=0.8cm and 1.2cm,
+    block/.style={
+        rectangle, draw, fill=white,
+        inner sep=3pt, align=center,
+        rounded corners=3pt, font=\small\sffamily,
+        line width=0.6pt
+    },
+    smallblock/.style={
+        rectangle, draw, fill=white,
+        inner sep=4pt, align=center,
+        rounded corners=2pt, font=\scriptsize\sffamily,
+        line width=0.5pt
+    },
+    arrow/.style={-{Stealth[scale=1.1]}, thick, draw=gray!80},
+    ]
+
+    \node (input) [block, fill=gray!10, text width=2.2cm] {
+        \textbf{Tool Call}\\[2pt]
+        {\tiny\ttfamily transfer\_funds(}\\
+        {\tiny\ttfamily \ \ acc="1234",}\\
+        {\tiny\ttfamily \ \ amt=500)}
+    };
+
+    \node (forward) [block, right=of input, fill=orange!10, text width=1.8cm] {
+        \textbf{Single}\\
+        \textbf{Forward Pass}
+    };
+
+    \node (attention) [smallblock, fill=blue!5, draw=blue!40, above right=0.3cm and 1cm of forward, text width=2.4cm] {
+        \textbf{Attention Routing}\\[2pt]
+        {\tiny Graph Laplacian $\mathbf{L}_\ell$}
+    };
+
+    \node (trajectory) [smallblock, fill=blue!10, draw=blue!60, right=of attention, text width=2.6cm] {
+        \textbf{Spectral Trajectory}\\[2pt]
+        \begin{tikzpicture}[scale=0.6]
+            \draw[->, very thin, gray] (0,0) -- (2.2,0) node[right, font=\tiny] {$\ell$};
+            \draw[->, very thin, gray] (0,0) -- (0,1) node[above, font=\tiny] {$\lambda_2$};
+            \draw[blue!60, thick] (0,0.8) -- (0.5,0.75) -- (1.0,0.6) -- (1.5,0.7) -- (2.0,0.8);
+            \draw[red!60, thick] (0,0.8) -- (0.5,0.7) -- (1.0,0.2) -- (1.5,0.15) -- (2.0,0.1);
+        \end{tikzpicture}\\[2pt]
+    };
+
+    \node (hidden) [smallblock, fill=green!5, draw=green!40, below right=0.2cm and 1cm of forward, text width=2.4cm] {
+        \textbf{Hidden States}\\[2pt]
+        {\tiny Token-role $\mathbf{h}_\ell$}
+    };
+
+    \node (probe) [smallblock, fill=green!10, draw=green!60, right=of hidden, text width=3.6cm] {
+        \textbf{Token-Role Probe}\\[4pt]
+        {\tiny $z_\ell = h[t_\text{func}] \,\|\, \bar{h}[T_\text{args}] \,\|\, h[t_\text{end}]$}\\[4pt]
+    };
+
+    \node (merger) [block, fill=purple!10, draw=purple!50, below = 1.6cm of trajectory, right= 1cm of forward, text width=3.4cm] {
+        \textbf{Convex Merger}\\[4pt]
+        {\scriptsize $s = \alpha\, s_\text{sp} + (1{-}\alpha)\, s_\text{hid}$}
+    };
+
+    \node (output) [block, fill=gray!15, right=of merger, text width=2.8cm] {
+        \textbf{Guardrail}\\
+    };
+
+    \draw[arrow] (input) -- (forward);
+    \draw[arrow] (forward.east) -- ++(0.3,0) |- (attention.west);
+    \draw[arrow] (forward.east) -- ++(0.3,0) |- (hidden.west);
+    \draw[arrow] (attention) -- (trajectory);
+    \draw[arrow] (trajectory.east) -- ++(1.25,0) |- (merger.9);
+    \draw[arrow] (hidden) -- (probe);
+    \draw[arrow] (probe.east) -- ++(0.3,0) |- (merger.351);
+    \draw[arrow] (merger) -- (output);
+
+    \node[above=0.1cm of trajectory, font=\tiny\itshape, text=gray!80] {SpRich / LMM};
+    \node[below=0.1cm of probe, font=\tiny\itshape, text=gray!80] {Hidden \cite{healy2026internal}};
+
+    \end{tikzpicture}
+    \caption{\textbf{Architecture.}
+      Two independent detection signals from a single forward pass.
+      Top: spectral topology of attention routing (Fiedler value per layer).
+      Bottom: token-role hidden-state probe \cite{healy2026internal}.}
+    \label{fig:architecture}
+\end{figure*}
+
+
+%══════════════════════════════════════════════════════════════════════════════
+\section{Related Work}
+\label{sec:related}
+%══════════════════════════════════════════════════════════════════════════════
+
+\paragraph{Tool-use benchmarks.}
+Gorilla \cite{patil2024gorilla} and ToolLLM \cite{qin2023toolllm}
+benchmark tool-calling capability but not the internal failure modes
+that produce confident wrong outputs.  The token-role hidden-state
+probe \cite{healy2026internal} was the first to demonstrate that
+supervised probes on hidden states can detect tool-use hallucination
+from a single forward pass, establishing a representation built from the
+function name, argument mean, and closing delimiter as a reliable input
+to lightweight classifiers.  That probe forms one of the two signals
+we evaluate; we extend it to a multi-layer setting and provide the
+first comparison against an attention-only alternative.
+
+\paragraph{Internal-state hallucination detection.}
+INSIDE \cite{chen2024inside} uses hidden-state covariance; HALT
+\cite{bhatnagar2026halt} extends probing to factual claims; process
+reward models \cite{lightman2023lets} verify reasoning steps.  All
+require hidden-state access.  Our spectral signal operates on attention
+matrices alone.
+
+\paragraph{Spectral methods for transformers.}
+Attention-graph Laplacians were introduced for hallucination detection
+in \cite{noel2025gsp}.  Concurrent work confirms the utility of
+spectral geometry: LapEigvals \cite{binkowski2025hallucination} uses
+top-$k$ eigenvalues; HSAD \cite{li2025llm} applies FFT to hidden-layer
+dynamics; Cross-Layer Agreement \cite{badash2026between} measures
+attention consistency across depth.  We evaluate all three as baselines.
+
+
+%══════════════════════════════════════════════════════════════════════════════
+\section{Method}
+\label{sec:method}
+%══════════════════════════════════════════════════════════════════════════════
+
+\paragraph{Task and data.}
+We sample $N{=}750$--$1000$ examples per model from the Glaive
+function-calling benchmark \cite{glaive2024function} across seven
+models: Llama-3.2-1B, Gemma-4-2B, Llama-3.2-3B, Qwen-2.5-3B,
+Phi-4-Mini (3.8B), Llama-3.1-8B, and Phi-4 (14B, 4-bit NF4).  Labels
+are assigned by JSON schema validation against the ground-truth call.  A
+template-consistent 70/15/15 partition (SHA-256 hash of the ground-truth
+string) ensures no prompt template seen at training appears at test
+time, matching the protocol of \cite{healy2026internal}.
+
+\paragraph{Signal 1: Spectral attention topology.}
+For each layer~$\ell$, we average multi-head attention matrices and
+symmetrize to form an adjacency $W_\ell$.  The graph Laplacian $L_\ell =
+D_\ell - W_\ell$ yields the Fiedler value $\lambda_2(L_\ell)$, which
+measures algebraic connectivity: low values indicate fragmented routing,
+a pattern associated with hallucination \cite{noel2026geometry}.  We
+extract five spectral metrics per layer (Fiedler value, energy,
+smoothness index, spectral entropy, high-frequency energy ratio) and
+represent each via 15 trajectory statistics (mean, slope, skewness,
+dominant FFT harmonics, and others), giving a 135 to 200 dimensional
+feature vector.  A logistic regression with $\ell_2$ regularization, $C$
+tuned on validation, defines the \textbf{SpRich} probe.  For efficiency,
+we use a subgraph-based Lanczos approximation (Fast-Fiedler) that
+reduces per-sample spectral cost from 3.3\,s to 19\,ms.
+
+This signal requires only attention weight matrices and no hidden-state
+access, a critical advantage for API-served models where internal
+activations are unavailable.
+
+\paragraph{Signal 2: Hidden-state probe (Hidden).}
+Following \cite{healy2026internal}, we extract token-role representations
+at three structural positions within the generated call:
+\begin{equation}
+  z_\ell = h_\ell[t_\text{func}] \;\|\;
+           \text{mean}(h_\ell[T_\text{args}]) \;\|\;
+           h_\ell[t_\text{end}],
+  \label{eq:tokenrole}
+\end{equation}
+where $t_\text{func}$ is the function-name token, $T_\text{args}$ are
+argument-value positions, and $t_\text{end}$ is the closing delimiter.
+We concatenate across 8 evenly spaced layers and train a
+single-hidden-layer MLP (512 units, AdamW, cosine schedule, early
+stopping).
+
+\paragraph{Layerwise Multi-Metric (LMM) probe.}
+Trajectory aggregation (SpRich) reduces $\lambda_2$ across all layers to
+summary statistics, discarding information about which layers exhibit
+anomalous routing.  LMM treats the raw $L \times 5$ matrix of per-layer
+metric values as a direct feature vector.  We evaluate two variants:
+\textbf{LMM-LR} (logistic regression) and \textbf{LMM-GBT}
+(gradient-boosted trees, depth 3, 200 estimators).  Each GBT split
+implements a learned threshold on a specific (layer, metric) pair.
+No hidden-state access is required.
+
+\paragraph{Convex merger.}
+We test complementarity via $s = \alpha\, s_\text{sp} + (1{-}\alpha)\,
+s_\text{hid}$, with $\alpha^*$ selected over 41 values by maximizing
+validation AUC.
+
+
+%══════════════════════════════════════════════════════════════════════════════
+\section{Results}
+\label{sec:results}
+%══════════════════════════════════════════════════════════════════════════════
+
+\subsection{Standard Signals Fail}
+
+\begin{table}[t]
+\centering
+\caption{Unsupervised baselines vs.\ the best single spectral metric at
+  a Youden-$J$ threshold (Sweep, no training).
+  $\dagger$: teacher-forcing logprob (generation-based logprob was not run).
+  $\ddagger$: reversed scoring direction---high logprob / high consensus
+  predicts hallucination (the model commits confidently to wrong calls);
+  standard direction gives 0.346 and 0.180 respectively.
+  $\S$: $N{=}0$ sampling (14B inference cost); all consensus scores
+  identical, AUC trivially 0.500.}
+\label{tab:baselines}
+\small
+\begin{tabular}{lccc}
+\toprule
+Model & Logprobs & Consensus & Sweep \\
+\midrule
+Llama-1B          & 0.510 & 0.508 & \textbf{0.773} \\
+Gemma 4 2B        & $0.672^{\dagger}$ & $0.820^{\dagger\ddagger}$ & \textbf{0.874} \\
+Llama-3B          & 0.615 & 0.505 & \textbf{0.767} \\
+Qwen-2.5-3B       & 0.579 & 0.512 & \textbf{0.818} \\
+Phi-4 (14B)       & $0.655^{\dagger\ddagger}$ & $0.500^{\dagger}$ & \textbf{0.850} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Token log-probabilities and $N{=}5$ sampling consensus are near chance
+on every model where they were computed (Table \ref{tab:baselines}).
+Even a single spectral metric with no training exceeds both by 15 to
+26 AUC points, confirming that tool-use hallucination is invisible to
+standard uncertainty signals but already detectable in the topology of
+attention graphs.  Sweep peaks at 0.874 for Gemma 4 2B and 0.850 for
+Phi-4 14B, the strongest unsupervised results across all seven models.
+
+\subsection{Scale-Dependent Crossover}
+
+\begin{table}[t]
+\centering
+\setlength{\tabcolsep}{1pt}
+\caption{Test AUC with 95\% bootstrap CIs (1\,000 resamples).  Best per
+  row in \textbf{bold}.  $\dagger$: Qwen uses LMM-LR (GBT overfits the
+  reduced feature space of this hybrid architecture).
+  $^\S$: Phi-4 Mini uses GQA (8 KV heads, 32 query heads): queries
+  sharing a KV pair produce identical rows in the attention matrix,
+  making the graph Laplacian rank-deficient. }
+\label{tab:results}
+\footnotesize
+\begin{tabular}{lccc}
+\toprule
+Model & Hidden & LMM-GBT & SpRich \\
+\midrule
+Llama-1B          & \textbf{0.922}\,\tiny{[.873,.963]} & 0.918\,\tiny{[.857,.971]} & 0.856\,\tiny{[.784,.919]} \\
+Gemma 4 2B        & \textbf{0.967}\,\tiny{[.935,.990]} & 0.918\,\tiny{[.858,.969]} & 0.894\,\tiny{[.827,.950]} \\
+Llama-3B          & 0.947\,\tiny{[.908,.980]} & \textbf{0.957}\,\tiny{[.922,.985]} & 0.896\,\tiny{[.833,.944]} \\
+Qwen-2.5-3B      & \textbf{0.948}\,\tiny{[.909,.982]} & 0.933$^\dagger$\,\tiny{[.885,.974]} & 0.905\,\tiny{[.854,.955]} \\
+Phi-4 Mini (3.8B) & \textbf{0.969}\,\tiny{[.934,.999]} & 0.924\,\tiny{[.865,.972]} & 0.432$^\S$\,\tiny{[.327,.543]} \\
+Llama-8B          & 0.848\,\tiny{[.778,.911]} & 0.870\,\tiny{[.811,.922]} & \textbf{0.888}\,\tiny{[.831,.935]} \\
+Phi-4 (14B)       & 0.882\,\tiny{[.824,.933]} & \textbf{0.917}\,\tiny{[.873,.959]} & 0.907\,\tiny{[.853,.953]} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table \ref{tab:results} reveals a non-monotone pattern.  At
+${\leq}$2B, Hidden dominates (0.922 at 1B, 0.967 at Gemma 4 2B);
+LMM-GBT is close behind (0.918 both), but SpRich lags (0.856--0.894),
+as trajectory aggregation loses layer-specific signal at low depth.
+
+At 3B, LMM-GBT overtakes Hidden for the first time: 0.957 vs.\ 0.947,
+using only attention weights.  The gain is recovered per-layer
+resolution, SpRich (0.896) shows that trajectory aggregation
+discards it.
+
+Phi-4 Mini (3.8B) introduces an architectural confound.  Hidden (0.969)
+and LMM-GBT (0.924) remain strong, but SpRich collapses to 0.432,
+below chance.  The cause is GQA (8 KV heads, 32 query heads): queries
+sharing a KV pair produce correlated attention distributions, yielding
+near-singular Laplacians whose trajectory statistics carry no
+discriminative signal.  LMM-GBT evaluates each layer's Fiedler value
+independently and stays robust.
+
+At 8B the crossover inverts: SpRich (0.888) beats LMM-GBT (0.870) and
+Hidden (0.848).  Post-hoc analysis reveals why, train AUC 1.000,
+test AUC 0.870, a 0.13-point gap absent at smaller scales.  Per-layer
+Fiedler analysis shows 24 of 32 layers carry a signal (AUC${>}$0.55),
+but each is weak (mean 0.59, peak 0.74, std 0.11).  At 1--3B,
+hallucination creates sharp routing anomalies in a few layers GBT can
+exploit; at 8B the signal is too diffuse for 160-feature GBT on 700
+samples.  SpRich's global trajectory pooling handles diffuse signal
+without per-layer fitting.
+
+At 14B LMM-GBT recovers its lead (0.917 vs.\ SpRich 0.907, Hidden
+0.882).  Forty layers provide 200 per-layer features with stronger
+specialisation; the diffusion regime that hurt GBT at 32 layers
+resolves as depth and per-layer signal variance both grow.
+
+The pattern is clear: Hidden at ${\leq}$2B, LMM-GBT at 3B and
+${\geq}$14B, SpRich at 8B, SpRich collapsed for GQA.  Detector choice
+must account for model scale and attention architecture.
+
+\subsection{Merging Does Not Help}
+
+\begin{table}[t]
+\centering
+\setlength{\tabcolsep}{2pt}
+\caption{Convex merger: $\alpha^*$ tuned on validation.  CIs overlap the
+  stronger standalone method in every case.}
+\label{tab:merger}
+\footnotesize
+\begin{tabular}{lcc}
+\toprule
+Model & Merger AUC & $\alpha^*$ \\
+\midrule
+Llama-1B          & 0.926\,\tiny{[.875,.964]} & 0.05 \\
+Gemma 4 2B        & 0.967\,\tiny{[.933,.992]} & 0.10 \\
+Llama-3B          & 0.947\,\tiny{[.900,.981]} & 0.00 \\
+Qwen-2.5-3B      & 0.948\,\tiny{[.906,.982]} & 0.03 \\
+Phi-4 Mini (3.8B) & 0.964\,\tiny{[.923,.996]} & 0.10 \\
+Llama-8B          & 0.868\,\tiny{[.798,.927]} & 0.65 \\
+Phi-4 (14B)       & 0.913\,\tiny{[.858,.956]} & 0.53 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The merger CI overlaps the stronger standalone at every scale
+(Table~\ref{tab:merger}).  At small scales $\alpha^*{\approx}0$ or
+$0.10$, the merger inherits the Hidden score.  LMM-GBT catches more
+exclusive positives than Hidden at every scale (14--31\% of
+hallucinated test samples vs.\ 0--7\% Hidden-only), but these
+exclusively caught samples coincide with noisy Hidden scores, so the
+signals detect overlapping failure populations, not complementary ones.
+More expressive fusion architectures likewise fail (see Appendix).
+The conclusion is unambiguous: choose by scale and architecture; do not
+combine.
+
+\subsection{Concurrent Baselines}
+
+\begin{table}[t]
+\centering
+\setlength{\tabcolsep}{2pt}
+\caption{Comparison to concurrent spectral and hidden-state baselines.
+  All evaluated on identical template-consistent splits.}
+\label{tab:concurrent}
+\footnotesize
+\begin{tabular}{lcccc}
+\toprule
+Method & 1B & 3B & Q-3B & 8B \\
+\midrule
+HSAD \cite{li2025llm}           & 0.624 & 0.888 & 0.823 & 0.686 \\
+Cross-Layer \cite{badash2026between} & 0.814 & 0.894 & 0.839 & 0.659 \\
+LapEigvals \cite{binkowski2025hallucination} & 0.772 & 0.899 & 0.623 & 0.851 \\
+\midrule
+LMM-GBT [ours]  & 0.918          & \textbf{0.957} & 0.933 & 0.870 \\
+SpRich [ours]    & 0.856          & 0.896          & 0.905 & \textbf{0.888} \\
+Hidden [ours]    & \textbf{0.922} & 0.947          & \textbf{0.948} & 0.848 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+LMM-GBT outperforms all concurrent baselines at every scale
+(Table \ref{tab:concurrent}).  HSAD and Cross-Layer show high
+sensitivity to model scale (AUC ranges of 0.26 and 0.24 respectively).
+At 8B, Hidden (0.848) trails LapEigvals (0.851) by 3 points, where
+SpRich leads (0.888); at all other scales Hidden and LMM-GBT both
+dominate.  LapEigvals, which uses raw eigenvalues without trajectory
+statistics, degrades sharply on Qwen's hybrid attention architecture
+(0.623), while SpRich remains robust (0.905), suggesting that
+trajectory-level statistics provide the regularization needed for
+architectural generalization.
+
+\subsection{Cross-Benchmark Transfer (BFCL)}
+
+\begin{table}[t]
+\centering
+\setlength{\tabcolsep}{2pt}
+\caption{BFCL v3 AST hard-mode benchmark \cite{patil2025bfcl} ($N{=}500$, exclusively from \texttt{parallel}, \texttt{multiple}, and \texttt{parallel\_multiple} categories.}
+\label{tab:bfcl}
+\footnotesize
+\begin{tabular}{lccc}
+\toprule
+Model & LMM-GBT & Hidden & Merger \\
+\midrule
+Llama-3B     & 0.894\,\tiny{[.764,.986]} & \textbf{0.898}\,\tiny{[.750,1.0]} & \textbf{0.898}\,\tiny{[.759,1.0]} \\
+Qwen-2.5-3B & 0.742\,\tiny{[.565,.896]} & 0.800\,\tiny{[.626,.945]} & \textbf{0.838}\,\tiny{[.693,.952]} \\
+Llama-8B     & \textbf{0.842}\,\tiny{[.719,.942]} & 0.679\,\tiny{[.538,.828]} & \textbf{0.842}\,\tiny{[.716,.944]} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The scale-dependent pattern replicates on BFCL v3 hard mode
+(Table \ref{tab:bfcl}): at 3B, Hidden and LMM-GBT tie; at 8B,
+LMM-GBT leads by 16 AUC points.  Every BFCL sample requires detecting
+hallucinations across 2--4 concurrent tool calls, yet detectors trained
+on single calls transfer without modification, suggesting the
+spectral hallucination signature is call-local rather than
+context-global, which supports per-step deployment in tool chains.
+
+%──────────────────────────────────────────────────────────────────────────────
+\section{Discussion}
+\label{sec:discussion}
+%──────────────────────────────────────────────────────────────────────────────
+
+\paragraph{Two signals, two mechanisms.}
+The spectral signal captures attention routing: hallucinated calls fragment the attention graph, decreasing the Fiedler value. The hidden-state signal reflects representations at structural tokens. These mechanisms are correlated rather than complementary, detecting overlapping failures; thus, merging offers no gain. At ${\leq}$3B and ${\geq}$14B, LMM-GBT on attention matrices (AUC $\leq$ 0.957) matches or exceeds Hidden-state performance, suiting API-only access. At 8B, where hallucinations diffuse across 24 layers, SpRich's global trajectory pooling outperforms per-layer GBT, though architecture independently collapses SpRich for GQA models.
+
+\paragraph{Agentic deployment.}
+Our detectors process single calls and require step-by-step application in chains. Table~\ref{tab:bfcl} suggests single-call training transfers to multi-call settings. However, true sequential chains---where call $t{+}1$ inherits hallucinations from call $t$---remain untested. This is a critical open problem: error rates will grow super-linearly if detection fails at any step.
+
+\paragraph{Considerations and limitations.}
+Fast-Fiedler reduces spectral overhead from 3.3\,s to 19\,ms via GPU Lanczos on small subgraphs. For zero-shot settings, LMM-Cascade (calibration-only) yields AUC 0.72--0.81. While we studied 1B--14B models, the non-monotone crossover suggests LMM-GBT may lead at 70B+ as layer specialization re-concentrates signals. Finally, learned fusion remains infeasible due to extreme dimensionality mismatch (${\approx}10^5$ vs. ${\approx}10^2$); larger benchmarks are needed to bridge this gap.
+
+%══════════════════════════════════════════════════════════════════════════════
+\section{Conclusion}
+%══════════════════════════════════════════════════════════════════════════════
+
+The answer to our title question is yes, and the dependence is
+non-monotone.  At 3B, spectral LMM alone (AUC 0.957) matches or
+exceeds Hidden (0.947) without accessing hidden states; at 8B, diffuse
+hallucination signal reverses the advantage to SpRich (0.888); at 14B,
+LMM recovers (0.917 vs.\ 0.882).  GQA architecture collapses spectral
+trajectory statistics entirely while per-layer LMM stays robust.  The
+practical rule: route to LMM-GBT at ${\leq}$3B and ${\geq}$14B, to
+SpRich at 8B, and check attention architecture before choosing any
+spectral detector.  
+
+
+%══════════════════════════════════════════════════════════════════════════════
+\newpage
+\bibliography{references}
+\bibliographystyle{icml2026}
+
+\end{document}
