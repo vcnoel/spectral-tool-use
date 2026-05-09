@@ -1,17 +1,15 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite the paper."
 authors:
-  - family-names: Noël
-    given-names: Valentin
-title: "Spectral Guardrails for Agents in the Wild"
+  - name: Anonymous
+title: "Does the Optimal Hallucination Detector for LLM Tool Calls Depend on Model Scale?"
 version: 1.0.0
-date-released: 2026-02-08
-url: "https://github.com/vcnoel/spectral-tool-use"
+date-released: 2026-05-09
+url: "https://anonymous.4open.science/r/spectral-tool-use"
 preferred-citation:
-  type: article
+  type: conference-paper
   authors:
-    - family-names: Noël
-      given-names: Valentin
-  title: "Spectral Guardrails for Agents in the Wild: Detecting Tool Use Hallucinations via Attention Topology"
-  journal: "arXiv preprint arXiv:2602.08082"
+    - name: Anonymous
+  title: "Does the Optimal Hallucination Detector for LLM Tool Calls Depend on Model Scale?"
+  conference: "International Conference on Machine Learning (ICML 2026)"
   year: 2026
