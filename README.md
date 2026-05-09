@@ -158,7 +158,6 @@ elif model_size == 8B:
 ## Installation
 
 ```bash
-# Core dependency (PyPI)
 pip install spectral_trust==0.2.1
 
 # Clone and install this repo
@@ -210,6 +209,8 @@ python cli.py evaluate \
   --output-dir data/n1000_llama3b/ \
   --data-dir data/n1000_llama3b/
 ```
+
+To reproduce all four models at once, use `run_eval_all.py` (skips extraction, assumes features already extracted).
 
 ### Supported Models
 
