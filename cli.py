@@ -18,6 +18,13 @@ from spectral_guardrails.probes.labeling import assign_label
 from spectral_guardrails.probes.features import extract_probe_features, find_token_positions
 from spectral_guardrails.utils.stats import compute_cohens_d
 from spectral_guardrails.probes.mlp import HallucinationProbe, train_probe, evaluate_probe
+from spectral_guardrails.probes.gbt import (
+    compute_layerwise_features,
+    train_lmm_gbt, predict_lmm,
+    bootstrap_ci as lmm_bootstrap_ci,
+    save_lmm_probe, load_lmm_probe,
+    feature_importances,
+)
 from sklearn.utils.class_weight import compute_class_weight
 import matplotlib.pyplot as plt
 from sklearn.metrics import precision_recall_curve, roc_curve, auc as sk_auc
@@ -593,6 +600,38 @@ def handle_train_probe(args):
         print(f"[spectral_rich] Saved to {output_dir / probe_name}")
         return
 
+    if args.feature_type == "lmm_gbt":
+        from sklearn.metrics import roc_auc_score as _roc
+        X_lmm = compute_layerwise_features(raw_samples)
+        n_features = X_lmm.shape[1]
+        n_layers = n_features // 5
+        print(f"[lmm_gbt] Feature matrix: {X_lmm.shape}  (layers={n_layers}, metrics=5)")
+
+        model, scaler, method = train_lmm_gbt(X_lmm, y, train_idx, val_idx)
+        print(f"[lmm_gbt] Selected method: {method}")
+
+        test_scores = predict_lmm(model, scaler, X_lmm[test_idx])
+        test_auc = _roc(y[test_idx], test_scores)
+        lo, hi = lmm_bootstrap_ci(y[test_idx], test_scores)
+        print(f"[lmm_gbt] Test AUC: {test_auc:.4f}  95% CI [{lo:.4f}, {hi:.4f}]")
+
+        imp = feature_importances(model, n_layers)
+        if imp:
+            top = sorted(
+                [(l, m, v) for l, ms in imp.items() for m, v in ms.items()],
+                key=lambda x: -x[2],
+            )[:10]
+            print("[lmm_gbt] Top 10 (layer, metric, importance):")
+            for l, m, v in top:
+                print(f"  L{l:02d}  {m:<20s}  {v:.4f}")
+
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        probe_name = f"probe_{args.model}_lmm_gbt.pkl"
+        save_lmm_probe(model, scaler, method, output_dir / probe_name)
+        print(f"[lmm_gbt] Saved to {output_dir / probe_name}")
+        return
+
     X, y_list = [], []
     for ex in samples:
         features = []
@@ -703,7 +742,34 @@ def handle_evaluate(args):
                 print(f"--- SPECTRAL EVAL ({key}) ---\n  AUC: {auc:.4f}\n  Cohen's d: {d:.4f}\n")
 
     if args.mode in ["probe", "all", "hybrid"]:
-        if args.feature_type == "spectral_rich":
+        if args.feature_type == "lmm_gbt":
+            from sklearn.metrics import roc_auc_score as _roc
+            probe_name = f"probe_{args.model}_lmm_gbt.pkl"
+            probe_path = Path(args.output_dir) / probe_name
+            if not probe_path.exists():
+                print(f"[ERROR] {probe_path} not found — run train-probe --feature-type lmm_gbt first")
+            else:
+                model, scaler, method = load_lmm_probe(probe_path)
+                X_lmm = compute_layerwise_features(raw_samples_test)
+                probe_scores = predict_lmm(model, scaler, X_lmm)
+                test_auc = _roc(y_true, probe_scores)
+                lo, hi = lmm_bootstrap_ci(y_true, probe_scores)
+                print(
+                    f"--- PROBE EVAL ({method}) ---\n"
+                    f"  AUC: {test_auc:.4f}  95% CI [{lo:.4f}, {hi:.4f}]"
+                    f"  features={X_lmm.shape[1]}\n"
+                )
+
+                n_layers = X_lmm.shape[1] // 5
+                imp = feature_importances(model, n_layers)
+                if imp:
+                    top = sorted(
+                        [(l, m, v) for l, ms in imp.items() for m, v in ms.items()],
+                        key=lambda x: -x[2],
+                    )[:5]
+                    print("  Top features:", [(f"L{l} {m}", f"{v:.3f}") for l, m, v in top])
+
+        elif args.feature_type == "spectral_rich":
             import pickle
             from sklearn.metrics import roc_auc_score as sk_roc_auc
             probe_name = f"probe_{args.model}_spectral_rich.pkl"
@@ -1643,7 +1709,8 @@ def main():
             "hidden",
             "spectral",
             "combined",
-            "spectral_rich"],
+            "spectral_rich",
+            "lmm_gbt"],
         default="hidden")
     p_probe.add_argument("--epochs", type=int, default=50)
     p_probe.add_argument("--patience", type=int, default=5)
@@ -1659,7 +1726,8 @@ def main():
             "hidden",
             "spectral",
             "combined",
-            "spectral_rich"],
+            "spectral_rich",
+            "lmm_gbt"],
         default="hidden")
     p_eval.add_argument(
         "--optimize-for",
