@@ -614,12 +614,12 @@ def handle_train_probe(args):
         imp = feature_importances(model, n_layers)
         if imp:
             top = sorted(
-                [(l, m, v) for l, ms in imp.items() for m, v in ms.items()],
+                [(layer, m, v) for layer, ms in imp.items() for m, v in ms.items()],
                 key=lambda x: -x[2],
             )[:10]
             print("[lmm_gbt] Top 10 (layer, metric, importance):")
-            for l, m, v in top:
-                print(f"  L{l:02d}  {m:<20s}  {v:.4f}")
+            for layer, m, v in top:
+                print(f"  L{layer:02d}  {m:<20s}  {v:.4f}")
 
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -691,7 +691,8 @@ def handle_evaluate(args):
     y_true = np.array([s['label'] for s in samples])
 
     print(
-        f"[evaluate] Strictly evaluating on TEST split ({len(samples)} samples, template-consistent)")
+        f"[evaluate] Strictly evaluating on TEST split "
+        f"({len(samples)} samples, template-consistent)")
 
     # Store scores for hybrid mode
     spectral_scores = None
@@ -742,7 +743,9 @@ def handle_evaluate(args):
             probe_name = f"probe_{args.model}_lmm_gbt.pkl"
             probe_path = Path(args.output_dir) / probe_name
             if not probe_path.exists():
-                print(f"[ERROR] {probe_path} not found — run train-probe --feature-type lmm_gbt first")
+                print(
+                    f"[ERROR] {probe_path} not found — run train-probe --feature-type lmm_gbt first"
+                )
             else:
                 model, scaler, method = load_lmm_probe(probe_path)
                 X_lmm = compute_layerwise_features(raw_samples_test)
@@ -759,10 +762,10 @@ def handle_evaluate(args):
                 imp = feature_importances(model, n_layers)
                 if imp:
                     top = sorted(
-                        [(l, m, v) for l, ms in imp.items() for m, v in ms.items()],
+                        [(layer, m, v) for layer, ms in imp.items() for m, v in ms.items()],
                         key=lambda x: -x[2],
                     )[:5]
-                    print("  Top features:", [(f"L{l} {m}", f"{v:.3f}") for l, m, v in top])
+                    print("  Top features:", [(f"L{layer} {m}", f"{v:.3f}") for layer, m, v in top])
 
         elif args.feature_type == "spectral_rich":
             import pickle
