@@ -17,7 +17,6 @@ from pathlib import Path
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
-from sklearn.pipeline import Pipeline
 from sklearn.metrics import roc_auc_score
 
 # Metrics must match the order used in handle_audit / handle_extract

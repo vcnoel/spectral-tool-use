@@ -554,10 +554,8 @@ def handle_train_probe(args):
 
     train_idx, val_idx, test_idx = get_content_split_indices(samples)
     print(
-        f"[train-probe] Split: {
-            len(train_idx)} Train, {
-            len(val_idx)} Val, {
-                len(test_idx)} Test (Template-Consistent)")
+        f"[train-probe] Split: {len(train_idx)} Train, "
+        f"{len(val_idx)} Val, {len(test_idx)} Test (Template-Consistent)")
 
     if args.feature_type == "spectral_rich":
         import pickle
@@ -588,9 +586,7 @@ def handle_train_probe(args):
         test_scores = pipe.predict_proba(X[test_idx])[:, 1]
         test_auc = roc_auc_score(y[test_idx], test_scores)
         print(
-            f"[spectral_rich] Best C={best_C}  Val AUC={
-                best_val_auc:.4f}  Test AUC={
-                test_auc:.4f}")
+            f"[spectral_rich] Best C={best_C}  Val AUC={best_val_auc:.4f}  Test AUC={test_auc:.4f}")
 
         output_dir = Path(args.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -695,8 +691,7 @@ def handle_evaluate(args):
     y_true = np.array([s['label'] for s in samples])
 
     print(
-        f"[evaluate] Strictly evaluating on TEST split ({
-            len(samples)} samples, template-consistent)")
+        f"[evaluate] Strictly evaluating on TEST split ({len(samples)} samples, template-consistent)")
 
     # Store scores for hybrid mode
     spectral_scores = None
@@ -905,11 +900,8 @@ def handle_evaluate(args):
             h_thresh = find_optimal_threshold(y_true, hybrid_scores, target=args.optimize_for)
             metrics = compute_classification_metrics(y_true, hybrid_scores, threshold=h_thresh)
             print(
-                f"  Optimized ({
-                    args.optimize_for}): thresh={
-                    h_thresh:.4f}, precision={
-                    metrics['precision']:.4f}, recall={
-                    metrics['recall']:.4f}")
+                f"  Optimized ({args.optimize_for}): thresh={h_thresh:.4f}, "
+                f"precision={metrics['precision']:.4f}, recall={metrics['recall']:.4f}")
 
         if args.plots:
             plot_path = Path(args.output_dir) / f"eval_hybrid_{args.model}_{args.domain}.png"
