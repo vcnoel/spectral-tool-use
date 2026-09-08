@@ -405,6 +405,90 @@ def classify_failure(predicted_text: str, ground_truth_text: str) -> tuple[int, 
     return 0, "valid"
 
 
+def _anyof_value_match(candidates, pred_val) -> bool:
+    """BFCL ground truth lists ACCEPTABLE values per argument; '' marks the
+    argument as optional (handled by caller). A candidate may be a list
+    (array-typed argument): compare element-wise."""
+    for cand in candidates:
+        if cand == "":
+            continue
+        if isinstance(cand, list):
+            if (isinstance(pred_val, list) and len(cand) == len(pred_val)
+                    and all(_values_match(c, p) for c, p in zip(cand, pred_val))):
+                return True
+        elif isinstance(cand, dict):
+            if (isinstance(pred_val, dict)
+                    and set(cand.keys()) == set(pred_val.keys())
+                    and all(_values_match(v, pred_val[k]) for k, v in cand.items())):
+                return True
+        elif _values_match(cand, pred_val):
+            return True
+    return False
+
+
+def classify_failure_anyof(predicted_text: str, gt_anyof: list[dict],
+                           expect_call: bool = True) -> tuple[int, str]:
+    """
+    BFCL-style labeling. gt_anyof: [{func_name: {param: [acceptable values]}}]
+    ('' among the values marks the parameter optional). expect_call=False is
+    the irrelevance category: the model must NOT call any tool.
+    Returns (binary_label, failure_mode).
+    """
+    pred_calls, looked_like_call = extract_calls(predicted_text)
+
+    if not expect_call:
+        if pred_calls is None and not looked_like_call:
+            return 0, "valid_nocall"
+        return 1, "over_trigger"
+
+    if pred_calls is None:
+        return 1, ("unparseable_call" if looked_like_call else "no_call")
+
+    gt_calls = []
+    for entry in gt_anyof:
+        (name, params), = entry.items()
+        gt_calls.append((name, params))
+
+    if len(pred_calls) < len(gt_calls):
+        # some expected parallel call is absent
+        if not any(p["name"] == n for p in pred_calls for n, _ in gt_calls):
+            return 1, "wrong_name"
+        return 1, "missing_calls"
+
+    if not any(p["name"] == n for p in pred_calls for n, _ in gt_calls):
+        return 1, "wrong_name"
+
+    used = set()
+    worst = "valid"
+    for name, params in gt_calls:
+        required = {k: v for k, v in params.items()
+                    if not (isinstance(v, list) and "" in v)}
+        matched = False
+        for j, p in enumerate(pred_calls):
+            if j in used or p["name"] != name:
+                continue
+            if set(required.keys()) - set(p["arguments"].keys()):
+                worst = "missing_args"
+                continue
+            ok = True
+            for k, cands in params.items():
+                if k not in p["arguments"]:
+                    continue  # optional and absent, or required (caught above)
+                if not _anyof_value_match(cands if isinstance(cands, list) else [cands],
+                                          p["arguments"][k]):
+                    ok = False
+                    break
+            if not ok:
+                worst = "wrong_arg_values"
+                continue
+            matched = True
+            used.add(j)
+            break
+        if not matched:
+            return 1, (worst if worst != "valid" else "wrong_name")
+    return 0, "valid"
+
+
 def extract_glaive_tools(system_prompt: str) -> list[dict]:
     """
     Pull the tool JSON schemas out of a Glaive system prompt so they can be

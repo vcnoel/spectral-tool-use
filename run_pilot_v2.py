@@ -40,7 +40,8 @@ import numpy as np
 import torch
 
 from spectral_guardrails.probes.labeling import (
-    classify_failure, extract_calls, extract_glaive_tools,
+    classify_failure, classify_failure_anyof, extract_calls,
+    extract_glaive_tools,
 )
 from spectral_guardrails.probes.features import (
     extract_probe_features, find_token_positions_v2,
@@ -87,6 +88,69 @@ def iter_call_examples(limit: int):
             return
 
 
+BFCL_DIR = Path("data/bfcl_v4")
+BFCL_MIX = [  # (category file stem, expect_call, max examples)
+    ("BFCL_v4_simple_python", True, 300),
+    ("BFCL_v4_multiple", True, 200),
+    ("BFCL_v4_parallel", True, 100),
+    ("BFCL_v4_parallel_multiple", True, 100),
+    ("BFCL_v4_irrelevance", False, 150),
+]
+
+
+def _fix_schema(fn: dict) -> dict:
+    """BFCL uses 'dict' where JSON schema says 'object'."""
+    s = json.loads(json.dumps(fn).replace('"type": "dict"', '"type": "object"'))
+    return s
+
+
+def iter_bfcl_examples(limit: int):
+    """Yield unified records from the BFCL v4 single-turn categories.
+    Each: dict(tools, user, gt_anyof, expect_call, category, tool)."""
+    n = 0
+    for stem, expect_call, cap in BFCL_MIX:
+        qfile = BFCL_DIR / f"{stem}.json"
+        if not qfile.exists():
+            continue
+        answers = {}
+        afile = BFCL_DIR / "possible_answer" / f"{stem}.json"
+        if afile.exists():
+            for line in open(afile, encoding="utf-8"):
+                if line.strip():
+                    a = json.loads(line)
+                    answers[a["id"]] = a["ground_truth"]
+        count = 0
+        for line in open(qfile, encoding="utf-8"):
+            if count >= cap:
+                break
+            if not line.strip():
+                continue
+            q = json.loads(line)
+            turns = q["question"]
+            first_turn = turns[0] if isinstance(turns[0], list) else turns
+            user_msgs = [m["content"] for m in first_turn if m["role"] == "user"]
+            if not user_msgs:
+                continue
+            gt = answers.get(q["id"])
+            if expect_call and gt is None:
+                continue
+            tools = [_fix_schema(f) for f in q["function"]]
+            tool_group = (next(iter(gt[0])) if gt else
+                          f"irr::{tools[0]['name']}" if tools else "irr::none")
+            yield {
+                "tools": tools,
+                "user": " ".join(user_msgs),
+                "gt_anyof": gt,
+                "expect_call": expect_call,
+                "category": stem.replace("BFCL_v4_", ""),
+                "tool": tool_group,
+            }
+            count += 1
+            n += 1
+            if n >= limit:
+                return
+
+
 def handle_extract(args):
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
@@ -113,10 +177,21 @@ def handle_extract(args):
     print(f"[extract] {args.model}: {n_layers} layers, probe layers {probe_layers}")
 
     from tqdm import tqdm
+
+    if getattr(args, "benchmark", "glaive") == "bfcl":
+        source = iter_bfcl_examples(args.n)
+    else:
+        def _glaive_source():
+            for system, user, gt in iter_call_examples(args.n):
+                yield {"tools": extract_glaive_tools(system), "user": user,
+                       "gt_text": gt, "gt_anyof": None, "expect_call": True,
+                       "category": "glaive", "tool": None}
+        source = _glaive_source()
+
     kept, mode_counts = 0, {}
-    pbar = tqdm(iter_call_examples(args.n), total=args.n, desc="extract")
-    for system, user, gt in pbar:
-        tools = extract_glaive_tools(system)
+    pbar = tqdm(source, total=args.n, desc="extract")
+    for ex in pbar:
+        tools, user = ex["tools"], ex["user"]
         if not tools:
             continue
         msgs = [{"role": "system", "content": "You are a helpful assistant."},
@@ -158,7 +233,13 @@ def handle_extract(args):
             mean_logprob = float("nan")
 
         try:
-            label, mode = classify_failure(pred, gt)
+            if ex["gt_anyof"] is not None or not ex["expect_call"]:
+                label, mode = classify_failure_anyof(
+                    pred, ex["gt_anyof"] or [], ex["expect_call"])
+                gt_repr = json.dumps(ex["gt_anyof"])
+            else:
+                label, mode = classify_failure(pred, ex["gt_text"])
+                gt_repr = ex["gt_text"]
         except ValueError:
             continue
 
@@ -201,7 +282,11 @@ def handle_extract(args):
             "label": int(label),
             "failure_mode": mode,
             "prediction": pred,
-            "ground_truth": gt,
+            "ground_truth": gt_repr,
+            "gt_anyof": ex["gt_anyof"],
+            "expect_call": ex["expect_call"],
+            "category": ex["category"],
+            "tool": ex["tool"],
             "mean_logprob": mean_logprob,
             "prompt_tokens": int(prompt_len),
             "gen_tokens": len(gen_ids),
@@ -428,33 +513,51 @@ def auc_safe(y, s):
     return float(roc_auc_score(y, s))
 
 
-def handle_evaluate(args):
-    from spectral_guardrails.probes.gbt import train_lmm_gbt, predict_lmm
-    from spectral_guardrails.probes.labeling import classify_failure, extract_calls
+SEMANTIC_MODES = ["valid", "wrong_name", "missing_args", "wrong_arg_values",
+                  "missing_calls", "over_trigger", "valid_nocall"]
 
-    with open(FEATURES, encoding="utf-8") as f:
+
+def load_and_relabel(features_path):
+    """Load a feature dump, keep newest schema, re-label from stored text
+    with the CURRENT labeler, attach tool names. Returns (samples, changed)."""
+    with open(features_path, encoding="utf-8") as f:
         samples = [json.loads(line) for line in f if line.strip()]
 
-    # Re-label from stored text with the CURRENT labeler (labels are a
-    # function of code version, not of the extraction run) and attach the
-    # tool name for tool-level splitting.
+    if any("head_metrics_span" in s for s in samples):
+        n0 = len(samples)
+        samples = [s for s in samples if "head_metrics_span" in s]
+        if len(samples) < n0:
+            print(f"[load] dropped {n0 - len(samples)} stale-schema records")
+
     relabel_changes = 0
     for s in samples:
         old = s["label"]
         try:
-            s["label"], s["failure_mode"] = classify_failure(
-                s["prediction"], s["ground_truth"])
+            if s.get("gt_anyof") is not None or s.get("expect_call") is False:
+                s["label"], s["failure_mode"] = classify_failure_anyof(
+                    s["prediction"], s.get("gt_anyof") or [],
+                    s.get("expect_call", True))
+            else:
+                s["label"], s["failure_mode"] = classify_failure(
+                    s["prediction"], s["ground_truth"])
         except ValueError:
             pass
-        gt_calls, _ = extract_calls(s["ground_truth"])
-        s["tool"] = gt_calls[0]["name"] if gt_calls else "?"
+        if not s.get("tool"):
+            gt_calls, _ = extract_calls(s["ground_truth"])
+            s["tool"] = gt_calls[0]["name"] if gt_calls else "?"
         relabel_changes += (s["label"] != old)
+    return samples, relabel_changes
+
+
+def handle_evaluate(args):
+    from spectral_guardrails.probes.gbt import train_lmm_gbt, predict_lmm
+
+    samples, relabel_changes = load_and_relabel(FEATURES)
 
     y = np.array([s["label"] for s in samples])
     modes = np.array([s["failure_mode"] for s in samples])
     tools = np.array([s["tool"] for s in samples])
-    semantic = np.isin(modes, ["valid", "wrong_name", "missing_args",
-                               "wrong_arg_values"])
+    semantic = np.isin(modes, SEMANTIC_MODES)
 
     print(f"\nN={len(samples)}  hallucination rate={y.mean():.3f}"
           f"  (relabeling changed {relabel_changes} labels)")
@@ -507,6 +610,18 @@ def handle_evaluate(args):
             X[row] = hm.reshape(N, -1)
             per_head_rows.append(row)
             per_head_combined = X["Per-head all metrics (span)"]
+
+            # Dynamics: layer-to-layer deltas of each head's lambda_max —
+            # cross-layer evolution that flat per-layer feature sets
+            # (e.g. LapEigvals) do not represent explicitly.
+            lmax = hm[:, :, :, 4]                      # (N, L, H)
+            if lmax.shape[1] > 1:
+                dyn = np.diff(lmax, axis=1).reshape(N, -1)
+                X["Per-head lambda_max dynamics"] = dyn
+                X["Per-head lambda_max static+dynamics"] = np.hstack(
+                    [lmax.reshape(N, -1), dyn])
+                per_head_rows += ["Per-head lambda_max dynamics",
+                                  "Per-head lambda_max static+dynamics"]
         else:  # legacy dumps: fiedler only
             row = "Per-head fiedler_value (span)"
             X[row] = np.array([np.ravel(s["head_fiedler_span"])
@@ -620,6 +735,87 @@ def handle_evaluate(args):
     print(f"\nsaved -> {OUT_DIR / 'results.json'}")
 
 
+def handle_transfer(args):
+    """
+    Cross-dataset transfer: train detectors on one feature dump, evaluate on
+    another (same model, different benchmark). The question a practitioner
+    asks: do I need to relabel for my domain, or does a detector trained on
+    a generic tool-calling set transfer zero-shot?
+    """
+    tr_samples, _ = load_and_relabel(Path(f"data/pilot_v2_{args.train_tag}/features.jsonl"))
+    te_samples, _ = load_and_relabel(Path(f"data/pilot_v2_{args.test_tag}/features.jsonl"))
+
+    def build(samples):
+        N = len(samples)
+        hm = np.array([s["head_metrics_span"] for s in samples], dtype=np.float32)
+        return {
+            "y": np.array([s["label"] for s in samples]),
+            "semantic": np.isin(np.array([s["failure_mode"] for s in samples]),
+                                SEMANTIC_MODES),
+            "Hidden token-role [LR]": hidden_matrix(samples),
+            "Per-head all metrics (span)": hm.reshape(N, -1),
+            "Per-head lambda_max (span)": hm[:, :, :, 4].reshape(N, -1),
+            "lap": np.array([s["lapeig_diag"] for s in samples], dtype=np.float32),
+            "Surface (lengths) [confound]": surface_matrix(samples),
+            "logprob": np.nan_to_num(
+                np.array([s["mean_logprob"] for s in samples]), nan=0.0),
+        }
+
+    TR, TE = build(tr_samples), build(te_samples)
+    y_tr, y_te = TR["y"], TE["y"]
+    print(f"\ntrain={args.train_tag} (N={len(y_tr)}, pos={int(y_tr.sum())})  "
+          f"test={args.test_tag} (N={len(y_te)}, pos={int(y_te.sum())})")
+
+    rows = {}
+    for seed in [42, 43, 44]:
+        itr, iva, _ = group_split(tr_samples, seed, train_ratio=0.85,
+                                  val_ratio=0.15, key="tool")
+        for name in ["Hidden token-role [LR]", "Per-head all metrics (span)",
+                     "Per-head lambda_max (span)",
+                     "Surface (lengths) [confound]"]:
+            p = fit_lr(TR[name], y_tr, itr, iva)
+            sc = p.predict_proba(TE[name])[:, 1]
+            rows.setdefault(name, {"all": [], "semantic": []})
+            rows[name]["all"].append(auc_safe(y_te, sc))
+            rows[name]["semantic"].append(
+                auc_safe(y_te[TE["semantic"]], sc[TE["semantic"]]))
+        best_scores, best_val = None, -1.0
+        for k in [5, 10, 25, 50, 100]:
+            Xk_tr = TR["lap"][:, :, :, :k].reshape(len(y_tr), -1)
+            Xk_te = TE["lap"][:, :, :, :k].reshape(len(y_te), -1)
+            p = fit_lr(Xk_tr, y_tr, itr, iva)
+            v = auc_safe(y_tr[iva], p.predict_proba(Xk_tr[iva])[:, 1])
+            if not np.isnan(v) and v > best_val:
+                best_val = v
+                best_scores = p.predict_proba(Xk_te)[:, 1]
+        rows.setdefault("LapEigvals (official code)", {"all": [], "semantic": []})
+        rows["LapEigvals (official code)"]["all"].append(auc_safe(y_te, best_scores))
+        rows["LapEigvals (official code)"]["semantic"].append(
+            auc_safe(y_te[TE["semantic"]], best_scores[TE["semantic"]]))
+
+    sign = 1.0 if auc_safe(y_tr, -TR["logprob"]) >= 0.5 else -1.0
+    rows["Mean logprob"] = {
+        "all": [auc_safe(y_te, sign * -TE["logprob"])],
+        "semantic": [auc_safe(y_te[TE["semantic"]],
+                              sign * -TE["logprob"][TE["semantic"]])]}
+
+    print("=" * 88)
+    print(f"{'Detector':<38} {'AUC (all)':>18} {'AUC (semantic)':>20}")
+    print("-" * 88)
+    for name, r in rows.items():
+        def fmt(v):
+            v = [x for x in v if not np.isnan(x)]
+            return f"{np.mean(v):.3f} ± {np.std(v):.3f}" if v else "n/a"
+        print(f"{name:<38} {fmt(r['all']):>18} {fmt(r['semantic']):>20}")
+    print("=" * 88)
+
+    out = Path(f"data/pilot_v2_{args.test_tag}/transfer_from_{args.train_tag}.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump({k: {kk: [float(x) for x in vv] for kk, vv in v.items()}
+                   for k, v in rows.items()}, f, indent=2)
+    print(f"saved -> {out}")
+
+
 def main():
     global OUT_DIR, FEATURES
     ap = argparse.ArgumentParser()
@@ -628,6 +824,7 @@ def main():
     e.add_argument("--model", default="Qwen/Qwen3.5-2B")
     e.add_argument("--n", type=int, default=750)
     e.add_argument("--fresh", action="store_true")
+    e.add_argument("--benchmark", choices=["glaive", "bfcl"], default="glaive")
     e.add_argument("--rich", action="store_true", default=True,
                    help="also dump eigenvalue profiles, per-head Fiedler, "
                         "hidden-state Gram spectra")
@@ -636,7 +833,13 @@ def main():
                    help="output subdir tag (default: derived from model id)")
     v = sub.add_parser("evaluate")
     v.add_argument("--tag", default="qwen35_2b")
+    t = sub.add_parser("transfer")
+    t.add_argument("--train-tag", required=True)
+    t.add_argument("--test-tag", required=True)
     args = ap.parse_args()
+    if args.cmd == "transfer":
+        handle_transfer(args)
+        return
     if args.cmd == "extract" and args.tag is None:
         args.tag = (args.model.split("/")[-1].lower()
                     .replace("-instruct", "").replace(".", "").replace("-", "_"))
