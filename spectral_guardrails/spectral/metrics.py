@@ -219,3 +219,57 @@ def gram_spectrum_features(hidden: torch.Tensor, k: int = 8) -> list[float]:
     top = (ev[:k] / total).tolist()
     top += [0.0] * (k - len(top))
     return [float(x) for x in top] + [eff_rank, logdet, entropy]
+
+
+# ── baseline feature families (attention-only) ────────────────────────────────
+
+def lookback_ratio(attn: torch.Tensor, prompt_len: int,
+                   seq_len: int) -> list[list[float]]:
+    """
+    Lookback Lens features (Chuang et al., 2024): for each head, the share of
+    attention mass that generated-token rows place on the prompt versus on
+    the generated span. A contextual hallucination is associated with a shift
+    of attention away from the provided context.
+
+    attn: [H, T, T] for one layer. Returns [H][2] = [context share,
+    generation share], averaged over generated rows. Attention-only.
+    """
+    A = attn.to(torch.float32)
+    H = A.shape[0]
+    rows = A[:, prompt_len:seq_len, :]                      # generated rows
+    if rows.shape[1] == 0:
+        return [[0.0, 0.0] for _ in range(H)]
+    ctx = rows[:, :, :prompt_len].sum(-1)                   # [H, G]
+    gen = rows[:, :, prompt_len:seq_len].sum(-1)            # [H, G]
+    total = (ctx + gen).clamp(min=1e-9)
+    return [[float((ctx[h] / total[h]).mean()),
+             float((gen[h] / total[h]).mean())] for h in range(H)]
+
+
+def residual_dynamics(hidden_states, prompt_len: int, seq_len: int,
+                      k_layers: int = 32) -> list[list[float]]:
+    """
+    Cross-layer residual-stream dynamics, in the spirit of the ICR probe
+    (Zhang et al., 2025): how much each block changes the residual stream
+    over the generated span, and how much direction it preserves.
+
+    hidden_states: sequence of [1, T, D] tensors (HF output_hidden_states).
+    Returns [L-1][4]: relative update norm (mean and max over the span) and
+    cosine similarity with the previous layer (mean and min). Requires
+    residual-stream access.
+    """
+    out = []
+    n = min(len(hidden_states), k_layers + 1)
+    for i in range(1, n):
+        prev = hidden_states[i - 1][0, prompt_len:seq_len].to(torch.float32)
+        cur = hidden_states[i][0, prompt_len:seq_len].to(torch.float32)
+        if prev.shape[0] == 0:
+            out.append([0.0, 0.0, 0.0, 0.0])
+            continue
+        delta = (cur - prev).norm(dim=-1)
+        scale = cur.norm(dim=-1).clamp(min=1e-9)
+        rel = delta / scale
+        cos = torch.nn.functional.cosine_similarity(prev, cur, dim=-1)
+        out.append([float(rel.mean()), float(rel.max()),
+                    float(cos.mean()), float(cos.min())])
+    return out

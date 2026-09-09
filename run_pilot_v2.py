@@ -57,7 +57,7 @@ from spectral_guardrails.probes.features import (
 from spectral_guardrails.spectral.metrics import (
     METRIC_NAMES, PER_HEAD_METRICS, layer_spectral_metrics,
     laplacian_eig_profile, per_head_metrics, gram_spectrum_features,
-    lapeigvals_diag_profile,
+    lapeigvals_diag_profile, lookback_ratio, residual_dynamics,
 )
 from spectral_guardrails.utils.data import load_glaive_data, parse_glaive_chat
 
@@ -66,6 +66,7 @@ FEATURES = OUT_DIR / "features.jsonl"
 SEED = 42
 N_PROBE_LAYERS = 8
 MAX_NEW_TOKENS = 256
+TOKEN_STATE_CAP = 48   # generated tokens kept for the token-level probe
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -327,7 +328,7 @@ def handle_extract(args):
         span = (prompt_len, T)
         layer_diagnostics, layer_diagnostics_span = [], []
         eig_profile, eig_profile_span, head_fiedler_span = [], [], []
-        lapeig_diag = []
+        lapeig_diag, lookback = [], []
         for attn in mo.attentions:               # full-attention layers only
             a = attn[0]                          # [H, T, T]
             layer_diagnostics.append(layer_spectral_metrics(a))
@@ -337,8 +338,19 @@ def handle_extract(args):
                 eig_profile_span.append(laplacian_eig_profile(a, span=span))
                 head_fiedler_span.append(per_head_metrics(a, span=span))
                 lapeig_diag.append(lapeigvals_diag_profile(a))
+                lookback.append(lookback_ratio(a, prompt_len, T))
 
         pos = find_token_positions_v2(tok, gen_ids, prompt_len)
+        # Per-token residual states over the generated span at one mid-late
+        # depth, for the token-level probe baseline (Obeso et al., 2025),
+        # capped in length and stored at reduced precision to keep the dump
+        # tractable.
+        token_states, token_layer = None, None
+        if args.rich:
+            token_layer = max(1, int(round(0.7 * n_layers)))
+            span_states = mo.hidden_states[token_layer][0, prompt_len:T]
+            span_states = span_states[:TOKEN_STATE_CAP].to(torch.float16)
+            token_states = span_states.cpu().numpy().round(4).tolist()
         hidden, gram_feats = {}, {}
         for li in probe_layers:
             h = mo.hidden_states[li][0].to(torch.float32).cpu()
@@ -346,6 +358,8 @@ def handle_extract(args):
             if args.rich:
                 gram_feats[str(li)] = gram_spectrum_features(
                     mo.hidden_states[li][0][prompt_len:T])
+
+        res_dyn = residual_dynamics(mo.hidden_states, prompt_len, T)             if args.rich else None
 
         del mo, out
         torch.cuda.empty_cache()
@@ -379,6 +393,13 @@ def handle_extract(args):
             # [L][H][100] official LapEigvals diagonal profile
             rec["lapeig_diag"] = lapeig_diag
             rec["gram_feats"] = gram_feats
+            # [L][H][2] Lookback Lens context/generation attention shares
+            rec["lookback"] = lookback
+            # [L-1][4] cross-layer residual-stream dynamics (ICR-style)
+            rec["res_dynamics"] = res_dyn
+            # per-token residual states at one depth, for a token-level probe
+            rec["token_states"] = token_states
+            rec["token_state_layer"] = token_layer
         with open(FEATURES, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
         # Record the hash: the benchmark streams repeat prompts (Glaive
@@ -546,13 +567,13 @@ def honest_sweep_scores(X, y, tr, va, te):
     return best_sign * X[te, best_j]
 
 
-def fit_lr(X, y, tr, va):
+def fit_lr(X, y, tr, va, c_grid=(0.01, 0.1, 1.0, 10.0)):
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import Pipeline
     from sklearn.preprocessing import StandardScaler
     from sklearn.metrics import roc_auc_score
     best, best_v = None, -1
-    for C in [0.01, 0.1, 1.0, 10.0]:
+    for C in c_grid:
         p = Pipeline([("sc", StandardScaler()),
                       ("lr", LogisticRegression(C=C, max_iter=2000,
                                                 class_weight="balanced"))])
