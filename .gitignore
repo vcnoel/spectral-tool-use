@@ -45,3 +45,13 @@ run_eval_only.py
 # Tool internals
 .claude/
 wandb/
+
+# LaTeX build artifacts (paper/ sources are tracked)
+paper/iclr/*.aux
+paper/iclr/*.log
+paper/iclr/*.out
+paper/iclr/*.bbl
+paper/iclr/*.blg
+paper/iclr/*.fls
+paper/iclr/*.fdb_latexmk
+paper/iclr/build.log
