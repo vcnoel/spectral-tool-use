@@ -381,6 +381,10 @@ def handle_extract(args):
             rec["gram_feats"] = gram_feats
         with open(FEATURES, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
+        # Record the hash: the benchmark streams repeat prompts (Glaive
+        # heavily so), and without this a repeat within the same run is
+        # written again -- 13% of each Glaive dump before this fix.
+        done.add(prompt_hash)
         kept += 1
         mode_counts[mode] = mode_counts.get(mode, 0) + 1
         pbar.set_postfix(kept=kept, mode=mode, halluc=f"{label}")
@@ -605,6 +609,21 @@ def load_and_relabel(features_path):
         samples = [s for s in samples if "head_metrics_span" in s]
         if len(samples) < n0:
             print(f"[load] dropped {n0 - len(samples)} stale-schema records")
+
+    # Deduplicate by prompt: repeated prompts were written more than once by
+    # runs predating the extraction fix above. The rows are identical, so
+    # keeping the first occurrence is lossless; leaving them in silently
+    # up-weights those examples.
+    seen, unique = set(), []
+    for s in samples:
+        if s["prompt_hash"] in seen:
+            continue
+        seen.add(s["prompt_hash"])
+        unique.append(s)
+    if len(unique) < len(samples):
+        print(f"[load] deduplicated {len(samples) - len(unique)} repeated "
+              f"prompts ({len(unique)} unique remain)")
+    samples = unique
 
     relabel_changes = 0
     for s in samples:
