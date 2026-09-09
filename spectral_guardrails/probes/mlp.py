@@ -51,6 +51,7 @@ def train_probe(probe: HallucinationProbe,
 
     history = {'train_loss': [], 'val_loss': [], 'val_auc': []}
     best_val_loss = float('inf')
+    best_state = None
     counter = 0
 
     for epoch in range(epochs):
@@ -86,14 +87,22 @@ def train_probe(probe: HallucinationProbe,
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             counter = 0
-            torch.save(probe.state_dict(), "best_probe.pt")
+            # Keep the best weights in memory. Previously this wrote to a
+            # fixed path ("best_probe.pt") in the working directory, so two
+            # probe trainings running at once clobbered each other's
+            # checkpoint — a crash on a dimension mismatch, and silent
+            # cross-contamination of results when dimensions happened to
+            # agree.
+            best_state = {k: v.detach().clone()
+                          for k, v in probe.state_dict().items()}
         else:
             counter += 1
             if counter >= patience:
                 print(f"Early stopping at epoch {epoch}")
                 break
 
-    probe.load_state_dict(torch.load("best_probe.pt"))
+    if best_state is not None:
+        probe.load_state_dict(best_state)
     return probe, history
 
 

@@ -559,6 +559,16 @@ def handle_evaluate(args):
     tools = np.array([s["tool"] for s in samples])
     semantic = np.isin(modes, SEMANTIC_MODES)
 
+    # BFCL dumps carry an irrelevance category (expect_call=False); keep a
+    # mask of the call-expected population for a confound-free subset score.
+    if any("expect_call" in s for s in samples):
+        expect_call_mask = np.array([bool(s.get("expect_call", True))
+                                     for s in samples])
+        if expect_call_mask.all():
+            expect_call_mask = None
+    else:
+        expect_call_mask = None
+
     print(f"\nN={len(samples)}  hallucination rate={y.mean():.3f}"
           f"  (relabeling changed {relabel_changes} labels)")
     print("failure modes:", {m: int((modes == m).sum())
@@ -663,7 +673,9 @@ def handle_evaluate(args):
     results = {}   # name -> {"all": [pooled aucs], "semantic": [pooled aucs]}
 
     def add(name, subset, val):
-        results.setdefault(name, {"all": [], "semantic": []})[subset].append(val)
+        results.setdefault(
+            name, {"all": [], "semantic": [], "call_expected": []}
+        )[subset].append(val)
 
     for seed in seeds:
         # cross-fit: every sample scored exactly once by a model that never
@@ -698,24 +710,45 @@ def handle_evaluate(args):
             add(name, "all", auc_safe(y[ok], scores[ok]))
             ok_sem = ok & semantic
             add(name, "semantic", auc_safe(y[ok_sem], scores[ok_sem]))
+            # BFCL mixes call-expected categories with the irrelevance
+            # category. On irrelevance items the label is "called a tool at
+            # all", which any call-presence feature predicts trivially, so a
+            # mixed-pool AUC is inflated. Score the call-expected subset
+            # separately (this is the semantically hard population).
+            if expect_call_mask is not None:
+                ok_ec = ok_sem & expect_call_mask
+                add(name, "call_expected", auc_safe(y[ok_ec], scores[ok_ec]))
 
     # ── report ─────────────────────────────────────────────────────────────────
     n_pos_sem = int(y[semantic].sum())
-    lines = ["", "=" * 92,
+    has_ec = expect_call_mask is not None
+    if has_ec:
+        ec_sem = semantic & expect_call_mask
+        hdr_extra = f"{'AUC (call-expected)':>22}"
+        info_extra = (f"; call-expected: {int(ec_sem.sum())} samples / "
+                      f"{int(y[ec_sem].sum())} pos")
+    else:
+        hdr_extra, info_extra = "", ""
+    width = 92 + (22 if has_ec else 0)
+    lines = ["", "=" * width,
              f"Pooled cross-fit AUC over N={len(samples)} "
-             f"({int(y.sum())} pos; semantic: {n_pos_sem} pos), "
+             f"({int(y.sum())} pos; semantic: {n_pos_sem} pos{info_extra}), "
              f"tool-level folds, {len(seeds)} seeds",
-             "=" * 92,
-             f"{'Detector':<38} {'AUC (all)':>18} {'AUC (semantic only)':>24}",
-             "-" * 92]
+             "=" * width,
+             f"{'Detector':<38} {'AUC (all)':>18} {'AUC (semantic only)':>24}"
+             + hdr_extra,
+             "-" * width]
     for name, r in results.items():
         def fmt(v):
             v = [x for x in v if not np.isnan(x)]
             if not v:
                 return "n/a"
             return f"{np.mean(v):.3f} ± {np.std(v):.3f}"
-        lines.append(f"{name:<38} {fmt(r['all']):>18} {fmt(r['semantic']):>24}")
-    lines.append("=" * 92)
+        row = f"{name:<38} {fmt(r['all']):>18} {fmt(r['semantic']):>24}"
+        if has_ec:
+            row += f"{fmt(r['call_expected']):>22}"
+        lines.append(row)
+    lines.append("=" * width)
     report = "\n".join(lines)
     print(report)
 
