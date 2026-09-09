@@ -151,6 +151,53 @@ def iter_bfcl_examples(limit: int):
                 return
 
 
+TOOL_PROMPT_FALLBACK = (
+    "You are a helpful assistant with access to the following functions.\n"
+    "When a function is needed, reply with ONLY a JSON object of the form\n"
+    '{{"name": <function name>, "arguments": {{<arg name>: <value>}}}}\n'
+    "and nothing else.\n\nAvailable functions:\n{schemas}"
+)
+
+
+def render_tool_prompt(tok, tools, user):
+    """
+    Render a tool-calling prompt and VERIFY that the tool schemas actually
+    reached it.
+
+    Some chat templates silently ignore the ``tools=`` argument -- notably
+    google/gemma-3-*-it. The model then never sees a tool, answers in prose,
+    and every example is labelled ``no_call``: 678 such records were produced
+    before this guard existed (audit 2026-09-09). When the native template
+    drops the tools we fall back to an explicit system-prompt specification.
+    If the tool names still do not appear we return None, so an example whose
+    label would be an artefact of prompt rendering is never emitted.
+    """
+    names = [t.get("name", "") for t in tools if t.get("name")]
+    try:
+        text = tok.apply_chat_template(
+            [{"role": "system", "content": "You are a helpful assistant."},
+             {"role": "user", "content": user}],
+            tools=tools, tokenize=False, add_generation_prompt=True)
+    except Exception:
+        text = None
+    if text is not None and all(n in text for n in names):
+        return text
+
+    schemas = "\n".join(json.dumps(t) for t in tools)
+    sys_msg = TOOL_PROMPT_FALLBACK.format(schemas=schemas)
+    for msgs in ([{"role": "system", "content": sys_msg},
+                  {"role": "user", "content": user}],
+                 [{"role": "user", "content": sys_msg + "\n\n" + user}]):
+        try:
+            text = tok.apply_chat_template(msgs, tokenize=False,
+                                           add_generation_prompt=True)
+        except Exception:
+            continue
+        if all(n in text for n in names):
+            return text
+    return None
+
+
 def handle_extract(args):
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
@@ -188,18 +235,15 @@ def handle_extract(args):
                        "category": "glaive", "tool": None}
         source = _glaive_source()
 
-    kept, mode_counts = 0, {}
+    kept, mode_counts, skipped_prompt = 0, {}, 0
     pbar = tqdm(source, total=args.n, desc="extract")
     for ex in pbar:
         tools, user = ex["tools"], ex["user"]
         if not tools:
             continue
-        msgs = [{"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": user}]
-        try:
-            prompt_text = tok.apply_chat_template(
-                msgs, tools=tools, tokenize=False, add_generation_prompt=True)
-        except Exception:
+        prompt_text = render_tool_prompt(tok, tools, user)
+        if prompt_text is None:
+            skipped_prompt += 1
             continue
         prompt_hash = hashlib.sha256(prompt_text.encode("utf-8")).hexdigest()
         if prompt_hash in done:
@@ -315,6 +359,9 @@ def handle_extract(args):
 
     print(f"\n[extract] DONE: {kept} samples -> {FEATURES}")
     print(f"[extract] failure modes this run: {mode_counts}")
+    if skipped_prompt:
+        print(f"[extract] WARNING: {skipped_prompt} examples skipped -- "
+              f"tool schemas could not be rendered into the prompt")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
