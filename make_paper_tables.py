@@ -146,6 +146,32 @@ def main():
         lines.append(f"| {MODEL_LABELS.get(t, t)} | " + " | ".join(cells) + " |")
     lines.append("")
 
+    # ── 3b. cross-dataset transfer ───────────────────────────────────────────
+    tf_files = sorted(Path("data").glob("pilot_v2_*/transfer_from_*.json"))
+    if tf_files:
+        lines += ["## 3b. Cross-dataset transfer (zero-shot, fixed model)", "",
+                  "Detector trained on the *train* dump, applied unchanged to "
+                  "the *test* dump. `Δ` is the drop versus that detector's "
+                  "in-domain score on the test dump.", "",
+                  "| Train → Test | Detector | Transfer AUC | In-domain AUC | Δ |",
+                  "|---|---|---|---|---|"]
+        for p in tf_files:
+            test_tag = p.parent.name.replace("pilot_v2_", "")
+            train_tag = p.name.replace("transfer_from_", "").replace(".json", "")
+            tf = json.loads(p.read_text(encoding="utf-8"))
+            indom = runs.get(test_tag, {}).get("results", {})
+            for det, vals in tf.items():
+                t_auc = mean_of(vals["semantic"])
+                i_auc = mean_of(indom.get(det, {}).get("semantic", [np.nan]))
+                delta = ("--" if np.isnan(i_auc) or np.isnan(t_auc)
+                         else f"{t_auc - i_auc:+.3f}")
+                lines.append(
+                    f"| {MODEL_LABELS.get(train_tag, train_tag)} → "
+                    f"{MODEL_LABELS.get(test_tag, test_tag)} | {det} | "
+                    f"{fmt(vals['semantic'])} | "
+                    f"{'--' if np.isnan(i_auc) else f'{i_auc:.3f}'} | {delta} |")
+        lines.append("")
+
     # ── 4. LaTeX main table ──────────────────────────────────────────────────
     headline = ["Mean logprob", "Surface (lengths) [confound]",
                 "LapEigvals (official code)", "Per-head all metrics (span)",
