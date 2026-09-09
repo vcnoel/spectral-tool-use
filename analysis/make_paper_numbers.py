@@ -222,6 +222,13 @@ def main():
                   "decorrUnionGainMax", "decorrUnionPositiveRuns"):
             define(m, f"\pending{{{m}}}")
 
+    fkf = DATA / "theory" / "decorrelation_fixedk.json"
+    if fkf.exists():
+        fk = json.loads(fkf.read_text(encoding="utf-8"))["summary"]
+        define("decorrUnionGainFixed", f"{fk['union_gain_mean']:+.3f}")
+    else:
+        define("decorrUnionGainFixed", "\\pending{fixed-width union}")
+
     # transfer results
     for f in sorted(DATA.glob("pilot_v2_*/transfer_from_*.json")):
         test_tag = f.parent.name.replace("pilot_v2_", "")
