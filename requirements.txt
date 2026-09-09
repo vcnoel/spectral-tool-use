@@ -8,3 +8,4 @@ pandas
 numpy
 tqdm
 bitsandbytes
+spectral_trust>=0.3.0

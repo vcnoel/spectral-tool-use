@@ -26,6 +26,14 @@ Fixes applied relative to the v1 (workshop-paper) pipeline, per the
      logprob baseline, and a "semantic subset" evaluation that excludes
      format failures (no_call / unparseable_call).
 
+Known caveats:
+  - Some chat templates inject the current date (Llama-3.x writes
+    "Today Date: <today>"), so prompt text -- and therefore prompt_hash --
+    changes from day to day. Splits are grouped by TOOL, not prompt_hash,
+    so results are unaffected; but byte-identical re-extraction requires
+    pinning the date.
+  - Per-head spectral features come from spectral_trust (>=0.3.0).
+
 Usage:
   python run_pilot_v2.py extract --model Qwen/Qwen3.5-2B --n 750
   python run_pilot_v2.py evaluate

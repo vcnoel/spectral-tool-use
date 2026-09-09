@@ -119,55 +119,39 @@ def laplacian_eig_profile(attn: torch.Tensor,
     return [float(x) for x in lo + hi]
 
 
-# Per-head metric order: one eigendecomposition per head yields all five.
+# Per-head metrics are provided by the spectral-trust library (>=0.3.0), so
+# the paper's features come from the published implementation rather than a
+# pipeline-local copy. Verified bit-exact against the previous local
+# implementation on real attention tensors (2026-09-09).
+#
+# The library removes self-loops only when asked; the pilot has always built
+# the normalized Laplacian on the loop-free graph, so that is pinned here.
+from spectral_trust import GSPConfig as _GSPConfig
+from spectral_trust import per_head_metrics as _st_per_head_metrics
+
 PER_HEAD_METRICS = ["fiedler_value", "connectivity_ratio",
                     "spectral_entropy_norm", "hfer", "lambda_max"]
+
+_PER_HEAD_CFG = _GSPConfig(normalization="sym", symmetrization="symmetric",
+                           remove_self_loops=True)
 
 
 def per_head_metrics(attn: torch.Tensor,
                      span: tuple[int, int] | None = None) -> list[list[float]]:
     """
     Five eigenvalue-only metrics of each head's OWN normalized Laplacian
-    (no head averaging). Head-averaging is a known signal destroyer for
-    attention-graph diagnostics; this keeps head resolution. All metrics
-    come from the same per-head eigendecomposition, so extracting five
-    costs the same as extracting one. Attention-only.
+    (no head averaging), delegated to spectral_trust.per_head_metrics.
 
-    Returns [H][5] in PER_HEAD_METRICS order.
+    Head-averaging dilutes the routing anomaly that accompanies a failure,
+    because heads are specialized; keeping per-head resolution preserves it.
+    All heads are decomposed in one batched eigendecomposition, so five
+    metrics cost what one costs. Attention-only.
+
+    Returns [H][5] in PER_HEAD_METRICS order (the library's
+    "spectral_radius" is this list's "lambda_max").
     """
-    H = attn.shape[0]
-    out = []
-    for h in range(H):
-        A = attn[h].to(torch.float32)
-        W = 0.5 * (A + A.T)
-        if span is not None:
-            s, e = span
-            W = W[s:e, s:e]
-        W = W.clone()
-        W.fill_diagonal_(0.0)
-        T = W.shape[0]
-        if T < 3:
-            out.append([0.0] * len(PER_HEAD_METRICS))
-            continue
-        deg = W.sum(dim=-1)
-        inv_sqrt = torch.where(deg > 1e-10, deg.clamp(min=1e-10).rsqrt(),
-                               torch.zeros_like(deg))
-        L = torch.eye(T, device=W.device) - inv_sqrt[:, None] * W * inv_sqrt[None, :]
-        ev = torch.linalg.eigvalsh(0.5 * (L + L.T)).clamp(min=0.0)
-        lam2 = float(ev[1])
-        lam_max = float(ev[-1])
-        total = float(ev.sum())
-        if total <= 1e-12:
-            ent, hfer_v = 0.0, 0.0
-        else:
-            p = (ev / total).clamp(min=1e-12)
-            ent = float(-(p * p.log()).sum()) / max(
-                torch.log(torch.tensor(float(T))).item(), 1e-9)
-            hfer_v = float(ev[T // 2:].sum() / total)
-        out.append([lam2,
-                    lam2 / lam_max if lam_max > 1e-12 else 0.0,
-                    ent, hfer_v, lam_max])
-    return out
+    return _st_per_head_metrics(
+        attn, config=_PER_HEAD_CFG, token_span=span).values.tolist()
 
 
 def per_head_fiedler(attn: torch.Tensor,
