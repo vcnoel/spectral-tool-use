@@ -33,6 +33,7 @@ ACCESS_TIER = {
     "Per-head spectral_entropy_norm (span)": "attention",
     "Per-head hfer (span)": "attention",
     "Per-head lambda_max (span)": "attention",
+    "Per-head connectivity_ratio (span)": "attention",
     "Per-head all metrics (span)": "attention",
     "Per-head lambda_max dynamics": "attention",
     "Per-head lambda_max static+dynamics": "attention",
@@ -52,12 +53,16 @@ MODEL_LABELS = {
     "llama_32_1b_bfcl": "Llama-3.2-1B / BFCL-v4",
     "llama_32_3b_bfcl": "Llama-3.2-3B / BFCL-v4",
     "qwen35_2b_bfcl": "Qwen3.5-2B / BFCL-v4",
+    "qwen3_17b_bfcl": "Qwen3-1.7B / BFCL-v4",
+    "gemma3_1b": "Gemma-3-1B / Glaive",
 }
 
 ARCH_NOTE = {
     "llama_32_1b": "16 layers, 32 heads, full attention (GQA-8)",
     "llama_32_3b": "28 layers, 24 heads, full attention (GQA-8)",
     "qwen35_2b": "24 layers, 6 full-attention (hybrid gated-DeltaNet)",
+    "qwen3_17b": "28 layers, 16 heads, all full attention (GQA-8)",
+    "gemma3_1b": "26 layers, 4 heads/1 KV, 22 sliding-window + 4 full",
 }
 
 
@@ -195,8 +200,12 @@ def main():
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines), encoding="utf-8")
-    print("\n".join(lines))
-    print(f"\nwritten -> {out}")
+    # Summary only: non-UTF-8 consoles cannot encode the table characters.
+    print(f"written -> {out}  ({len(lines)} lines, {len(tags)} runs)")
+    for t in tags:
+        run = runs[t]
+        print(f"  - {MODEL_LABELS.get(t, t)}  N={run['n']}  "
+              f"halluc={run['halluc_rate']:.3f}")
 
 
 if __name__ == "__main__":
