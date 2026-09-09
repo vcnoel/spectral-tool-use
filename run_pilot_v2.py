@@ -159,6 +159,28 @@ TOOL_PROMPT_FALLBACK = (
 )
 
 
+def _apply_template(tok, msgs, tools=None):
+    """
+    apply_chat_template with chain-of-thought disabled where the template
+    supports it.
+
+    Qwen3 templates default to thinking mode: the model emits a long
+    <think> trace before any tool call, so with a fixed generation budget
+    the call is frequently never reached and the example is labelled
+    `no_call` — a measurement of reasoning length, not of tool-call
+    quality, and not comparable to the non-thinking models in the sweep
+    (audit 2026-09-09). Templates that do not accept the flag are
+    unaffected.
+    """
+    kwargs = dict(tokenize=False, add_generation_prompt=True)
+    if tools is not None:
+        kwargs["tools"] = tools
+    try:
+        return tok.apply_chat_template(msgs, enable_thinking=False, **kwargs)
+    except TypeError:
+        return tok.apply_chat_template(msgs, **kwargs)
+
+
 def render_tool_prompt(tok, tools, user):
     """
     Render a tool-calling prompt and VERIFY that the tool schemas actually
@@ -174,10 +196,11 @@ def render_tool_prompt(tok, tools, user):
     """
     names = [t.get("name", "") for t in tools if t.get("name")]
     try:
-        text = tok.apply_chat_template(
+        text = _apply_template(
+            tok,
             [{"role": "system", "content": "You are a helpful assistant."},
              {"role": "user", "content": user}],
-            tools=tools, tokenize=False, add_generation_prompt=True)
+            tools=tools)
     except Exception:
         text = None
     if text is not None and all(n in text for n in names):
@@ -189,8 +212,7 @@ def render_tool_prompt(tok, tools, user):
                   {"role": "user", "content": user}],
                  [{"role": "user", "content": sys_msg + "\n\n" + user}]):
         try:
-            text = tok.apply_chat_template(msgs, tokenize=False,
-                                           add_generation_prompt=True)
+            text = _apply_template(tok, msgs)
         except Exception:
             continue
         if all(n in text for n in names):
