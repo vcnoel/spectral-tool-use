@@ -195,6 +195,33 @@ def main():
                   "perHeadSdMean", "nJensenModels"):
             define(m, f"\pending{{{m}}}")
 
+    # ── Corollary 2: decorrelation of the two attention families ────────────
+    df = DATA / "theory" / "decorrelation.json"
+    if df.exists():
+        d = json.loads(df.read_text(encoding="utf-8"))
+        sm = d["summary"]
+        define("decorrNRuns", str(sm["n_runs"]))
+        define("decorrRhoMean", f"{sm['spearman_mean']:.2f}")
+        define("decorrRhoMin", f"{sm['spearman_min']:.2f}")
+        define("decorrRhoMax", f"{sm['spearman_max']:.2f}")
+        define("decorrResidPerHead", f"{sm['residual_per_head_mean']:.3f}")
+        define("decorrResidLapEig", f"{sm['residual_lapeig_mean']:.3f}")
+        define("decorrUnionGain", f"{sm['union_gain_mean']:+.3f}")
+        define("decorrUnionGainMax", f"{sm['union_gain_max']:+.3f}")
+        define("decorrUnionPositiveRuns", str(sm["union_gain_positive_runs"]))
+        for tag, infix in RUNS.items():
+            if tag in d:
+                m = d[tag]["mean"]
+                define(f"decorrRho{infix}", f"{m['spearman']:.2f}")
+                define(f"decorrUnion{infix}", f"{m['auc_union']:.3f}")
+                define(f"decorrResidPh{infix}", f"{m['auc_per_head_residualized']:.3f}")
+                define(f"decorrResidLap{infix}", f"{m['auc_lapeig_residualized']:.3f}")
+    else:
+        for m in ("decorrNRuns", "decorrRhoMean", "decorrRhoMin", "decorrRhoMax",
+                  "decorrResidPerHead", "decorrResidLapEig", "decorrUnionGain",
+                  "decorrUnionGainMax", "decorrUnionPositiveRuns"):
+            define(m, f"\pending{{{m}}}")
+
     # transfer results
     for f in sorted(DATA.glob("pilot_v2_*/transfer_from_*.json")):
         test_tag = f.parent.name.replace("pilot_v2_", "")

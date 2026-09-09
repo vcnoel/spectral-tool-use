@@ -30,7 +30,7 @@ TAGS = ["llama_32_1b", "llama_32_3b", "gemma3_1b",
         "llama_32_1b_bfcl", "llama_32_3b_bfcl", "qwen3_17b_bfcl"]
 SEEDS = [42, 43]
 OUT = Path("data/theory/decorrelation.json")
-UNION_K = 25
+UNION_KS = (10, 25, 100)
 
 
 def residualize(target, regressor):
@@ -71,11 +71,19 @@ def main():
                 p = fit_lr(X_ph, y, tr, va)
                 s_ph[te] = p.predict_proba(X_ph[te])[:, 1]
                 s_lap[te] = lapeig_official_scores(lap, y, tr, va, te)
-                # union model: per-head profile concatenated with a fixed
-                # moderate LapEigvals width, so the union costs one fit
-                Xu = np.hstack([X_ph, lap[:, :, :, :UNION_K].reshape(N, -1)])
-                pu = fit_lr(Xu, y, tr, va, c_grid=(1.0,))
-                s_both[te] = pu.predict_proba(Xu[te])[:, 1]
+                # Union model, given its fairest test: a fixed moderate
+                # width and a validation-selected width, keeping whichever
+                # validates better. A single fixed width would bias the
+                # comparison toward the failure we report.
+                best_u, best_uv = None, -1.0
+                for k in UNION_KS:
+                    Xu = np.hstack([X_ph, lap[:, :, :, :k].reshape(N, -1)])
+                    pu = fit_lr(Xu, y, tr, va, c_grid=(0.1, 1.0))
+                    v = auc_safe(y[va], pu.predict_proba(Xu[va])[:, 1])
+                    if not np.isnan(v) and v > best_uv:
+                        best_uv = v
+                        best_u = pu.predict_proba(Xu[te])[:, 1]
+                s_both[te] = best_u
 
             m = subset & np.isfinite(s_ph) & np.isfinite(s_lap)
             ys = y[m]
