@@ -917,23 +917,6 @@ def handle_evaluate(args):
             X["Sym-Laplacian eig profile, gen span"],
             per_head_combined])
 
-    LMM_ROWS = ["Spectral per-layer (LMM)", "Spectral per-layer, gen span"]
-    LR_ROWS = ["Spectral trajectory (SpRich)", "Spectral velocity",
-               "Surface (lengths) [confound]", "Gen length only [confound]",
-               "Tool one-hot [confound]"]
-    if rich:
-        LR_ROWS += (["Sym-Laplacian eig profile",
-                     "Sym-Laplacian eig profile, gen span"]
-                    + per_head_rows + extra_rows
-                    + ["Hidden Gram spectra (EigenScore)",
-                       "All attention-spectral combined"])
-    ALL_ROWS = (LMM_ROWS + LR_ROWS +
-                ["Hidden token-role [LR]", "Hidden token-role [MLP]",
-                 "Best single spectral (honest sweep)", "Mean logprob"])
-    if lap_official is not None:
-        ALL_ROWS.append("LapEigvals (official code)")
-    ALL_ROWS += CONF_ROWS
-
     logprob = np.nan_to_num(
         np.array([s["mean_logprob"] for s in samples]), nan=0.0)
 
@@ -953,6 +936,25 @@ def handle_evaluate(args):
         if np.isfinite(v).sum() > 0.8 * len(v):
             conf_vecs[ck] = np.nan_to_num(v, nan=float(np.nanmedian(v)))
     CONF_ROWS = [f"Confidence: {k}" for k in conf_vecs]
+
+    LMM_ROWS = ["Spectral per-layer (LMM)", "Spectral per-layer, gen span"]
+    LR_ROWS = ["Spectral trajectory (SpRich)", "Spectral velocity",
+               "Surface (lengths) [confound]", "Gen length only [confound]",
+               "Tool one-hot [confound]"]
+    if rich:
+        LR_ROWS += (["Sym-Laplacian eig profile",
+                     "Sym-Laplacian eig profile, gen span"]
+                    + per_head_rows + extra_rows
+                    + ["Hidden Gram spectra (EigenScore)",
+                       "All attention-spectral combined"])
+    ALL_ROWS = (LMM_ROWS + LR_ROWS +
+                ["Hidden token-role [LR]", "Hidden token-role [MLP]",
+                 "Best single spectral (honest sweep)", "Mean logprob"])
+    if lap_official is not None:
+        ALL_ROWS.append("LapEigvals (official code)")
+    ALL_ROWS += CONF_ROWS
+
+
 
     seeds = [42, 43, 44, 45, 46]
     results = {}   # name -> {"all": [pooled aucs], "semantic": [pooled aucs]}
