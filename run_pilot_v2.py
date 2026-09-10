@@ -560,24 +560,17 @@ def token_probe_matrix(samples):
     """
     dim = None
     for s in samples:
-        ts = s.get("token_states")
-        if ts:
-            dim = len(ts[0])
+        tp = s.get("token_pooled")
+        if tp is not None:
+            dim = len(tp)
             break
     if dim is None:
         return None
-    out = np.zeros((len(samples), 2 * dim), dtype=np.float32)
+    out = np.zeros((len(samples), dim), dtype=np.float32)
     for i, s in enumerate(samples):
-        ts = s.get("token_states")
-        if not ts:
-            continue
-        a = np.asarray(ts, dtype=np.float32)
-        # Dumps written before the float32 fix store the massive-activation
-        # dimension as inf; clip so the feature stays finite and keeps its
-        # ordering as an extreme value.
-        if not np.isfinite(a).all():
-            a = np.nan_to_num(a, nan=0.0, posinf=65504.0, neginf=-65504.0)
-        out[i] = np.concatenate([a.mean(0), a.max(0)])
+        tp = s.get("token_pooled")
+        if tp is not None:
+            out[i] = tp
     return out
 
 
@@ -708,11 +701,31 @@ SEMANTIC_MODES = ["valid", "wrong_name", "missing_args", "wrong_arg_values",
                   "missing_calls", "over_trigger", "valid_nocall"]
 
 
+def _compact(rec):
+    """Replace list-of-float fields with compact arrays, in place.
+
+    Per-token residual states are reduced to the mean-and-max pooling that
+    the token-level probe consumes, so the raw states are not retained.
+    """
+    ts = rec.get("token_states")
+    if ts:
+        a = np.asarray(ts, dtype=np.float32)
+        if not np.isfinite(a).all():
+            a = np.nan_to_num(a, nan=0.0, posinf=65504.0, neginf=-65504.0)
+        rec["token_pooled"] = np.concatenate([a.mean(0), a.max(0)])
+        rec["token_states"] = None
+    for key in ("lapeig_diag", "head_metrics_span", "eig_profile",
+                "eig_profile_span", "lookback", "res_dynamics"):
+        if rec.get(key) is not None:
+            rec[key] = np.asarray(rec[key], dtype=np.float32)
+    return rec
+
+
 def load_and_relabel(features_path):
     """Load a feature dump, keep newest schema, re-label from stored text
     with the CURRENT labeler, attach tool names. Returns (samples, changed)."""
     with open(features_path, encoding="utf-8") as f:
-        samples = [json.loads(line) for line in f if line.strip()]
+        samples = [_compact(json.loads(line)) for line in f if line.strip()]
 
     if any("head_metrics_span" in s for s in samples):
         n0 = len(samples)
