@@ -242,6 +242,44 @@ def main():
     else:
         define("decorrUnionGainFixed", "\\pending{fixed-width union}")
 
+    lb = DATA / "theory" / "label_budget.json"
+    if lb.exists():
+        d = json.loads(lb.read_text(encoding="utf-8"))
+        cs = d.get("cross_run_summary", {})
+        if cs:
+            define("budgetNRuns", str(cs["n_runs"]))
+            define("budgetSpearman", f"{cs['spearman_logpos_vs_gap']:.2f}")
+            define("budgetSpearmanP", f"{cs['spearman_p']:.3f}")
+            define("budgetGapFew", f"{cs['gap_few_positives']:+.3f}")
+            define("budgetGapMany", f"{cs['gap_many_positives']:+.3f}")
+        rows = d.get("cross_run", [])
+        for r in rows:
+            tag = r["run"]
+            if tag in RUNS:
+                define(f"pos{RUNS[tag]}Count", str(r["positives"]))
+                define(f"gap{RUNS[tag]}", f"{r['gap']:+.3f}")
+                define(f"conf{RUNS[tag]}", f"{r['confidence']:.3f}")
+                define(f"probe{RUNS[tag]}", f"{r['probe']:.3f}")
+        neg = [r for r in rows if r["gap"] < 0]
+        if neg:
+            define("budgetNegRuns", str(len(neg)))
+            define("budgetNegMaxPos", str(max(r["positives"] for r in neg)))
+        for tag, curve in d.get("curve", {}).items():
+            if tag not in RUNS or not curve:
+                continue
+            infix = RUNS[tag]
+            define(f"curve{infix}Low", f"{curve[0]['auc']:.3f}")
+            define(f"curve{infix}LowPos", str(curve[0]["approx_train_positives"]))
+            define(f"curve{infix}Full", f"{curve[-1]['auc']:.3f}")
+            define(f"curve{infix}FullPos", str(curve[-1]["approx_train_positives"]))
+            define(f"curve{infix}Drop",
+                   f"{curve[-1]['auc'] - curve[0]['auc']:.3f}")
+    else:
+        for m in ("budgetNRuns", "budgetSpearman", "budgetSpearmanP",
+                  "budgetGapFew", "budgetGapMany", "budgetNegRuns",
+                  "budgetNegMaxPos"):
+            define(m, f"\\pending{{{m}}}")
+
     # transfer results
     for f in sorted(DATA.glob("pilot_v2_*/transfer_from_*.json")):
         test_tag = f.parent.name.replace("pilot_v2_", "")

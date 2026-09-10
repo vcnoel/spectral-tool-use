@@ -58,8 +58,14 @@ def main():
     out = {"cross_run": [], "curve": {}}
 
     # ── 1. cross-run: positives against the probe-minus-confidence gap ──────
+    # base_* runs supersede the earlier evaluation of the same model and
+    # benchmark, since they carry the additional baseline families; the
+    # earlier pair is skipped so a model/benchmark pair is counted once.
+    superseded = {"llama_32_1b_bfcl", "llama_32_3b_bfcl"}
     for p in sorted(Path("data").glob("pilot_v2_*/results.json")):
         tag = p.parent.name.replace("pilot_v2_", "")
+        if tag in superseded:
+            continue
         r = json.loads(p.read_text(encoding="utf-8"))
         res = r["results"]
         sub = "call_expected" if res.get("Hidden token-role [LR]", {}).get(
