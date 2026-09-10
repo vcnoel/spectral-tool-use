@@ -43,6 +43,9 @@ ACCESS_TIER = {
     "Hidden token-role [LR]": "hidden",
     "Hidden token-role [MLP]": "hidden",
     "Hidden Gram spectra (EigenScore)": "hidden",
+    "Token-level probe (Obeso)": "hidden",
+    "Residual dynamics (ICR-style)": "hidden",
+    "Lookback Lens": "attention",
 }
 
 # Pretty model labels, in paper order
@@ -55,6 +58,14 @@ MODEL_LABELS = {
     "qwen35_2b_bfcl": "Qwen3.5-2B / BFCL-v4",
     "qwen3_17b_bfcl": "Qwen3-1.7B / BFCL-v4",
     "gemma3_1b": "Gemma-3-1B / Glaive",
+    "minicpm5_2b_bfcl": "MiniCPM5-2B / BFCL-v4",
+    "qwen35_4b_bfcl": "Qwen3.5-4B / BFCL-v4",
+    "qwen35_08b_bfcl": "Qwen3.5-0.8B / BFCL-v4",
+    "llama1b_live": "Llama-3.2-1B / BFCL-live",
+    "minicpm5_2b_live": "MiniCPM5-2B / BFCL-live",
+    "base_llama1b_bfcl": "Llama-3.2-1B / BFCL-v4 (all baselines)",
+    "base_llama3b_bfcl": "Llama-3.2-3B / BFCL-v4 (all baselines)",
+    "base_llama1b_glaive": "Llama-3.2-1B / Glaive (all baselines)",
 }
 
 ARCH_NOTE = {
@@ -63,6 +74,12 @@ ARCH_NOTE = {
     "qwen35_2b": "24 layers, 6 full-attention (hybrid gated-DeltaNet)",
     "qwen3_17b": "28 layers, 16 heads, all full attention (GQA-8)",
     "gemma3_1b": "26 layers, 4 heads/1 KV, 22 sliding-window + 4 full",
+    "minicpm5_2b": "42 layers, 16 heads/2 KV, dense",
+    "qwen35_4b": "32 layers, 16 heads, 8 full-attention (hybrid)",
+    "qwen35_08b": "24 layers, 8 heads, 6 full-attention (hybrid)",
+    "llama1b": "16 layers, 32 heads, dense GQA",
+    "base_llama1b": "16 layers, 32 heads, dense GQA",
+    "base_llama3b": "28 layers, 24 heads, dense GQA",
 }
 
 
@@ -113,7 +130,7 @@ def main():
         mode_str = ", ".join(f"{k} {v}" for v, k in top) or "--"
         lines.append(f"| {MODEL_LABELS.get(t, t)} | {r['n']} | "
                      f"{r['halluc_rate']:.3f} | {mode_str} | "
-                     f"{ARCH_NOTE.get(t.replace('_bfcl',''), '--')} |")
+                     f"{ARCH_NOTE.get(t.replace('_bfcl', '').replace('_live', '').replace('_glaive', ''), '--')} |")
     lines.append("")
 
     # ── 2. main detector table ───────────────────────────────────────────────

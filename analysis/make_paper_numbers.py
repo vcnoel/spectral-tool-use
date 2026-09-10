@@ -280,6 +280,35 @@ def main():
                   "budgetNegMaxPos"):
             define(m, f"\\pending{{{m}}}")
 
+    fs = DATA / "theory" / "family_split.json"
+    if fs.exists():
+        d = json.loads(fs.read_text(encoding="utf-8"))
+        for subset, infix in (("semantic", "Sem"), ("call_expected", "Call")):
+            if subset not in d:
+                continue
+            q = d[subset]["summary"]
+            define(f"famNRuns{infix}", str(q["n_runs"]))
+            define(f"famNRecent{infix}", str(q["n_recent"]))
+            define(f"famNEarlier{infix}", str(q["n_earlier"]))
+            define(f"famGapRecent{infix}", f"{q['gap_recent_mean']:+.3f}")
+            define(f"famGapEarlier{infix}", f"{q['gap_earlier_mean']:+.3f}")
+            define(f"famRecentMax{infix}", f"{q['gap_recent_max']:+.3f}")
+            define(f"famEarlierMin{infix}", f"{q['gap_earlier_min']:+.3f}")
+            define(f"famMannWhitney{infix}", f"{q['mannwhitney_p']:.4f}")
+            define(f"famConfWins{infix}", str(q["confidence_wins_recent"]))
+            define(f"famSpearman{infix}", f"{q['spearman_logpos_vs_gap']:.2f}")
+            define(f"famSpearmanP{infix}", f"{q['spearman_p']:.2f}")
+            if "spearman_within_recent" in q:
+                define(f"famWithinRecent{infix}",
+                       f"{q['spearman_within_recent']:+.2f}")
+            if "spearman_within_earlier" in q:
+                define(f"famWithinEarlier{infix}",
+                       f"{q['spearman_within_earlier']:+.2f}")
+    else:
+        for m in ("famNRunsSem", "famGapRecentSem", "famGapEarlierSem",
+                  "famMannWhitneySem"):
+            define(m, f"\\pending{{{m}}}")
+
     # transfer results
     for f in sorted(DATA.glob("pilot_v2_*/transfer_from_*.json")):
         test_tag = f.parent.name.replace("pilot_v2_", "")
