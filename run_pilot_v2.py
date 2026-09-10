@@ -306,8 +306,18 @@ def handle_extract(args):
                 return_dict_in_generate=True, output_scores=True,
             )
         gen_ids = out.sequences[0][prompt_len:].tolist()
-        # trim trailing pad/eos repeats but keep one eos
-        pred = tok.decode(gen_ids, skip_special_tokens=True)
+        # Decode WITHOUT dropping special tokens, then remove only the chat
+        # control markers. Some families (MiniCPM) tokenise the structural
+        # tags of a tool call as special tokens, so skipping specials deletes
+        # "<function" and "<param" and leaves an unparseable fragment that is
+        # then labelled as no call (audit 2026-09).
+        pred = tok.decode(gen_ids, skip_special_tokens=False)
+        for _marker in (tok.eos_token, tok.pad_token, "<|im_end|>",
+                        "<|endoftext|>", "<end_of_turn>", "<|eot_id|>",
+                        "<|end|>"):
+            if _marker:
+                pred = pred.replace(_marker, "")
+        pred = pred.strip()
         truncated = tok.eos_token_id not in gen_ids
         if not pred.strip():
             continue
