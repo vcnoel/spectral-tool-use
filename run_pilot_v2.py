@@ -576,17 +576,17 @@ def token_probe_matrix(samples):
 
 def residual_dynamics_matrix(samples):
     """Cross-layer residual-stream dynamics (ICR-style)."""
-    if not samples[0].get("res_dynamics"):
+    if samples[0].get("res_dynamics") is None:
         return None
-    return np.array([np.ravel(s["res_dynamics"]) for s in samples],
+    return np.array([np.asarray(s["res_dynamics"]).ravel() for s in samples],
                     dtype=np.float32)
 
 
 def lookback_matrix(samples):
     """Lookback Lens: per-head context/generation attention shares."""
-    if not samples[0].get("lookback"):
+    if samples[0].get("lookback") is None:
         return None
-    return np.array([np.ravel(s["lookback"]) for s in samples],
+    return np.array([np.asarray(s["lookback"]).ravel() for s in samples],
                     dtype=np.float32)
 
 
