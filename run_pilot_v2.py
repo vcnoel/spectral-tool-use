@@ -338,12 +338,40 @@ def handle_extract(args):
             continue
 
         # mean transition logprob (baseline signal)
+        # Output-side uncertainty. Mean log-probability alone is a weak
+        # summary, and the paper's claim that confidence fails on some
+        # families must not rest on the choice of summary, so the standard
+        # alternatives are recorded too.
+        mean_logprob = float("nan")
+        conf = {}
         try:
             ts = model.compute_transition_scores(
                 out.sequences, out.scores, normalize_logits=True)
-            mean_logprob = float(ts[0].float().mean())
+            lp = ts[0].float()
+            lp = lp[torch.isfinite(lp)]
+            if lp.numel():
+                mean_logprob = float(lp.mean())
+                conf["mean_logprob"] = mean_logprob
+                conf["min_logprob"] = float(lp.min())
+                conf["sum_logprob"] = float(lp.sum())
+                conf["perplexity"] = float(torch.exp(-lp.mean()))
+                k = min(5, lp.numel())
+                conf["mean_lowest5"] = float(lp.topk(k, largest=False).values.mean())
+                conf["frac_below_half"] = float((lp < -0.693).float().mean())
+            # predictive entropy per generated step
+            ents = []
+            for step_scores in out.scores:
+                logits = step_scores[0].float()
+                logp = torch.log_softmax(logits, dim=-1)
+                pr = logp.exp()
+                ents.append(float(-(pr * logp).sum()))
+            if ents:
+                e = torch.tensor(ents)
+                conf["mean_entropy"] = float(e.mean())
+                conf["max_entropy"] = float(e.max())
+                conf["entropy_last"] = float(e[-1])
         except Exception:
-            mean_logprob = float("nan")
+            pass
 
         try:
             if ex["gt_anyof"] is not None or not ex["expect_call"]:
@@ -417,6 +445,7 @@ def handle_extract(args):
             "category": ex["category"],
             "tool": ex["tool"],
             "mean_logprob": mean_logprob,
+            "confidence": conf,
             "prompt_tokens": int(prompt_len),
             "gen_tokens": len(gen_ids),
             "seq_len": int(T),
@@ -903,9 +932,27 @@ def handle_evaluate(args):
                  "Best single spectral (honest sweep)", "Mean logprob"])
     if lap_official is not None:
         ALL_ROWS.append("LapEigvals (official code)")
+    ALL_ROWS += CONF_ROWS
 
     logprob = np.nan_to_num(
         np.array([s["mean_logprob"] for s in samples]), nan=0.0)
+
+    # Alternative output-side uncertainty summaries, where recorded. Each is
+    # scored exactly like the mean log-probability, with its sign fixed on
+    # training folds, so the comparison between confidence and the trained
+    # judges does not depend on which summary is used.
+    conf_keys = []
+    for s_ in samples:
+        if isinstance(s_.get("confidence"), dict):
+            conf_keys = sorted(s_["confidence"])
+            break
+    conf_vecs = {}
+    for ck in conf_keys:
+        v = np.array([(s_.get("confidence") or {}).get(ck, np.nan)
+                      for s_ in samples], dtype=float)
+        if np.isfinite(v).sum() > 0.8 * len(v):
+            conf_vecs[ck] = np.nan_to_num(v, nan=float(np.nanmedian(v)))
+    CONF_ROWS = [f"Confidence: {k}" for k in conf_vecs]
 
     seeds = [42, 43, 44, 45, 46]
     results = {}   # name -> {"all": [pooled aucs], "semantic": [pooled aucs]}
@@ -942,6 +989,12 @@ def handle_evaluate(args):
                     pooled["LapEigvals (official code)"][te] = s_lap
             sign = 1.0 if auc_safe(y[tr], -logprob[tr]) >= 0.5 else -1.0
             pooled["Mean logprob"][te] = sign * -logprob[te]
+            for cname, cvec in conf_vecs.items():
+                row = f"Confidence: {cname}"
+                if row not in pooled:
+                    continue
+                sgn = 1.0 if auc_safe(y[tr], cvec[tr]) >= 0.5 else -1.0
+                pooled[row][te] = sgn * cvec[te]
 
         for name, scores in pooled.items():
             ok = ~np.isnan(scores)
