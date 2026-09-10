@@ -106,6 +106,17 @@ BFCL_MIX = [  # (category file stem, expect_call, max examples)
     ("BFCL_v4_irrelevance", False, 150),
 ]
 
+# The "live" categories are real user queries contributed to the leaderboard
+# rather than curated ones, so they form a third distribution alongside
+# Glaive and the curated BFCL categories.
+BFCL_LIVE_MIX = [
+    ("BFCL_v4_live_simple", True, 250),
+    ("BFCL_v4_live_multiple", True, 350),
+    ("BFCL_v4_live_parallel", True, 15),
+    ("BFCL_v4_live_parallel_multiple", True, 23),
+    ("BFCL_v4_live_irrelevance", False, 200),
+]
+
 
 def _fix_schema(fn: dict) -> dict:
     """BFCL uses 'dict' where JSON schema says 'object'."""
@@ -113,11 +124,11 @@ def _fix_schema(fn: dict) -> dict:
     return s
 
 
-def iter_bfcl_examples(limit: int):
+def iter_bfcl_examples(limit: int, mix=None):
     """Yield unified records from the BFCL v4 single-turn categories.
     Each: dict(tools, user, gt_anyof, expect_call, category, tool)."""
     n = 0
-    for stem, expect_call, cap in BFCL_MIX:
+    for stem, expect_call, cap in (mix or BFCL_MIX):
         qfile = BFCL_DIR / f"{stem}.json"
         if not qfile.exists():
             continue
@@ -258,6 +269,8 @@ def handle_extract(args):
 
     if getattr(args, "benchmark", "glaive") == "bfcl":
         source = iter_bfcl_examples(args.n)
+    elif getattr(args, "benchmark", "glaive") == "bfcl_live":
+        source = iter_bfcl_examples(args.n, mix=BFCL_LIVE_MIX)
     else:
         def _glaive_source():
             for system, user, gt in iter_call_examples(args.n):
@@ -349,8 +362,11 @@ def handle_extract(args):
         if args.rich:
             token_layer = max(1, int(round(0.7 * n_layers)))
             span_states = mo.hidden_states[token_layer][0, prompt_len:T]
-            span_states = span_states[:TOKEN_STATE_CAP].to(torch.float16)
-            token_states = span_states.cpu().numpy().round(4).tolist()
+            # float32, not float16: Llama-class models carry a massive
+            # activation in one or two dimensions whose magnitude exceeds the
+            # float16 range, which would be stored as inf.
+            span_states = span_states[:TOKEN_STATE_CAP].to(torch.float32)
+            token_states = span_states.cpu().numpy().round(3).tolist()
         hidden, gram_feats = {}, {}
         for li in probe_layers:
             h = mo.hidden_states[li][0].to(torch.float32).cpu()
@@ -506,6 +522,54 @@ def hidden_matrix(samples):
     keys = sorted(samples[0]["hidden"].keys(), key=int)
     return np.array([np.concatenate([s["hidden"][k] for k in keys])
                      for s in samples], dtype=np.float32)
+
+
+def token_probe_matrix(samples):
+    """
+    Token-level probe features (Obeso et al., 2025): residual states of the
+    generated tokens at one mid-late depth. Their probe is trained per token
+    and the call-level score is the maximum over tokens; here the call-level
+    feature is the concatenation of the mean and the max over tokens, which a
+    linear model can read as the same pooled statistic without needing
+    token-level labels that this benchmark does not provide.
+    """
+    dim = None
+    for s in samples:
+        ts = s.get("token_states")
+        if ts:
+            dim = len(ts[0])
+            break
+    if dim is None:
+        return None
+    out = np.zeros((len(samples), 2 * dim), dtype=np.float32)
+    for i, s in enumerate(samples):
+        ts = s.get("token_states")
+        if not ts:
+            continue
+        a = np.asarray(ts, dtype=np.float32)
+        # Dumps written before the float32 fix store the massive-activation
+        # dimension as inf; clip so the feature stays finite and keeps its
+        # ordering as an extreme value.
+        if not np.isfinite(a).all():
+            a = np.nan_to_num(a, nan=0.0, posinf=65504.0, neginf=-65504.0)
+        out[i] = np.concatenate([a.mean(0), a.max(0)])
+    return out
+
+
+def residual_dynamics_matrix(samples):
+    """Cross-layer residual-stream dynamics (ICR-style)."""
+    if not samples[0].get("res_dynamics"):
+        return None
+    return np.array([np.ravel(s["res_dynamics"]) for s in samples],
+                    dtype=np.float32)
+
+
+def lookback_matrix(samples):
+    """Lookback Lens: per-head context/generation attention shares."""
+    if not samples[0].get("lookback"):
+        return None
+    return np.array([np.ravel(s["lookback"]) for s in samples],
+                    dtype=np.float32)
 
 
 def surface_matrix(samples):
@@ -713,6 +777,7 @@ def handle_evaluate(args):
     }
     rich = "eig_profile" in samples[0]
     per_head_rows = []
+    extra_rows = []
     lap_official = None
     if rich:
         X["Sym-Laplacian eig profile"] = np.array(
@@ -756,6 +821,15 @@ def handle_evaluate(args):
             per_head_rows.append(row)
             per_head_combined = X[row]
 
+        for name, build in (
+                ("Token-level probe (Obeso)", token_probe_matrix),
+                ("Residual dynamics (ICR-style)", residual_dynamics_matrix),
+                ("Lookback Lens", lookback_matrix)):
+            M = build(samples)
+            if M is not None:
+                X[name] = M
+                extra_rows.append(name)
+
         gkeys = sorted(samples[0]["gram_feats"].keys(), key=int)
         X["Hidden Gram spectra (EigenScore)"] = np.array(
             [np.concatenate([s["gram_feats"][k] for k in gkeys])
@@ -774,7 +848,7 @@ def handle_evaluate(args):
     if rich:
         LR_ROWS += (["Sym-Laplacian eig profile",
                      "Sym-Laplacian eig profile, gen span"]
-                    + per_head_rows
+                    + per_head_rows + extra_rows
                     + ["Hidden Gram spectra (EigenScore)",
                        "All attention-spectral combined"])
     ALL_ROWS = (LMM_ROWS + LR_ROWS +
@@ -974,7 +1048,8 @@ def main():
     e.add_argument("--model", default="Qwen/Qwen3.5-2B")
     e.add_argument("--n", type=int, default=750)
     e.add_argument("--fresh", action="store_true")
-    e.add_argument("--benchmark", choices=["glaive", "bfcl"], default="glaive")
+    e.add_argument("--benchmark", choices=["glaive", "bfcl", "bfcl_live"],
+                   default="glaive")
     e.add_argument("--rich", action="store_true", default=True,
                    help="also dump eigenvalue profiles, per-head Fiedler, "
                         "hidden-state Gram spectra")

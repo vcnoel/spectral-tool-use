@@ -297,10 +297,39 @@ def _canonicalize_call(obj) -> list[dict] | None:
     return out or None
 
 
+# Two XML dialects are in use. Qwen3-family templates emit
+#   <function=NAME><parameter=KEY>VALUE</parameter></function>
+# and MiniCPM-family templates emit
+#   <function name="NAME"><param name="KEY">VALUE</param></function>
+# with CDATA around multi-line values. A parser that covers only one of them
+# labels every call from the other family as absent, which manufactures a
+# 100% hallucination rate (audit 2026-09).
 _XML_FUNC_RE = _re.compile(
     r"<function\s*=\s*([\w.\-]+)\s*>(.*?)(?:</function>|$)", _re.DOTALL)
 _XML_PARAM_RE = _re.compile(
     r"<parameter\s*=\s*([\w.\-]+)\s*>\s*(.*?)\s*</parameter>", _re.DOTALL)
+_XML_FUNC_ATTR_RE = _re.compile(
+    r"<function\s+name\s*=\s*[\"']([\w.\-]+)[\"']\s*>(.*?)(?:</function>|$)",
+    _re.DOTALL)
+_XML_PARAM_ATTR_RE = _re.compile(
+    r"<param\s+name\s*=\s*[\"']([\w.\-]+)[\"']\s*>\s*(.*?)\s*</param>",
+    _re.DOTALL)
+_CDATA_RE = _re.compile(r"<!\[CDATA\[(.*?)\]\]>", _re.DOTALL)
+
+
+def _parse_xml_attr_calls(text: str) -> list[dict] | None:
+    """MiniCPM-style: <function name="X"><param name="k">v</param></function>."""
+    calls = []
+    for name, body in _XML_FUNC_ATTR_RE.findall(text):
+        args = {}
+        for key, val in _XML_PARAM_ATTR_RE.findall(body):
+            cd = _CDATA_RE.search(val)
+            if cd:
+                val = cd.group(1)
+            parsed = _parse_relaxed_json(val)
+            args[key] = parsed if isinstance(parsed, (dict, list, int, float, bool)) else val
+        calls.append({"name": name.strip(), "arguments": args})
+    return calls or None
 
 
 def _parse_xml_calls(text: str) -> list[dict] | None:
@@ -335,9 +364,11 @@ def extract_calls(text: str) -> tuple[list[dict] | None, bool]:
     if not text or not text.strip():
         return None, False
 
-    # XML-style calls (Qwen3.x native template)
+    # XML-style calls
     if "<function=" in text:
         return _parse_xml_calls(text), True
+    if _re.search(r"<function\s+name\s*=", text):
+        return _parse_xml_attr_calls(text), True
 
     tag_matches = _CALL_TAG_RE.findall(text)
     if tag_matches:
