@@ -25,7 +25,9 @@ from scipy import stats
 
 # base_* runs supersede the earlier evaluation of the same model and
 # benchmark, so a model/benchmark pair is counted once
-SUPERSEDED = {"llama_32_1b_bfcl", "llama_32_3b_bfcl"}
+SUPERSEDED = {"llama_32_1b_bfcl", "llama_32_3b_bfcl",
+              "llama_32_1b", "llama_32_3b", "gemma3_1b",
+              "qwen3_17b_bfcl"}
 RECENT = ("minicpm", "qwen35")
 OUT = Path("data/theory/family_split.json")
 

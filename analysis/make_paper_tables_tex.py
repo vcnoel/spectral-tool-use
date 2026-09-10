@@ -20,11 +20,11 @@ OUT = ROOT / "paper" / "iclr"
 # runs in presentation order: earlier families first, then recent, then live
 ORDER = [
     ("base_llama1b_glaive", "Llama-3.2-1B", "Glaive", "16L, 32H dense"),
-    ("llama_32_3b", "Llama-3.2-3B", "Glaive", "28L, 24H dense"),
-    ("gemma3_1b", "Gemma-3-1B", "Glaive", "26L, 4H sliding"),
+    ("base_llama3b_glaive", "Llama-3.2-3B", "Glaive", "28L, 24H dense"),
+    ("base_gemma3_glaive", "Gemma-3-1B", "Glaive", "26L, 4H sliding"),
     ("base_llama1b_bfcl", "Llama-3.2-1B", "BFCL", "16L, 32H dense"),
     ("base_llama3b_bfcl", "Llama-3.2-3B", "BFCL", "28L, 24H dense"),
-    ("qwen3_17b_bfcl", "Qwen3-1.7B", "BFCL", "28L, 16H dense"),
+    ("base_qwen3_17b_bfcl", "Qwen3-1.7B", "BFCL", "28L, 16H dense"),
     ("minicpm5_2b_bfcl", "MiniCPM5-2B", "BFCL", "42L, 16H dense"),
     ("qwen35_08b_bfcl", "Qwen3.5-0.8B", "BFCL", "24L, 6 attentive"),
     ("qwen35_4b_bfcl", "Qwen3.5-4B", "BFCL", "32L, 8 attentive"),
