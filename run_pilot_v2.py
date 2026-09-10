@@ -73,6 +73,23 @@ TOKEN_STATE_CAP = 48   # generated tokens kept for the token-level probe
 # Extraction
 # ══════════════════════════════════════════════════════════════════════════════
 
+CONTROL_MARKERS = (
+    "<|im_end|>", "<|endoftext|>", "<end_of_turn>", "<|eot_id|>",
+    "<|eom_id|>", "<|end|>", "<|end_of_text|>", "</s>", "<|assistant|>",
+)
+
+
+def strip_control_markers(text: str, tok=None) -> str:
+    """Remove chat control tokens while keeping structural call tags."""
+    for m in CONTROL_MARKERS:
+        text = text.replace(m, "")
+    if tok is not None:
+        for m in (getattr(tok, "eos_token", None), getattr(tok, "pad_token", None)):
+            if m:
+                text = text.replace(m, "")
+    return text.strip()
+
+
 def iter_call_examples(limit: int):
     """Yield (system, user_msg, ground_truth) for Glaive examples whose first
     assistant turn is a tool call."""
@@ -311,14 +328,12 @@ def handle_extract(args):
         # tags of a tool call as special tokens, so skipping specials deletes
         # "<function" and "<param" and leaves an unparseable fragment that is
         # then labelled as no call (audit 2026-09).
-        pred = tok.decode(gen_ids, skip_special_tokens=False)
-        for _marker in (tok.eos_token, tok.pad_token, "<|im_end|>",
-                        "<|endoftext|>", "<end_of_turn>", "<|eot_id|>",
-                        "<|end|>"):
-            if _marker:
-                pred = pred.replace(_marker, "")
-        pred = pred.strip()
-        truncated = tok.eos_token_id not in gen_ids
+        pred = strip_control_markers(
+            tok.decode(gen_ids, skip_special_tokens=False), tok)
+        # Truncation is length against the budget. Testing for eos_token_id is
+        # wrong for families that close a tool call with a different marker,
+        # such as Llama's <|eom_id|>, which flagged almost every generation.
+        truncated = len(gen_ids) >= MAX_NEW_TOKENS
         if not pred.strip():
             continue
 
@@ -723,6 +738,10 @@ def load_and_relabel(features_path):
     relabel_changes = 0
     for s in samples:
         old = s["label"]
+        # Repair dumps written before the marker and truncation fixes.
+        s["prediction"] = strip_control_markers(s["prediction"])
+        if s.get("gen_tokens") is not None:
+            s["truncated"] = bool(s["gen_tokens"] >= MAX_NEW_TOKENS)
         try:
             if s.get("gt_anyof") is not None or s.get("expect_call") is False:
                 s["label"], s["failure_mode"] = classify_failure_anyof(
@@ -731,6 +750,11 @@ def load_and_relabel(features_path):
             else:
                 s["label"], s["failure_mode"] = classify_failure(
                     s["prediction"], s["ground_truth"])
+            # A call that does not parse because our generation budget cut it
+            # off is an artefact of the measurement, not a model failure, so
+            # it gets its own mode and is excluded from the semantic subset.
+            if s["failure_mode"] == "unparseable_call" and s.get("truncated"):
+                s["failure_mode"] = "truncated_call"
         except ValueError:
             pass
         if not s.get("tool"):
