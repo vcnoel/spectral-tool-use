@@ -27,6 +27,16 @@ RUNS = {
     "llama_32_1b_bfcl": "LlamaOneBBfcl",
     "llama_32_3b_bfcl": "LlamaThreeBBfcl",
     "qwen3_17b_bfcl": "QwenDenseBfcl",
+    # 2026 models and the third data distribution
+    "minicpm5_2b_bfcl": "MiniCpmBfcl",
+    "minicpm5_2b_live": "MiniCpmLive",
+    "qwen35_4b_bfcl": "QwenFourBBfcl",
+    "qwen35_08b_bfcl": "QwenSmallBfcl",
+    "llama1b_live": "LlamaOneBLive",
+    # runs carrying the extra baseline families
+    "base_llama1b_bfcl": "BaseLlamaOneBBfcl",
+    "base_llama3b_bfcl": "BaseLlamaThreeBBfcl",
+    "base_llama1b_glaive": "BaseLlamaOneBGlaive",
 }
 
 # detector row -> macro infix
@@ -53,6 +63,9 @@ DETECTORS = {
     "Gen length only [confound]": "LengthConfound",
     "Tool one-hot [confound]": "ToolConfound",
     "Best single spectral (honest sweep)": "HonestSweep",
+    "Token-level probe (Obeso)": "TokenProbe",
+    "Residual dynamics (ICR-style)": "ResDynamics",
+    "Lookback Lens": "Lookback",
 }
 
 SUBSETS = {"all": "All", "semantic": "Sem", "call_expected": "Call"}
