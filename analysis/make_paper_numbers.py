@@ -37,6 +37,32 @@ RUNS = {
     "base_llama1b_bfcl": "BaseLlamaOneBBfcl",
     "base_llama3b_bfcl": "BaseLlamaThreeBBfcl",
     "base_llama1b_glaive": "BaseLlamaOneBGlaive",
+    "base_llama3b_glaive": "BaseLlamaThreeBGlaive",
+    "base_gemma3_glaive": "BaseGemmaGlaive",
+    "base_qwen3_17b_bfcl": "BaseQwenDenseBfcl",
+}
+
+# earlier extraction -> the re-extraction that supersedes it (replication)
+SUPERSEDED = {
+    "llama_32_1b": "base_llama1b_glaive",
+    "llama_32_3b": "base_llama3b_glaive",
+    "gemma3_1b": "base_gemma3_glaive",
+    "llama_32_1b_bfcl": "base_llama1b_bfcl",
+    "llama_32_3b_bfcl": "base_llama3b_bfcl",
+    "qwen3_17b_bfcl": "base_qwen3_17b_bfcl",
+}
+
+# paired contrast label (analysis/paired_inference.py) -> macro infix
+CONTRASTS = {
+    "per-head vs LapEigvals": "PerHeadVsLapEig",
+    "per-head vs head-averaged": "PerHeadVsHeadAvg",
+    "LapEigvals vs head-averaged": "LapEigVsHeadAvg",
+    "token-role vs per-head": "HiddenVsPerHead",
+    "token-role vs LapEigvals": "HiddenVsLapEig",
+    "per-head vs surface": "PerHeadVsSurface",
+    "LapEigvals vs surface": "LapEigVsSurface",
+    "token-role vs surface": "HiddenVsSurface",
+    "token-role vs log-probability": "HiddenVsLogprob",
 }
 
 # detector row -> macro infix
@@ -574,6 +600,99 @@ def main():
             ms = mean_sd(tf.get(det, {}).get("semantic", []))
             macro = f"transfer{dinfix}{RUNS[train_tag]}To{RUNS[test_tag]}"
             define(macro, f"{ms[0]:.3f}" if ms else f"\\pending{{{macro}}}")
+
+    # ── power, fold diagnostics, paired contrasts, replication ──────────────
+    from spectral_guardrails.utils.inference import MIN_CLASS_PER_SUBSET
+    define("minClassPerSubset", str(MIN_CLASS_PER_SUBSET))
+    n_under = 0
+    for tag, infix in RUNS.items():
+        r = runs.get(tag)
+        if r is None:
+            continue
+        sub = r.get("eval_subset") or (
+            "call_expected" if r["results"].get("Hidden token-role [LR]", {})
+            .get("call_expected") else "semantic")
+        nc = r.get("n_class", {}).get(sub)
+        if nc:
+            n_pos, n_neg = int(nc["n_pos"]), int(nc["n_neg"])
+        else:
+            modes = r.get("failure_modes", {})
+            n_neg = modes.get("valid", 0) + modes.get("valid_nocall", 0)
+            n_pos = r["n"] - n_neg
+        weak = min(n_pos, n_neg) < MIN_CLASS_PER_SUBSET
+        n_under += weak
+        define(f"evalSubset{infix}", sub.replace("_", "-"))
+        define(f"nPosEval{infix}", str(n_pos))
+        define(f"nNegEval{infix}", str(n_neg))
+        define(f"underpoweredMark{infix}", "$^\\dagger$" if weak else "")
+        # fold-mean AUC next to the pooled AUC, for the headline detectors
+        fm = r.get("results_fold_mean", {})
+        for det, dinfix in DETECTORS.items():
+            for subset, sinfix in SUBSETS.items():
+                ms = mean_sd(fm.get(det, {}).get(subset, []))
+                define(f"aucFm{dinfix}{infix}{sinfix}",
+                       f"{ms[0]:.3f}" if ms else f"\\pending{{fold-mean {dinfix}/{infix}}}")
+        off = r.get("fold_offset_auc", {}).get("Tool one-hot [confound]")
+        ms = mean_sd(off or [])
+        define(f"foldOffsetToolOneHot{infix}",
+               f"{ms[0]:.3f}" if ms else f"\\pending{{fold offset {infix}}}")
+        flips = r.get("sign_flips", {}).get("Mean logprob")
+        define(f"logprobSignFlipSeeds{infix}",
+               str(sum(1 for x in flips if x)) if flips is not None
+               else f"\\pending{{sign flips {infix}}}")
+    define("nUnderpoweredRuns", str(n_under))
+
+    # paired contrasts: delta, CI, Holm p, and a significance mark
+    counts = {c: {"above": 0, "below": 0, "span": 0} for c in CONTRASTS}
+    for tag, infix in RUNS.items():
+        f = DATA / f"pilot_v2_{tag}" / "paired.json"
+        pj = json.loads(f.read_text(encoding="utf-8")) if f.exists() else None
+        for label, cinfix in CONTRASTS.items():
+            c = (pj or {}).get("contrasts", {}).get(label)
+            base = f"dAuc{cinfix}{infix}"
+            if not c:
+                for suf in ("", "Lo", "Hi", "PHolm"):
+                    define(base + suf, f"\\pending{{{base}{suf}}}")
+                define(base + "Mark", "")
+                continue
+            define(base, f"{c['delta']:+.3f}")
+            define(base + "Lo", f"{c['ci_lo']:+.3f}")
+            define(base + "Hi", f"{c['ci_hi']:+.3f}")
+            define(base + "PHolm", f"{c['p_holm']:.3f}")
+            define(base + "Mark", "$^{\\ast}$" if c.get("significant_holm") else "")
+            if pj and not pj.get("underpowered") and tag in TABLE_TAGS:
+                if c["ci_lo"] > 0:
+                    counts[label]["above"] += 1
+                elif c["ci_hi"] < 0:
+                    counts[label]["below"] += 1
+                else:
+                    counts[label]["span"] += 1
+    for label, cinfix in CONTRASTS.items():
+        for k, v in counts[label].items():
+            define(f"nRuns{cinfix}{k.capitalize()}", str(v))
+
+    # replication drift between an earlier run and its superseding re-extraction
+    for old, new in SUPERSEDED.items():
+        fo = DATA / f"pilot_v2_{old}" / "results.json"
+        if not fo.exists() or new not in runs or new not in RUNS:
+            continue
+        ro, rn = json.loads(fo.read_text(encoding="utf-8")), runs[new]
+        infix = RUNS[new]
+        sub = rn.get("eval_subset") or "semantic"
+        define(f"replRateDelta{infix}", f"{rn['halluc_rate'] - ro['halluc_rate']:+.3f}")
+        define(f"replItemsDelta{infix}",
+               str(int(round(abs(rn['halluc_rate'] * rn['n'] - ro['halluc_rate'] * ro['n'])))))
+        best, bk = 0.0, "--"
+        for k in ro["results"]:
+            if k not in rn["results"]:
+                continue
+            a = mean_sd(ro["results"][k].get(sub, []))
+            b = mean_sd(rn["results"][k].get(sub, []))
+            if a and b and abs(a[0] - b[0]) > best:
+                best, bk = abs(a[0] - b[0]), k
+        define(f"replMaxAucDelta{infix}", f"{best:.3f}")
+        define(f"replMaxAucDetector{infix}",
+               bk.replace("[confound]", "").replace("_", " ").strip())
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text("\n".join(lines) + "\n", encoding="utf-8")

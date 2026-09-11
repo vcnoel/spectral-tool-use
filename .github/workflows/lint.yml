@@ -1,12 +1,28 @@
-name: Lint
+name: CI
 on: [push, pull_request]
 jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
       - run: pip install flake8
-      - run: flake8 spectral_guardrails/ cli.py --max-line-length 100
+      # analysis/exp_*.py are one-off experiment scripts and are not linted
+      - run: >
+          flake8 spectral_guardrails/ cli.py run_pilot_v2.py make_paper_tables.py
+          analysis/paired_inference.py analysis/make_paper_tables_tex.py tests/
+          --max-line-length 100
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install numpy scipy scikit-learn pytest
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      # per-head metrics come from spectral-trust; the test skips if absent
+      - run: pip install "spectral-trust>=0.3.0" || true
+      - run: python -m pytest tests/ -q
