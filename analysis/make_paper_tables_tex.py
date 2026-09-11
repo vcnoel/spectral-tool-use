@@ -185,6 +185,22 @@ def main():
     (OUT / "table_detectors_sd.tex").write_text("\n".join(rows_sd) + "\n",
                                                 encoding="utf-8")
 
+    # the same table with every run on the semantic population
+    rows = [r"\begin{tabular}{ll" + "c" * len(COLUMNS) + "}", r"\toprule",
+            f"Model & Data & {hdr} \\\\", r"\midrule"]
+    for tag, model, data, _ in ORDER:
+        if tag not in runs:
+            continue
+        res = runs[tag]["results"]
+        cells = []
+        for _, key in COLUMNS:
+            v = val(res, key, "semantic")
+            cells.append("--" if np.isnan(v) else f"{v:.3f}")
+        rows.append(f"{model} & {data} & " + " & ".join(cells) + r" \\")
+    rows += [r"\bottomrule", r"\end{tabular}"]
+    (OUT / "table_detectors_semantic.tex").write_text(
+        "\n".join(rows) + "\n", encoding="utf-8")
+
     # ── table 3: access frontier, fixed representatives ────────────────────
     hdr = " & ".join(c for c, _ in FRONTIER)
     rows = [r"\begin{tabular}{ll" + "c" * len(FRONTIER) + "}", r"\toprule",

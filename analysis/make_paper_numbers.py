@@ -348,6 +348,89 @@ def main():
                   "ladTwoHeads", "ladFourHeads", "ladEightHeads"):
             define(m, f"\\pending{{{m}}}")
 
+    mt = DATA / "theory" / "multiturn.json"
+    MT_TAGS = {"mt_llama1b": "LlamaOneB", "mt_minicpm": "MiniCpm"}
+    MT_DETS = {"token-role probe": "Hidden", "per-head profile": "PerHead",
+               "LapEigvals": "LapEig", "mean log-probability": "Logprob",
+               "surface (lengths)": "Surface"}
+    if mt.exists():
+        d = json.loads(mt.read_text(encoding="utf-8"))
+        define("mtNRuns", str(len(d)))
+        for tag, infix in MT_TAGS.items():
+            if tag not in d:
+                continue
+            r = d[tag]
+            define(f"mtN{infix}", str(r["n"]))
+            define(f"mtNSem{infix}", str(r["n_semantic"]))
+            define(f"mtPos{infix}", str(r["positives_semantic"]))
+            define(f"mtNeg{infix}", str(r["negatives_semantic"]))
+            define(f"mtTruncPct{infix}", f"{r['truncated_pct']:.0f}")
+            define(f"mtFailAll{infix}", f"{100 * r['failure_rate_all']:.0f}")
+            define(f"mtFailTurnZero{infix}", f"{100 * r['failure_rate_turn0']:.0f}")
+            define(f"mtFailClean{infix}", f"{100 * r['failure_rate_clean_history']:.0f}")
+            define(f"mtFailCorrupt{infix}",
+                   f"{100 * r['failure_rate_corrupted_history']:.0f}")
+            define(f"mtNClean{infix}", str(r["n_clean_history"]))
+            define(f"mtNCorrupt{infix}", str(r["n_corrupted_history"]))
+            define(f"mtFisherP{infix}", f"{r['fisher_p']:.3f}")
+            define(f"mtFisherPSem{infix}", f"{r['fisher_p_semantic']:.3f}")
+            define(f"mtFailCleanSem{infix}",
+                   f"{100 * r['failure_rate_clean_history_semantic']:.0f}")
+            define(f"mtFailCorruptSem{infix}",
+                   f"{100 * r['failure_rate_corrupted_history_semantic']:.0f}")
+            for det, dinfix in MT_DETS.items():
+                for block, binfix in (("auc_semantic", ""),
+                                      ("auc_semantic_turn0", "TurnZero"),
+                                      ("auc_semantic_history", "Hist"),
+                                      ("auc_clean_trained_on_clean", "CleanOnClean"),
+                                      ("auc_corrupted_trained_on_clean", "CorruptOnClean"),
+                                      ("auc_corrupted_trained_on_all", "CorruptOnAll")):
+                    v = r[block].get(det)
+                    if v is None or v != v:
+                        define(f"mtAuc{dinfix}{binfix}{infix}", "--")
+                    else:
+                        define(f"mtAuc{dinfix}{binfix}{infix}", f"{v:.3f}")
+    else:
+        define("mtNRuns", "\\pending{mtNRuns}")
+
+    lt = DATA / "theory" / "latency.json"
+    if lt.exists():
+        d = json.loads(lt.read_text(encoding="utf-8"))
+        for key, macro in (("generation", "latGen"),
+                           ("teacher_forced_pass_only", "latPass"),
+                           ("teacher_forced_pass_with_perhead", "latPassPerHead"),
+                           ("perhead_features_alone", "latPerHead"),
+                           ("lapeig_features_alone", "latLapEig"),
+                           ("token_role_gather", "latTokenRole")):
+            define(macro, f"{d[key]['median_ms']:.0f}")
+        define("latTokenRoleSub", f"{d['token_role_gather']['median_ms']:.1f}")
+        define("latPerHeadPct", f"{100 * d['perhead_features_alone']['median_ms'] / d['generation']['median_ms']:.0f}")
+        define("latNPrompts", str(d["n_prompts"]))
+        define("latGenTokens", f"{d['gen_tokens']['median']:.0f}")
+        define("latPromptTokens", f"{d['prompt_tokens']['median']:.0f}")
+        define("latGpu", d["gpu"].replace("NVIDIA ", ""))
+    else:
+        for m in ("latGen", "latPass", "latPassPerHead", "latPerHead", "latLapEig",
+                  "latTokenRole", "latTokenRoleSub", "latPerHeadPct", "latNPrompts",
+                  "latGenTokens", "latPromptTokens", "latGpu"):
+            define(m, f"\\pending{{{m}}}")
+
+    ea = DATA / "theory" / "extra_args_flips.json"
+    if ea.exists():
+        d = json.loads(ea.read_text(encoding="utf-8"))
+        single = {k: v for k, v in d.items() if not k.startswith("mt_")}
+        worst = max(single.items(), key=lambda kv: kv[1]["flip_pct"])
+        define("extraFlipsMaxPct", f"{worst[1]['flip_pct']:.1f}")
+        define("extraFlipsMaxRun", worst[0].replace("base_", "").replace("_", " "))
+        define("extraFlipsRuns", str(len(single)))
+        for tag, infix in (("mt_llama1b", "LlamaOneB"), ("mt_minicpm", "MiniCpm")):
+            if tag in d:
+                define(f"extraFlipsMt{infix}Pct", f"{d[tag]['flip_pct']:.1f}")
+                define(f"extraFlipsMt{infix}N", str(d[tag]["flips"]))
+    else:
+        for m in ("extraFlipsMaxPct", "extraFlipsMaxRun", "extraFlipsRuns"):
+            define(m, f"\\pending{{{m}}}")
+
     dg = DATA / "theory" / "diag_fusion_pooling.json"
     if dg.exists():
         d = json.loads(dg.read_text(encoding="utf-8"))
