@@ -151,20 +151,29 @@ def main():
             for k in ("hidden", "per_head", "stack"):
                 pr, rc = precision_at_recall(ys, pooled[k][m])
                 row[f"prec80_{k}"] = pr
-            # rule-based: report precision and recall of the binary decision
+            # rule-based: precision and recall of the binary decision, and
+            # the single judge's precision AT THE SAME RECALL, since a rule
+            # that operates at lower recall buys precision for free and the
+            # comparison must not hand it that advantage
             for k in ("either", "both"):
                 d = pooled[k][m]
                 tp = float(((d == 1) & (ys == 1)).sum())
                 fp = float(((d == 1) & (ys == 0)).sum())
                 fn = float(((d == 0) & (ys == 1)).sum())
+                rec = tp / max(tp + fn, 1)
                 row[f"prec_{k}"] = tp / max(tp + fp, 1)
-                row[f"rec_{k}"] = tp / max(tp + fn, 1)
+                row[f"rec_{k}"] = rec
+                pr_m, _ = precision_at_recall(ys, pooled["hidden"][m], rec)
+                row[f"prec_single_at_{k}_recall"] = pr_m
+            row["base_rate"] = float(ys.mean())
             per_seed.append(row)
 
         agg = {k: float(np.nanmean([d[k] for d in per_seed])) for k in per_seed[0]}
         agg["gain_stack"] = agg["auc_stack"] - max(agg["auc_hidden"], agg["auc_per_head"])
         agg["gain_prec80"] = agg["prec80_stack"] - max(agg["prec80_hidden"],
                                                        agg["prec80_per_head"])
+        agg["both_prec_gain_matched"] = (agg["prec_both"]
+                                         - agg["prec_single_at_both_recall"])
         agg["n_pos"] = int(y[subset].sum())
         out[tag] = {"mean": agg, "per_seed": per_seed}
         print(f"{tag:20s} AUC hid={agg['auc_hidden']:.3f} ph={agg['auc_per_head']:.3f} "
@@ -184,6 +193,12 @@ def main():
             "stack_prec80_gain_mean": float(np.nanmean(gp)),
             "stack_prec80_positive_runs": int(sum(x > 0.005 for x in gp if not np.isnan(x))),
             "both_prec_mean": float(np.nanmean([v["mean"]["prec_both"] for v in out.values()])),
+            "both_prec_gain_matched_mean": float(np.nanmean(
+                [v["mean"]["both_prec_gain_matched"] for v in out.values()])),
+            "both_prec_gain_matched_positive": int(sum(
+                v["mean"]["both_prec_gain_matched"] > 0.005 for v in out.values())),
+            "base_rate_min": float(min(v["mean"]["base_rate"] for v in out.values())),
+            "base_rate_max": float(max(v["mean"]["base_rate"] for v in out.values())),
             "both_rec_mean": float(np.nanmean([v["mean"]["rec_both"] for v in out.values()])),
             "either_prec_mean": float(np.nanmean([v["mean"]["prec_either"] for v in out.values()])),
             "either_rec_mean": float(np.nanmean([v["mean"]["rec_either"] for v in out.values()])),

@@ -335,6 +335,40 @@ def main():
         for m in ("CvLlamaBfclProbe", "CvLlamaBfclBest", "CvMiniCpmBfclBest"):
             define(m, f"\\pending{{{m}}}")
 
+    fo = DATA / "theory" / "fusion_operating.json"
+    if fo.exists():
+        d = json.loads(fo.read_text(encoding="utf-8"))
+        q = d.get("summary", {})
+        if q:
+            define("agrNRuns", str(q["n_runs"]))
+            define("agrBothPrec", f"{q['both_prec_mean']:.3f}")
+            define("agrBothRec", f"{q['both_rec_mean']:.3f}")
+            define("agrEitherPrec", f"{q['either_prec_mean']:.3f}")
+            define("agrEitherRec", f"{q['either_rec_mean']:.3f}")
+            define("agrSinglePrec", f"{q['hidden_prec80_mean']:.3f}")
+            define("agrStackGain", f"{q['stack_auc_gain_mean']:+.3f}")
+            define("agrStackPositive", str(q["stack_auc_positive_runs"]))
+            define("agrStackPrecGain", f"{q['stack_prec80_gain_mean']:+.3f}")
+            define("agrMatchedGain", f"{q['both_prec_gain_matched_mean']:+.3f}")
+            define("agrMatchedPositive",
+                   str(q["both_prec_gain_matched_positive"]))
+            define("agrBaseMin", f"{100 * q['base_rate_min']:.0f}")
+            define("agrBaseMax", f"{100 * q['base_rate_max']:.0f}")
+        best = None
+        for tag, v in d.items():
+            if tag == "summary":
+                continue
+            m = v["mean"]
+            if best is None or m["prec_both"] > best[1]:
+                best = (tag, m["prec_both"], m["rec_both"])
+        if best:
+            define("agrBestRun", best[0].replace("_", " "))
+            define("agrBestPrec", f"{best[1]:.3f}")
+            define("agrBestRec", f"{best[2]:.3f}")
+    else:
+        for m in ("agrNRuns", "agrBothPrec", "agrBothRec", "agrSinglePrec"):
+            define(m, f"\\pending{{{m}}}")
+
     # transfer results
     for f in sorted(DATA.glob("pilot_v2_*/transfer_from_*.json")):
         test_tag = f.parent.name.replace("pilot_v2_", "")
