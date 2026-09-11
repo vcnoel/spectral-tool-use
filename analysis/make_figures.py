@@ -91,7 +91,7 @@ def thinning():
     ax.set_xlabel("labelled failures available for training")
     ax.set_ylabel("AUC")
     ax.set_ylim(0.5, 1.0)
-    ax.legend(loc="lower right", frameon=False)
+    ax.legend(loc="center right", frameon=False)
     fig.tight_layout()
     fig.savefig(FIG / "fig_thinning.pdf")
     plt.close(fig)
