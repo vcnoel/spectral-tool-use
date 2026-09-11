@@ -71,6 +71,22 @@ DETECTORS = {
 SUBSETS = {"all": "All", "semantic": "Sem", "call_expected": "Call"}
 
 
+
+_DIGIT_WORDS = {"0": "Zero", "1": "One", "2": "Two", "3": "Three", "4": "Four",
+                "5": "Five", "6": "Six", "7": "Seven", "8": "Eight", "9": "Nine"}
+
+
+def macro_key(text):
+    """A LaTeX-legal macro fragment: letters only, digits spelt out."""
+    out = []
+    for ch in text:
+        if ch.isalpha():
+            out.append(ch)
+        elif ch.isdigit():
+            out.append(_DIGIT_WORDS[ch])
+    return "".join(out)
+
+
 def clean(name: str) -> str:
     """Macro-safe infix."""
     return re.sub(r"[^A-Za-z]", "", name)
@@ -136,8 +152,16 @@ def main():
 
     # ── headline aggregates ─────────────────────────────────────────────────
     # per-head vs head-averaged, on the runs where both exist
+    # only the runs the tables report; superseded runs and the re-extractions
+    # made for the confidence summaries would count a model twice
+    TABLE_TAGS = {"base_llama1b_glaive", "base_llama3b_glaive", "base_gemma3_glaive",
+                  "base_llama1b_bfcl", "base_llama3b_bfcl", "base_qwen3_17b_bfcl",
+                  "minicpm5_2b_bfcl", "qwen35_08b_bfcl", "qwen35_4b_bfcl",
+                  "qwen35_2b", "llama1b_live", "minicpm5_2b_live"}
     gains = []
     for tag in runs:
+        if tag not in TABLE_TAGS:
+            continue
         res = runs[tag]["results"]
         sub = "call_expected" if res.get("Per-head all metrics (span)", {}).get(
             "call_expected") else "semantic"
@@ -280,6 +304,73 @@ def main():
                   "budgetNegMaxPos"):
             define(m, f"\\pending{{{m}}}")
 
+    rl = DATA / "theory" / "resolution_ladder.json"
+    if rl.exists():
+        d = json.loads(rl.read_text(encoding="utf-8"))
+        sm = d["summary"]
+        define("ladNRuns", str(len(d["runs"])))
+        rung_macros = {
+            "graph-averaged (L x 5)": "ladGraphAvg",
+            "metric-averaged (L x 5)": "ladMetricAvg",
+            "per-head (L x H x 5)": "ladPerHead",
+            "noise-padded graph-averaged (L x H x 5)": "ladNoisePadded",
+            "head-shuffled per-head (L x H x 5)": "ladHeadShuffled",
+            "1 random heads (L x 1 x 5)": "ladOneHead",
+            "2 random heads (L x 2 x 5)": "ladTwoHeads",
+            "4 random heads (L x 4 x 5)": "ladFourHeads",
+            "8 random heads (L x 8 x 5)": "ladEightHeads",
+        }
+        for rung, macro in rung_macros.items():
+            if rung in sm:
+                define(macro, f"{sm[rung]['mean']:.3f}")
+        for key, macro in (("metric_avg_minus_graph_avg", "ladGainMetricAvg"),
+                           ("per_head_minus_metric_avg", "ladGainPerHead"),
+                           ("per_head_minus_noise_padded", "ladGainVsNoise"),
+                           ("per_head_minus_head_shuffled", "ladGainVsShuffle"),
+                           ("noise_padded_minus_graph_avg", "ladNoiseEffect")):
+            c = sm["contrasts"][key]
+            define(macro, f"{c['mean']:+.3f}")
+            define(macro + "Pos", str(c["positive_runs"]))
+            define(macro + "Min", f"{c['min']:+.3f}")
+            define(macro + "Max", f"{c['max']:+.3f}")
+        # per-run values for the ladder table
+        for tag, r in d["runs"].items():
+            key = macro_key("".join(
+                w.capitalize() for w in tag.replace("base_", "").split("_")))
+            for rung, macro in rung_macros.items():
+                if rung in r["auc"]:
+                    define(f"{macro}{key}", f"{r['auc'][rung]['mean']:.3f}")
+    else:
+        for m in ("ladNRuns", "ladGraphAvg", "ladMetricAvg", "ladPerHead",
+                  "ladNoisePadded", "ladHeadShuffled", "ladGainMetricAvg",
+                  "ladGainMetricAvgPos", "ladGainPerHead", "ladGainVsNoise",
+                  "ladGainVsShuffle", "ladNoiseEffect", "ladOneHead",
+                  "ladTwoHeads", "ladFourHeads", "ladEightHeads"):
+            define(m, f"\\pending{{{m}}}")
+
+    dg = DATA / "theory" / "diag_fusion_pooling.json"
+    if dg.exists():
+        d = json.loads(dg.read_text(encoding="utf-8"))
+        for tag, infix in (("base_llama1b_glaive", "LlamaOneBGlaive"),
+                           ("base_llama3b_glaive", "LlamaThreeBGlaive"),
+                           ("base_llama1b_bfcl", "LlamaOneBBfcl")):
+            if tag not in d:
+                continue
+            r = d[tag]
+            for k, name in (("hidden", "Hidden"), ("per_head", "PerHead"),
+                            ("mean", "Mean"), ("rank_mean", "RankMean")):
+                define(f"poolPooled{name}{infix}", f"{r['pooled'][k]:.3f}")
+                define(f"poolWithin{name}{infix}",
+                       f"{r['within_fold_mean'][k]:.3f}")
+        # the pooling cost of the residual probe, averaged over the runs
+        costs = [d[t]["within_fold_mean"]["hidden"] - d[t]["pooled"]["hidden"]
+                 for t in d]
+        define("poolCostHiddenMean", f"{sum(costs) / len(costs):.3f}")
+        define("poolNRuns", str(len(d)))
+    else:
+        for m in ("poolCostHiddenMean", "poolNRuns"):
+            define(m, f"\\pending{{{m}}}")
+
     fs = DATA / "theory" / "family_split.json"
     if fs.exists():
         d = json.loads(fs.read_text(encoding="utf-8"))
@@ -304,6 +395,20 @@ def main():
             if "spearman_within_earlier" in q:
                 define(f"famWithinEarlier{infix}",
                        f"{q['spearman_within_earlier']:+.2f}")
+            # one observation per checkpoint and per family, which are the
+            # units the claim is about; runs sharing a checkpoint are not
+            # independent
+            if "n_checkpoints" in q:
+                define(f"famNCkpt{infix}", str(q["n_checkpoints"]))
+                define(f"famNCkptRecent{infix}", str(q["n_checkpoints_recent"]))
+                define(f"famNCkptEarlier{infix}", str(q["n_checkpoints_earlier"]))
+            if "checkpoint_mannwhitney_p" in q:
+                define(f"famCkptMannWhitney{infix}",
+                       f"{q['checkpoint_mannwhitney_p']:.3f}")
+            if "family_gaps" in q:
+                define(f"famNFamilies{infix}", str(q["n_families"]))
+                for fam, gap in q["family_gaps"].items():
+                    define(f"famGap{macro_key(fam)}{infix}", f"{gap:+.3f}")
     else:
         for m in ("famNRunsSem", "famGapRecentSem", "famGapEarlierSem",
                   "famMannWhitneySem"):
@@ -349,6 +454,12 @@ def main():
             define("agrStackGain", f"{q['stack_auc_gain_mean']:+.3f}")
             define("agrStackPositive", str(q["stack_auc_positive_runs"]))
             define("agrStackPrecGain", f"{q['stack_prec80_gain_mean']:+.3f}")
+            if "stack_rank_auc_gain_mean" in q:
+                define("agrStackRankGain", f"{q['stack_rank_auc_gain_mean']:+.3f}")
+                define("agrStackRankGainMax", f"{q['stack_rank_auc_gain_max']:+.3f}")
+                define("agrStackRankPositive", str(q["stack_rank_auc_positive_runs"]))
+                define("agrStackRankPrecGain",
+                       f"{q['stack_rank_prec80_gain_mean']:+.3f}")
             define("agrMatchedGain", f"{q['both_prec_gain_matched_mean']:+.3f}")
             define("agrMatchedPositive",
                    str(q["both_prec_gain_matched_positive"]))

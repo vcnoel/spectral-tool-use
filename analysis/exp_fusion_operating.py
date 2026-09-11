@@ -39,6 +39,23 @@ TARGET_RECALL = 0.80
 OUT = Path("data/theory/fusion_operating.json")
 
 
+def ecdf_map(reference):
+    """Map scores to their percentile among a reference sample.
+
+    The combiner is fitted on out-of-fold scores of models trained on
+    four fifths of the training fold and applied to scores of models
+    trained on all of it. Those two score distributions need not share a
+    scale, and a logistic combiner is sensitive to that. Mapping both
+    through the empirical distribution of the out-of-fold scores puts
+    them on one scale, which is the standard remedy.
+    """
+    ref = np.sort(reference[np.isfinite(reference)])
+
+    def f(x):
+        return np.searchsorted(ref, x, side="right") / max(len(ref), 1)
+    return f
+
+
 def precision_at_recall(y, scores, target=TARGET_RECALL):
     """Highest precision achievable at or above the target recall."""
     ok = np.isfinite(scores)
@@ -92,8 +109,9 @@ def main():
 
         per_seed = []
         for seed in SEEDS:
-            keys = ["hidden", "per_head", "stack", "either", "both"]
+            keys = ["hidden", "per_head", "stack", "stack_rank", "either", "both"]
             pooled = {k: np.full(N, np.nan) for k in keys}
+            coefs = []
             for tr, va, te in grouped_kfold(samples, seed, key="tool"):
                 if len(np.unique(y[tr])) < 2 or len(np.unique(y[va])) < 2:
                     continue
@@ -134,6 +152,19 @@ def main():
                     comb.fit(Z, y[tr][good])
                     pooled["stack"][te] = comb.predict_proba(
                         np.column_stack([s_h_te, s_p_te]))[:, 1]
+                    coefs.append([float(c) for c in comb["lr"].coef_[0]])
+
+                    # rank-normalised stacking: both the training scores
+                    # and the test scores go through the out-of-fold ECDF
+                    f_h = ecdf_map(oof["hidden"][good])
+                    f_p = ecdf_map(oof["per_head"][good])
+                    Zr = np.column_stack([f_h(oof["hidden"][good]),
+                                          f_p(oof["per_head"][good])])
+                    comb_r = LogisticRegression(max_iter=2000,
+                                                class_weight="balanced")
+                    comb_r.fit(Zr, y[tr][good])
+                    pooled["stack_rank"][te] = comb_r.predict_proba(
+                        np.column_stack([f_h(s_h_te), f_p(s_p_te)]))[:, 1]
 
                     # rule-based combinations at thresholds fixed on the
                     # out-of-fold training scores
@@ -147,10 +178,15 @@ def main():
             m = subset & np.isfinite(pooled["hidden"]) & np.isfinite(pooled["stack"])
             ys = y[m]
             row = {f"auc_{k}": auc_safe(ys, pooled[k][m]) for k in
-                   ("hidden", "per_head", "stack")}
-            for k in ("hidden", "per_head", "stack"):
+                   ("hidden", "per_head", "stack", "stack_rank")}
+            for k in ("hidden", "per_head", "stack", "stack_rank"):
                 pr, rc = precision_at_recall(ys, pooled[k][m])
                 row[f"prec80_{k}"] = pr
+            if coefs:
+                c = np.array(coefs)
+                row["coef_hidden"] = float(c[:, 0].mean())
+                row["coef_per_head"] = float(c[:, 1].mean())
+                row["coef_negative_folds"] = float((c < 0).any(axis=1).mean())
             # rule-based: precision and recall of the binary decision, and
             # the single judge's precision AT THE SAME RECALL, since a rule
             # that operates at lower recall buys precision for free and the
@@ -170,6 +206,10 @@ def main():
 
         agg = {k: float(np.nanmean([d[k] for d in per_seed])) for k in per_seed[0]}
         agg["gain_stack"] = agg["auc_stack"] - max(agg["auc_hidden"], agg["auc_per_head"])
+        agg["gain_stack_rank"] = agg["auc_stack_rank"] - max(agg["auc_hidden"],
+                                                            agg["auc_per_head"])
+        agg["gain_prec80_rank"] = agg["prec80_stack_rank"] - max(
+            agg["prec80_hidden"], agg["prec80_per_head"])
         agg["gain_prec80"] = agg["prec80_stack"] - max(agg["prec80_hidden"],
                                                        agg["prec80_per_head"])
         agg["both_prec_gain_matched"] = (agg["prec_both"]
@@ -177,7 +217,10 @@ def main():
         agg["n_pos"] = int(y[subset].sum())
         out[tag] = {"mean": agg, "per_seed": per_seed}
         print(f"{tag:20s} AUC hid={agg['auc_hidden']:.3f} ph={agg['auc_per_head']:.3f} "
-              f"stack={agg['auc_stack']:.3f} ({agg['gain_stack']:+.3f}) | "
+              f"stack={agg['auc_stack']:.3f} ({agg['gain_stack']:+.3f}) "
+              f"rank-stack={agg['auc_stack_rank']:.3f} ({agg['gain_stack_rank']:+.3f}) "
+              f"coef=({agg.get('coef_hidden', float('nan')):+.2f},"
+              f"{agg.get('coef_per_head', float('nan')):+.2f}) | "
               f"P@R80 hid={agg['prec80_hidden']:.3f} stack={agg['prec80_stack']:.3f} "
               f"({agg['gain_prec80']:+.3f}) | both P={agg['prec_both']:.3f} "
               f"R={agg['rec_both']:.3f} | either P={agg['prec_either']:.3f} "
@@ -186,8 +229,16 @@ def main():
     if out:
         g = [v["mean"]["gain_stack"] for v in out.values()]
         gp = [v["mean"]["gain_prec80"] for v in out.values()]
+        gr = [v["mean"]["gain_stack_rank"] for v in out.values()]
+        gpr = [v["mean"]["gain_prec80_rank"] for v in out.values()]
         summary = {
             "n_runs": len(out),
+            "stack_rank_auc_gain_mean": float(np.mean(gr)),
+            "stack_rank_auc_gain_max": float(np.max(gr)),
+            "stack_rank_auc_positive_runs": int(sum(x > 0.002 for x in gr)),
+            "stack_rank_prec80_gain_mean": float(np.nanmean(gpr)),
+            "stack_rank_prec80_positive_runs": int(
+                sum(x > 0.005 for x in gpr if not np.isnan(x))),
             "stack_auc_gain_mean": float(np.mean(g)),
             "stack_auc_positive_runs": int(sum(x > 0.002 for x in g)),
             "stack_prec80_gain_mean": float(np.nanmean(gp)),

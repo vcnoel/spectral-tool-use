@@ -249,6 +249,7 @@ FAILURE_MODES = [
     "wrong_name",       # wrong function selected
     "missing_args",     # required GT args absent
     "wrong_arg_values", # right function, wrong argument values
+    "extra_args",       # right function, arguments the schema does not define
 ]
 
 _CALL_TAG_RE = _re.compile(
@@ -394,6 +395,17 @@ def extract_calls(text: str) -> tuple[list[dict] | None, bool]:
     return None, False
 
 
+# Arguments in the prediction that the ground truth does not define. BFCL's
+# AST checker rejects these ("unexpected parameter"); an invented field is a
+# fabrication even when every expected field is right. Off by default so
+# that stored results reproduce; the evaluator sets it from LABEL_EXTRA_ARGS.
+PENALISE_EXTRA_ARGS = False
+
+
+def _extra_args(pred_args: dict, allowed: set) -> bool:
+    return PENALISE_EXTRA_ARGS and bool(set(pred_args.keys()) - allowed)
+
+
 def classify_failure(predicted_text: str, ground_truth_text: str) -> tuple[int, str]:
     """
     Returns (binary_label, failure_mode). binary_label: 1 = hallucinated.
@@ -427,6 +439,9 @@ def classify_failure(predicted_text: str, ground_truth_text: str) -> tuple[int, 
             if any(not _values_match(v, p["arguments"].get(k))
                    for k, v in gt_args.items()):
                 worst = "wrong_arg_values"
+                continue
+            if _extra_args(p["arguments"], set(g["arguments"].keys())):
+                worst = "extra_args"
                 continue
             matched, worst = True, worst
             used.add(j)
@@ -511,6 +526,9 @@ def classify_failure_anyof(predicted_text: str, gt_anyof: list[dict],
                     break
             if not ok:
                 worst = "wrong_arg_values"
+                continue
+            if _extra_args(p["arguments"], set(params.keys())):
+                worst = "extra_args"
                 continue
             matched = True
             used.add(j)

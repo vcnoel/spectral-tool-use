@@ -179,15 +179,18 @@ def lapeigvals_diag_profile(attn: torch.Tensor, k_store: int = 100) -> list[list
 
     attn: [H, T, T]. Returns [H][k_store] (padded with 0.0 when T < k_store).
     """
-    A = attn.to(torch.float32)
-    H, T, _ = A.shape
-    denom = torch.arange(1, T + 1, device=A.device, dtype=torch.float32).flip(0)
-    col_sum = A.sum(dim=1)                                   # [H, T]
-    diag = torch.diagonal(A, dim1=1, dim2=2)                 # [H, T]
+    # Reduce in float32 without widening the whole layer first: a full
+    # attention tensor at a few thousand tokens is over a gigabyte in
+    # float32, and only the column sums and the diagonal are needed.
+    H, T, _ = attn.shape
+    denom = torch.arange(1, T + 1, device=attn.device,
+                         dtype=torch.float32).flip(0)
+    col_sum = attn.sum(dim=1, dtype=torch.float32)           # [H, T]
+    diag = torch.diagonal(attn, dim1=1, dim2=2).to(torch.float32)
     lap_diag = col_sum / denom - diag                        # [H, T]
     vals = lap_diag.sort(dim=-1, descending=True).values[:, :k_store]
     if vals.shape[1] < k_store:
-        pad = torch.zeros(H, k_store - vals.shape[1], device=A.device)
+        pad = torch.zeros(H, k_store - vals.shape[1], device=attn.device)
         vals = torch.cat([vals, pad], dim=1)
     return [[float(x) for x in row] for row in vals]
 
@@ -234,13 +237,13 @@ def lookback_ratio(attn: torch.Tensor, prompt_len: int,
     attn: [H, T, T] for one layer. Returns [H][2] = [context share,
     generation share], averaged over generated rows. Attention-only.
     """
-    A = attn.to(torch.float32)
-    H = A.shape[0]
-    rows = A[:, prompt_len:seq_len, :]                      # generated rows
+    H = attn.shape[0]
+    rows = attn[:, prompt_len:seq_len, :]                   # generated rows
     if rows.shape[1] == 0:
         return [[0.0, 0.0] for _ in range(H)]
-    ctx = rows[:, :, :prompt_len].sum(-1)                   # [H, G]
-    gen = rows[:, :, prompt_len:seq_len].sum(-1)            # [H, G]
+    # reduce straight to float32; the generated rows are a small slice
+    ctx = rows[:, :, :prompt_len].sum(-1, dtype=torch.float32)
+    gen = rows[:, :, prompt_len:seq_len].sum(-1, dtype=torch.float32)
     total = (ctx + gen).clamp(min=1e-9)
     return [[float((ctx[h] / total[h]).mean()),
              float((gen[h] / total[h]).mean())] for h in range(H)]

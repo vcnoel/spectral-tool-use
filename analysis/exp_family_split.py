@@ -27,13 +27,40 @@ from scipy import stats
 # benchmark, so a model/benchmark pair is counted once
 SUPERSEDED = {"llama_32_1b_bfcl", "llama_32_3b_bfcl",
               "llama_32_1b", "llama_32_3b", "gemma3_1b",
-              "qwen3_17b_bfcl"}
+              "qwen3_17b_bfcl",
+              # re-extractions made to record the confidence summaries; the
+              # same model on the same benchmark, so they are not new points
+              "conf_llama1b_bfcl", "conf_minicpm_bfcl", "conf_llama1b_glaive"}
 RECENT = ("minicpm", "qwen35")
 OUT = Path("data/theory/family_split.json")
 
 
 def family(tag):
     return "recent" if any(k in tag for k in RECENT) else "earlier"
+
+
+def checkpoint(tag):
+    """The model checkpoint a run evaluates, with the benchmark stripped.
+
+    Several runs share a checkpoint (the same Llama-1B on Glaive, BFCL and
+    BFCL-live), so runs are not independent observations of a family
+    property. The test is therefore also computed with one value per
+    checkpoint, and the family means are reported with one value per
+    family, which is the unit the claim is actually about.
+    """
+    t = tag.replace("base_", "").replace("conf_", "")
+    for suf in ("_bfcl", "_glaive", "_live"):
+        t = t.replace(suf, "")
+    return t
+
+
+def family_name(tag):
+    for k, name in (("minicpm", "MiniCPM5"), ("qwen35", "Qwen3.5"),
+                    ("qwen3", "Qwen3"), ("gemma", "Gemma-3"),
+                    ("llama", "Llama-3.2")):
+        if k in tag:
+            return name
+    return tag
 
 
 def collect(subset):
@@ -56,7 +83,9 @@ def collect(subset):
             continue
         modes = r.get("failure_modes", {})
         pos = r["n"] - modes.get("valid", 0) - modes.get("valid_nocall", 0)
-        rows.append({"run": tag, "family": family(tag), "positives": int(pos),
+        rows.append({"run": tag, "family": family(tag),
+                     "checkpoint": checkpoint(tag),
+                     "family_name": family_name(tag), "positives": int(pos),
                      "probe": probe, "confidence": conf, "gap": probe - conf})
     return rows
 
@@ -82,6 +111,7 @@ def main():
         if len(rec) > 1 and len(ear) > 1:
             u = stats.mannwhitneyu(rec, ear, alternative="two-sided")
             summary["mannwhitney_p"] = float(u.pvalue)
+
             # is the gap explained by positives instead of family?
             x = np.array([np.log10(max(r["positives"], 1)) for r in rows])
             g = np.array([r["gap"] for r in rows])
@@ -94,6 +124,39 @@ def main():
                 if len(idx) > 2:
                     s2 = stats.spearmanr(x[idx], g[idx])
                     summary[f"spearman_within_{fam}"] = float(s2.statistic)
+        # the same test with one observation per checkpoint, and the
+        # family means with one observation per family
+        ck = {}
+        for r in rows:
+            ck.setdefault(r["checkpoint"], []).append(r)
+        ck_rows = [{"checkpoint": c, "family": v[0]["family"],
+                    "family_name": v[0]["family_name"],
+                    "gap": float(np.mean([r["gap"] for r in v])),
+                    "n_runs": len(v)} for c, v in sorted(ck.items())]
+        rec_c = [r["gap"] for r in ck_rows if r["family"] == "recent"]
+        ear_c = [r["gap"] for r in ck_rows if r["family"] == "earlier"]
+        summary["n_checkpoints"] = len(ck_rows)
+        summary["n_checkpoints_recent"] = len(rec_c)
+        summary["n_checkpoints_earlier"] = len(ear_c)
+        summary["checkpoint_separated"] = bool(
+            rec_c and ear_c and max(rec_c) < min(ear_c))
+        if len(rec_c) > 1 and len(ear_c) > 1:
+            u = stats.mannwhitneyu(rec_c, ear_c, alternative="two-sided")
+            summary["checkpoint_mannwhitney_p"] = float(u.pvalue)
+        fam = {}
+        for r in ck_rows:
+            fam.setdefault(r["family_name"], []).append(r["gap"])
+        fam_rows = [{"family_name": f, "gap": float(np.mean(v)),
+                     "n_checkpoints": len(v)} for f, v in sorted(fam.items())]
+        summary["n_families"] = len(fam_rows)
+        summary["family_gaps"] = {r["family_name"]: r["gap"] for r in fam_rows}
+        summary["family_separated"] = bool(
+            max(g for f, g in summary["family_gaps"].items()
+                if f in ("MiniCPM5", "Qwen3.5")) <
+            min(g for f, g in summary["family_gaps"].items()
+                if f not in ("MiniCPM5", "Qwen3.5")))
+        out.setdefault("_levels", {})[subset] = {
+            "checkpoints": ck_rows, "families": fam_rows}
         out[subset] = {"summary": summary, "rows": rows}
         print(f"=== {subset}: {len(rows)} runs ===")
         for r in sorted(rows, key=lambda r: r["gap"]):

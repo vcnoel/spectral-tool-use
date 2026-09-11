@@ -39,6 +39,7 @@ Usage:
   python run_pilot_v2.py evaluate
 """
 import argparse
+import os
 import hashlib
 import json
 import sys
@@ -54,19 +55,34 @@ from spectral_guardrails.probes.labeling import (
 from spectral_guardrails.probes.features import (
     extract_probe_features, find_token_positions_v2,
 )
+from spectral_guardrails.spectral.streaming import StreamingAttentionFeatures
 from spectral_guardrails.spectral.metrics import (
     METRIC_NAMES, PER_HEAD_METRICS, layer_spectral_metrics,
     laplacian_eig_profile, per_head_metrics, gram_spectrum_features,
     lapeigvals_diag_profile, lookback_ratio, residual_dynamics,
 )
 from spectral_guardrails.utils.data import load_glaive_data, parse_glaive_chat
+from spectral_guardrails.probes.multiturn import iter_multiturn_examples
 
 OUT_DIR = Path("data/pilot_v2_qwen35_2b")   # overridden by --tag in main()
 FEATURES = OUT_DIR / "features.jsonl"
 SEED = 42
 N_PROBE_LAYERS = 8
-MAX_NEW_TOKENS = 256
+MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "256"))
 TOKEN_STATE_CAP = 48   # generated tokens kept for the token-level probe
+# The attention tensor is quadratic in prompt length and is held for
+# every layer and head, so this cap is a memory bound rather than a
+# modelling choice. Multi-turn prompts need a larger one.
+MAX_PROMPT_TOKENS = int(os.environ.get("MAX_PROMPT_TOKENS", "2048"))
+# Beyond this length the full-graph spectral features, which need a
+# cubic eigendecomposition, are skipped; span-restricted features are
+# always computed.
+FULL_GRAPH_MAX_TOKENS = int(os.environ.get("FULL_GRAPH_MAX_TOKENS", "1500"))
+# Attention is returned for every layer at once, so its memory is linear
+# in the number of layers and quadratic in prompt length. Keeping every
+# k-th attentive layer trades feature dimension for memory, which is
+# what makes a conversation history fit at all.
+ATTN_LAYER_STRIDE = int(os.environ.get("ATTN_LAYER_STRIDE", "1"))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -218,7 +234,7 @@ def _apply_template(tok, msgs, tools=None):
         return tok.apply_chat_template(msgs, **kwargs)
 
 
-def render_tool_prompt(tok, tools, user):
+def render_tool_prompt(tok, tools, user, history=None):
     """
     Render a tool-calling prompt and VERIFY that the tool schemas actually
     reached it.
@@ -232,11 +248,12 @@ def render_tool_prompt(tok, tools, user):
     label would be an artefact of prompt rendering is never emitted.
     """
     names = [t.get("name", "") for t in tools if t.get("name")]
+    prior = list(history or [])
     try:
         text = _apply_template(
             tok,
-            [{"role": "system", "content": "You are a helpful assistant."},
-             {"role": "user", "content": user}],
+            [{"role": "system", "content": "You are a helpful assistant."}]
+            + prior + [{"role": "user", "content": user}],
             tools=tools)
     except Exception:
         text = None
@@ -245,9 +262,10 @@ def render_tool_prompt(tok, tools, user):
 
     schemas = "\n".join(json.dumps(t) for t in tools)
     sys_msg = TOOL_PROMPT_FALLBACK.format(schemas=schemas)
-    for msgs in ([{"role": "system", "content": sys_msg},
-                  {"role": "user", "content": user}],
-                 [{"role": "user", "content": sys_msg + "\n\n" + user}]):
+    for msgs in ([{"role": "system", "content": sys_msg}] + prior
+                 + [{"role": "user", "content": user}],
+                 prior + [{"role": "user",
+                           "content": sys_msg + "\n\n" + user}]):
         try:
             text = _apply_template(tok, msgs)
         except Exception:
@@ -288,6 +306,9 @@ def handle_extract(args):
         source = iter_bfcl_examples(args.n)
     elif getattr(args, "benchmark", "glaive") == "bfcl_live":
         source = iter_bfcl_examples(args.n, mix=BFCL_LIVE_MIX)
+    elif getattr(args, "benchmark", "glaive") == "bfcl_multiturn":
+        source = iter_multiturn_examples(
+            args.n, corrupt_fraction=args.corrupt_fraction)
     else:
         def _glaive_source():
             for system, user, gt in iter_call_examples(args.n):
@@ -302,7 +323,8 @@ def handle_extract(args):
         tools, user = ex["tools"], ex["user"]
         if not tools:
             continue
-        prompt_text = render_tool_prompt(tok, tools, user)
+        prompt_text = render_tool_prompt(tok, tools, user,
+                                         history=ex.get("history"))
         if prompt_text is None:
             skipped_prompt += 1
             continue
@@ -313,7 +335,7 @@ def handle_extract(args):
 
         inputs = tok(prompt_text, return_tensors="pt").to(model.device)
         prompt_len = inputs.input_ids.shape[1]
-        if prompt_len > 2048:
+        if prompt_len > MAX_PROMPT_TOKENS:
             continue
 
         with torch.no_grad():
@@ -384,27 +406,47 @@ def handle_extract(args):
         except ValueError:
             continue
 
-        # ── teacher-forced pass: attentions + hidden states ───────────────────
+        # ── teacher-forced pass: attention features + hidden states ──────────
+        # Attention is reduced to its features layer by layer inside a hook,
+        # so the full stack is never held. Requesting the attentions instead
+        # would cost layers x heads x T^2, which at a few thousand tokens is
+        # the whole memory of a consumer GPU; eager attention computes the
+        # weights either way, so the hook sees them without asking for them.
         full_ids = out.sequences[:, : prompt_len + len(gen_ids)]
-        with torch.no_grad():
-            mo = model(input_ids=full_ids,
-                       output_attentions=True, output_hidden_states=True)
         T = full_ids.shape[1]
-
         span = (prompt_len, T)
-        layer_diagnostics, layer_diagnostics_span = [], []
-        eig_profile, eig_profile_span, head_fiedler_span = [], [], []
-        lapeig_diag, lookback = [], []
-        for attn in mo.attentions:               # full-attention layers only
-            a = attn[0]                          # [H, T, T]
-            layer_diagnostics.append(layer_spectral_metrics(a))
-            layer_diagnostics_span.append(layer_spectral_metrics(a, span=span))
+        full_graph_ok = T <= FULL_GRAPH_MAX_TOKENS
+
+        def _reduce_layer(layer_idx, weights):
+            if layer_idx % ATTN_LAYER_STRIDE:
+                return None
+            a = weights[0]                        # [H, T, T]
+            feat = {"ld_span": layer_spectral_metrics(a, span=span)}
+            if full_graph_ok:
+                feat["ld"] = layer_spectral_metrics(a)
             if args.rich:
-                eig_profile.append(laplacian_eig_profile(a))
-                eig_profile_span.append(laplacian_eig_profile(a, span=span))
-                head_fiedler_span.append(per_head_metrics(a, span=span))
-                lapeig_diag.append(lapeigvals_diag_profile(a))
-                lookback.append(lookback_ratio(a, prompt_len, T))
+                feat["eig_span"] = laplacian_eig_profile(a, span=span)
+                feat["ph"] = per_head_metrics(a, span=span)
+                feat["lap"] = lapeigvals_diag_profile(a)
+                feat["lb"] = lookback_ratio(a, prompt_len, T)
+                if full_graph_ok:
+                    feat["eig"] = laplacian_eig_profile(a)
+            return feat
+
+        with torch.no_grad(), StreamingAttentionFeatures(
+                model, _reduce_layer) as _stream:
+            mo = model(input_ids=full_ids, output_attentions=False,
+                       output_hidden_states=True)
+        per_layer = [f for f in _stream.ordered() if f is not None]
+        attn_layers = per_layer
+
+        layer_diagnostics = [f["ld"] for f in per_layer if "ld" in f]
+        layer_diagnostics_span = [f["ld_span"] for f in per_layer]
+        eig_profile = [f["eig"] for f in per_layer if "eig" in f]
+        eig_profile_span = [f["eig_span"] for f in per_layer if "eig_span" in f]
+        head_fiedler_span = [f["ph"] for f in per_layer if "ph" in f]
+        lapeig_diag = [f["lap"] for f in per_layer if "lap" in f]
+        lookback = [f["lb"] for f in per_layer if "lb" in f]
 
         pos = find_token_positions_v2(tok, gen_ids, prompt_len)
         # Per-token residual states over the generated span at one mid-late
@@ -444,19 +486,25 @@ def handle_extract(args):
             "expect_call": ex["expect_call"],
             "category": ex["category"],
             "tool": ex["tool"],
+            "turn_index": ex.get("turn_index"),
+            "n_turns": ex.get("n_turns"),
+            "corrupted": ex.get("corrupted"),
             "mean_logprob": mean_logprob,
             "confidence": conf,
             "prompt_tokens": int(prompt_len),
             "gen_tokens": len(gen_ids),
             "seq_len": int(T),
             "truncated": bool(truncated),
-            "layer_diagnostics": layer_diagnostics,
+            "layer_diagnostics": layer_diagnostics or layer_diagnostics_span,
+            "full_graph_features": bool(full_graph_ok),
             "layer_diagnostics_span": layer_diagnostics_span,
             "hidden": hidden,
             "probe_layers": probe_layers,
+            "attn_layer_stride": ATTN_LAYER_STRIDE,
+            "n_attn_layers_used": len(attn_layers),
         }
         if args.rich:
-            rec["eig_profile"] = eig_profile
+            rec["eig_profile"] = eig_profile or eig_profile_span
             rec["eig_profile_span"] = eig_profile_span
             # [L][H][5] in PER_HEAD_METRICS order
             rec["head_metrics_span"] = head_fiedler_span
@@ -727,7 +775,7 @@ def auc_safe(y, s):
 
 
 SEMANTIC_MODES = ["valid", "wrong_name", "missing_args", "wrong_arg_values",
-                  "missing_calls", "over_trigger", "valid_nocall"]
+                  "extra_args", "missing_calls", "over_trigger", "valid_nocall"]
 
 
 def _compact(rec):
@@ -751,6 +799,8 @@ def _compact(rec):
 
 
 def load_and_relabel(features_path):
+    import spectral_guardrails.probes.labeling as _lab
+    _lab.PENALISE_EXTRA_ARGS = os.environ.get("LABEL_EXTRA_ARGS", "0") == "1"
     """Load a feature dump, keep newest schema, re-label from stored text
     with the CURRENT labeler, attach tool names. Returns (samples, changed)."""
     with open(features_path, encoding="utf-8") as f:
@@ -1150,8 +1200,13 @@ def main():
     e.add_argument("--model", default="Qwen/Qwen3.5-2B")
     e.add_argument("--n", type=int, default=750)
     e.add_argument("--fresh", action="store_true")
-    e.add_argument("--benchmark", choices=["glaive", "bfcl", "bfcl_live"],
+    e.add_argument("--benchmark",
+                   choices=["glaive", "bfcl", "bfcl_live", "bfcl_multiturn"],
                    default="glaive")
+    e.add_argument("--corrupt-fraction", type=float, default=0.0,
+                   dest="corrupt_fraction",
+                   help="fraction of multi-turn records whose history carries "
+                        "an injected wrong call, for the cascade condition")
     e.add_argument("--rich", action="store_true", default=True,
                    help="also dump eigenvalue profiles, per-head Fiedler, "
                         "hidden-state Gram spectra")

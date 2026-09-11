@@ -100,6 +100,23 @@ def val(res, key, subset):
     return float(np.mean(v)) if v else float("nan")
 
 
+def sd(res, key, subset):
+    v = [x for x in res.get(key, {}).get(subset, [])
+         if x is not None and not np.isnan(x)]
+    return float(np.std(v)) if len(v) > 1 else float("nan")
+
+
+# the tier representatives are fixed before looking at any result, so the
+# frontier table involves no selection on test
+FRONTIER = [
+    ("logits", "Mean logprob"),
+    ("attention: per-head", "Per-head all metrics (span)"),
+    ("attention: LapEigvals", "LapEigvals (official code)"),
+    ("residual: token-role", "Hidden token-role [LR]"),
+    ("confound", "Surface (lengths) [confound]"),
+]
+
+
 def subset_for(res):
     """Use the call-expected population where the run has one."""
     return ("call_expected"
@@ -131,55 +148,62 @@ def main():
     hdr = " & ".join(c for c, _ in COLUMNS)
     rows = [r"\begin{tabular}{ll" + "c" * len(COLUMNS) + "}", r"\toprule",
             f"Model & Data & {hdr} \\\\", r"\midrule"]
+    rows_sd = list(rows)
     for tag, model, data, _ in ORDER:
         if tag not in runs:
             continue
         res = runs[tag]["results"]
         sub = subset_for(res)
-        cells = []
-        best = max((val(res, k, sub) for _, k in COLUMNS
-                    if not np.isnan(val(res, k, sub))), default=np.nan)
+        cells, cells_sd = [], []
+        vals = {k: val(res, k, sub) for _, k in COLUMNS}
+        finite = {k: v for k, v in vals.items() if not np.isnan(v)}
+        best_key = max(finite, key=finite.get) if finite else None
+        # bold the whole tie group: every detector within one seed standard
+        # deviation of the leader, since Section 5 says differences inside
+        # that band change order with the seed
+        band = sd(res, best_key, sub) if best_key else float("nan")
+        band = 0.0 if np.isnan(band) else band
         for _, key in COLUMNS:
-            v = val(res, key, sub)
+            v = vals[key]
             if np.isnan(v):
                 cells.append("--")
-            elif abs(v - best) < 1e-9:
+                cells_sd.append("--")
+                continue
+            e = sd(res, key, sub)
+            cells_sd.append(f"{v:.3f} $\\pm$ {e:.3f}" if not np.isnan(e)
+                            else f"{v:.3f}")
+            if best_key and v >= finite[best_key] - band - 1e-9:
                 cells.append(f"\\textbf{{{v:.3f}}}")
             else:
                 cells.append(f"{v:.3f}")
         rows.append(f"{model} & {data} & " + " & ".join(cells) + r" \\")
+        rows_sd.append(f"{model} & {data} & " + " & ".join(cells_sd) + r" \\")
     rows += [r"\bottomrule", r"\end{tabular}"]
     (OUT / "table_detectors.tex").write_text("\n".join(rows) + "\n",
                                              encoding="utf-8")
+    rows_sd += [r"\bottomrule", r"\end{tabular}"]
+    (OUT / "table_detectors_sd.tex").write_text("\n".join(rows_sd) + "\n",
+                                                encoding="utf-8")
 
-    # ── table 3: access frontier ────────────────────────────────────────────
-    rows = [r"\begin{tabular}{llcccc}", r"\toprule",
-            r"Model & Data & logits & attention & residual & confound \\",
-            r"\midrule"]
+    # ── table 3: access frontier, fixed representatives ────────────────────
+    hdr = " & ".join(c for c, _ in FRONTIER)
+    rows = [r"\begin{tabular}{ll" + "c" * len(FRONTIER) + "}", r"\toprule",
+            f"Model & Data & {hdr} \\\\", r"\midrule"]
     for tag, model, data, _ in ORDER:
         if tag not in runs:
             continue
         res = runs[tag]["results"]
         sub = subset_for(res)
         cells = []
-        for tier in ("logits", "attention", "residual", "confound"):
-            cands = [(val(res, k, sub), k) for k in TIERS[tier]
-                     if not np.isnan(val(res, k, sub))]
-            if not cands:
-                cells.append("--")
-                continue
-            score, key = max(cands)
-            # any label not in the short-name table may carry underscores,
-            # which LaTeX reads as maths
-            label = SHORT.get(key, key).replace("_", r"\_")
-            cells.append(f"{score:.3f}" if tier in ("logits", "confound")
-                         else f"{score:.3f} \\小{{{label}}}")
+        for _, key in FRONTIER:
+            v = val(res, key, sub)
+            cells.append("--" if np.isnan(v) else f"{v:.3f}")
         rows.append(f"{model} & {data} & " + " & ".join(cells) + r" \\")
     rows += [r"\bottomrule", r"\end{tabular}"]
-    txt = "\n".join(rows).replace("\\小", "\\footnotesize")
-    (OUT / "table_frontier.tex").write_text(txt + "\n", encoding="utf-8")
+    (OUT / "table_frontier.tex").write_text("\n".join(rows) + "\n",
+                                            encoding="utf-8")
 
-    print(f"wrote 3 table fragments for {len(runs)} runs -> {OUT}")
+    print(f"wrote 4 table fragments for {len(runs)} runs -> {OUT}")
 
 
 if __name__ == "__main__":
