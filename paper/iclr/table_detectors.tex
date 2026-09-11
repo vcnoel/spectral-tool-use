@@ -1,0 +1,18 @@
+\begin{tabular}{llcccccccc}
+\toprule
+Model & Data & logprob & surface & avg.\ spectral & per-head & LapEigvals & Lookback & token-role & token-level \\
+\midrule
+Llama-3.2-1B & Glaive & 0.576 & 0.556 & 0.535 & 0.940 & 0.942 & 0.917 & \textbf{0.957} & \textbf{0.963} \\
+Llama-3.2-3B & Glaive & 0.738 & 0.609 & 0.652 & \textbf{0.930} & 0.907 & \textbf{0.911} & \textbf{0.937} & 0.897 \\
+Gemma-3-1B & Glaive & 0.647 & 0.699 & 0.716 & 0.856 & 0.854 & 0.765 & \textbf{0.915} & \textbf{0.914} \\
+Llama-3.2-1B & BFCL & 0.623 & 0.754 & 0.773 & 0.873 & 0.873 & 0.861 & \textbf{0.913} & 0.903 \\
+Llama-3.2-3B & BFCL & 0.692 & 0.632 & 0.757 & 0.910 & 0.895 & 0.892 & \textbf{0.929} & \textbf{0.930} \\
+Qwen3-1.7B & BFCL & 0.537 & 0.599 & 0.795 & 0.892 & 0.905 & 0.911 & \textbf{0.927} & 0.908 \\
+MiniCPM5-2B & BFCL & \textbf{0.805} & 0.546 & 0.635 & 0.730 & 0.722 & 0.771 & 0.788 & 0.724 \\
+Qwen3.5-0.8B & BFCL & \textbf{0.769} & 0.616 & 0.599 & 0.657 & 0.627 & 0.634 & 0.708 & 0.674 \\
+Qwen3.5-4B & BFCL & \textbf{0.821} & 0.637 & 0.620 & 0.665 & 0.726 & 0.692 & 0.749 & 0.737 \\
+Qwen3.5-2B$^\dagger$ & Glaive & 0.784 & 0.721 & 0.708 & 0.638 & 0.678 & -- & 0.746 & -- \\
+Llama-3.2-1B & BFCL-live & 0.403 & 0.709 & 0.658 & \textbf{0.816} & 0.782 & 0.800 & \textbf{0.808} & \textbf{0.808} \\
+MiniCPM5-2B & BFCL-live & \textbf{0.776} & 0.582 & 0.582 & 0.725 & 0.661 & 0.739 & 0.726 & 0.741 \\
+\bottomrule
+\end{tabular}

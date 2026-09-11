@@ -1,0 +1,210 @@
+\appendix
+\section{Validity defects found in our own pipeline}
+\label{app:validity}
+
+Every defect below was present in a working pipeline, produced a plausible number, and was found only because a
+confound baseline or a failure-mode count disagreed with it. We list them because the class is systematic in
+internal-state detection work, where nothing external checks the measurement chain.
+
+\begin{enumerate}[topsep=2pt,itemsep=2pt,leftmargin=1.4em]
+
+\item \textbf{The chat template silently dropped the tools.} One model family's template ignores the argument
+that carries tool schemas. The model never saw a tool, answered in prose, and all
+\nGemmaDiscardedRecords{} extracted examples were labelled \texttt{no\_call}: a hallucination rate of 100\%
+that was a property of prompt rendering. \emph{Guard:} the renderer asserts that every tool name appears in the
+rendered prompt, falls back to an explicit system-prompt specification when the native template drops them, and
+refuses to emit an example otherwise.
+
+\item \textbf{A reasoning model spent its budget before calling.} A model whose template defaults to
+chain-of-thought emitted long reasoning before any call, so within a fixed generation budget the call was often
+never reached. The run produced mostly format failures, and a classifier on generation length alone scored
+\aucLengthConfoundQwenDenseBfclAll{}. It measured reasoning length. \emph{Guard:} disable the thinking mode where
+the template supports it, and treat any run whose confound floor approaches its detectors as uninterpretable.
+
+\item \textbf{The labeller punished the model for knowing the date.} Ground-truth calls in a corpus written in
+an earlier year contain arguments such as \texttt{current\_date}. A model using its own sense of today was
+labelled hallucinating. \emph{Guard:} arguments whose ground-truth value encodes the corpus author's present are
+excluded from the comparison, and a small alias table handles interchangeable encodings such as a language name
+against its ISO code.
+
+\item \textbf{Hidden states entered the ``attention-only'' features.} In the library that prior spectral work
+was built on, four of five nominally spectral metrics project residual-stream states onto the attention eigenbasis, and
+require both tensors. Reported as attention-only, they inherit the performance of a residual-stream probe.
+\emph{Guard:} every metric is tagged with the tensors it consumes, and the attention tier admits only metrics
+that are functions of the attention weights alone (Appendix~\ref{app:provenance}).
+
+\item \textbf{Probe checkpoints collided.} The probe trainer wrote its early-stopping checkpoint to a fixed path
+in the working directory, so two trainings running at once overwrote each other. With mismatched dimensions this
+crashes; with matching dimensions it silently reports one probe's weights as another's.
+\emph{Guard:} the best state is held in memory.
+
+\item \textbf{Repeated prompts were extracted twice.} The set of already-seen prompts was loaded once and never
+updated, so a benchmark that repeats prompts produced duplicate rows, 13\% of each Glaive dump. The duplicates
+are identical and group with their originals, so they never crossed a train/test boundary, but they up-weighted
+the repeated examples. \emph{Guard:} deduplicate at write time and again at load time.
+
+\item \textbf{Task identity leaked through prompt-level splits.} Errors concentrate on particular tools, so with
+splits grouped by prompt a classifier reading only the tool identity reaches
+\aucToolConfoundLlamaOneBGlaiveAll{} AUC. \emph{Guard:} group splits by tool, and keep the tool-identity
+classifier in the confound panel, where it sits at or below chance.
+
+\item \textbf{A third call format went unparsed.} One model family writes a call as
+\texttt{<function name="f"><param name="k">v</param></function>}, with CDATA around multi-line values, rather
+than in either format our parser knew. Every call from that family was scored as absent. \emph{Guard:} the
+parser covers all three dialects and the label distribution of a new model is inspected before its numbers are
+used.
+
+\item \textbf{Decoding deleted the structural tags.} The same family tokenises \texttt{<function} and
+\texttt{<param} as special tokens, so decoding the generation with \texttt{skip\_special\_tokens} removed them
+and left a fragment that could not be parsed. The model appeared to never call a tool. \emph{Guard:} generations
+are decoded with special tokens kept and only chat control markers removed.
+
+\item \textbf{The truncation flag was wrong for a whole family.} Truncation was detected by the absence of the
+end-of-sequence id, but Llama closes a tool call with a different marker, so the flag read ``truncated'' for
+$97.8\%$ of generations on one split and carried no information in the confound panel. \emph{Guard:} truncation
+is the generated length against the budget, which no tokeniser convention can break.
+
+\item \textbf{Our own budget was charged to the model.} A call that fails to parse because the generation budget
+cut it off is an artefact of the protocol, not a failure of the model. \emph{Guard:} such cases carry a distinct
+mode and are excluded from the semantic subset.
+
+\item \textbf{A massive activation overflowed the storage type.} Per-token residual states were stored at half
+precision, but one dimension in two thousand carries an activation whose magnitude exceeds that range, and it was
+written as infinity, which crashed the probe on most records of one run. \emph{Guard:} single precision for
+stored states, and a finiteness check at load.
+
+\item \textbf{Confidence was summarised one way.} The comparison against output confidence used the mean token
+log-probability, which understates it: the mean of the five least likely tokens scores ten points higher on the
+family where confidence loses. \emph{Guard:} nine summaries are recorded and each is scored as its own detector,
+so the trained judges are compared against the best available summary rather than a convenient one
+(Section~\ref{sec:exp:confvariants}).
+
+\item \textbf{Arguments the schema does not define were not penalised.} A call whose expected arguments
+are right but which carries an invented or schema-echoed extra field was scored valid, whereas the
+benchmark's own checker rejects it. \emph{Guard:} the labeller has a rule that counts such calls as a
+distinct failure mode; applied to every stored single-turn run it changes at most \extraFlipsMaxPct{}\% of
+labels (\extraFlipsMaxRun{}) and none on most BFCL runs, so the single-turn tables report the lenient labels
+and the strict ones are available with one switch. On the multi-turn runs a weak model echoes tool schemas
+into argument-less calls often enough that the rule matters, and Section~\ref{sec:exp:multiturn} uses it.
+
+\end{enumerate}
+
+Most of these inflate or fabricate a result rather than deflating one. The general lesson is that a detection number in
+this area should not be believed without a confound panel evaluated under the same protocol, and a
+stratification of the labels by failure mode.
+
+\section{Feature provenance}
+\label{app:provenance}
+
+Signals are grouped by the tensors they consume, because the grouping determines both what a deployment needs to
+expose and what a claim may say.
+
+\begin{center}
+\small
+\begin{tabular}{lll}
+\toprule
+Family & Tensors & Members \\
+\midrule
+Attention & attention weights & per-head profile, cross-layer dynamics, trajectory and \\
+          &                   & velocity summaries, eigenvalue profile, LapEigvals \\
+Residual  & block outputs     & token-role probe, Gram spectrum \\
+Hybrid    & both              & Dirichlet energy, smoothness, spectral entropy and \\
+          &                   & HFER with residual states as the graph signal \\
+Logits    & output logits     & mean token log-probability \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The hybrid family is excluded from the attention tier of this paper. It is not weak, and it may well be a strong
+detector, but a result obtained from it does not support a statement about attention topology, and it cannot be
+computed where only attention maps are exposed. What Hugging Face returns as hidden states are residual-stream
+snapshots after each block; module-internal activations are a fourth family that nothing in this literature yet
+probes.
+
+\section{Protocol details}
+\label{app:protocol}
+
+\paragraph{Generation.} Greedy decoding, temperature zero, budget 256 new tokens (160 on the multi-turn runs,
+whose prompts are long), tool schemas passed through the model's own chat template so the model answers in its
+native call format. Truncation is recorded and available as a feature to the confound panel.
+
+\paragraph{Multi-turn.} The four multi-turn categories of BFCL-v4 (base, missing parameter, missing function,
+long context), one record per conversation turn up to the fourth, with the ground-truth calls of the two
+preceding turns rendered as assistant messages each followed by a fixed acknowledgement that the calls
+succeeded. Conversations involving more than 22 tools are skipped rather than truncated. In the cascade
+condition one of the two preceding turns carries a call drawn from another conversation instead, with the same
+acknowledgement. Attention is reduced to its features inside a forward hook on each attention module, so that
+a layer's probabilities are released before the next layer computes; the full-sequence graph features, cubic
+in the prompt length, are not computed on these runs. Labels use the strict rule that penalises arguments
+the schema does not define.
+
+\paragraph{Layers and heads.} Residual probes read eight depths spaced by \texttt{linspace} over the model's
+layer count, so depth is comparable across models of different size. Per-head features use every attentive
+layer, which for hybrid stacks is the subset carrying softmax attention.
+
+\paragraph{Probes.} Logistic regression with $\ell_2$ regularisation, class-balanced, $C$ chosen on validation
+from $\{0.01,0.1,1,10\}$; the token-role network is a single hidden layer of 512 units with dropout 0.1, AdamW,
+cosine schedule with warm restarts, early stopping with patience five. Gradient-boosted trees with an automatic
+fallback to logistic regression are used for the per-layer feature sets, with the fallback triggered by feature
+count or by a train-validation gap, decided on those folds only.
+
+\paragraph{Scoring.} Five-fold cross-fit with folds grouped by ground-truth tool, one pooled AUC per seed over
+all examples, five seeds, reported as mean and standard deviation across seeds. Bootstrap comparisons of two
+detectors resample positives and negatives separately and are computed on the pooled scores.
+
+\section{Seed spread of Table~\ref{tab:detectors}}
+\label{app:spread}
+
+Every entry of Table~\ref{tab:detectors} is a mean over five split seeds of a pooled cross-fit AUC. The
+spread across seeds, given here, is a spread over ways of partitioning the same tools into folds and not a
+sampling uncertainty over examples; it is nevertheless the right scale on which to read differences between
+detectors in the same row, and it is why the main text ranks tiers and not detectors within a tier.
+
+\begin{center}
+\tiny
+\input{table_detectors_sd}
+\end{center}
+
+\section{Every run on one population}
+\label{app:onepop}
+
+Table~\ref{tab:detectors} scores each run on the hardest population it supports, which mixes the
+call-expected population of the BFCL runs with the semantic population of the Glaive runs. The same
+detectors scored on the semantic population for every run, so that all rows share one definition, are
+given here; the ordering of tiers is unchanged.
+
+\begin{center}
+\scriptsize
+\input{table_detectors_semantic}
+\end{center}
+
+\section{What a judge costs at generation time}
+\label{app:cost}
+
+A guardrail that judges the call before it executes adds its cost to every call. On Llama-3.2-1B and a
+\latGpu{}, over \latNPrompts{} BFCL prompts of median \latPromptTokens{} tokens producing calls of median
+\latGenTokens{} tokens, generation itself takes \latGen{}\,ms. Every internal judge then needs one
+teacher-forced pass over prompt and call with the eager attention path, which costs \latPass{}\,ms; a
+serving stack that keeps the generation pass's hidden states can skip it for the residual tier, but not for
+attention, whose probabilities a fused kernel never materialises. On top of that pass, gathering the
+token-role probe's features takes under a millisecond, the LapEigvals column sums \latLapEig{}\,ms, and the
+per-head profile's $L \times H$ eigendecompositions on the call span \latPerHead{}\,ms, or \latPerHeadPct{}\%
+of the generation time, when reduced layer by layer inside the forward hook (\latPassPerHead{}\,ms for pass
+and features together). The eigendecompositions are issued one layer at a time; batching them across
+layers would remove most of that cost. The probe itself is a logistic regression and is free at this scale.
+The attention tier is therefore the most expensive to read, by an amount that is small next to generation
+on this hardware and that grows with the square of the call length, not of the prompt.
+
+\section{Head-disagreement measurement}
+\label{app:jensen}
+
+Proposition~\ref{prop:jensen} is verified on \nJensenLayers{} layers from \nJensenModels{} models and three
+inputs spanning a well-formed call, a second call and ordinary prose. For the combinatorial Laplacian, where the
+inequality is a theorem, it holds with \combGapViolations{} violations and a gap bounded below by
+\combGapMin{}, mean \combGapMean{}. For the symmetric normalised Laplacian, where the Rayleigh quotient is not
+linear in the adjacency and the inequality is therefore not implied, it holds on all but
+\normGapViolations{} layers, with mean gap \normGapMean{} and a median ratio of \normRatioMedian{} between the
+averaged graph's connectivity and the mean over heads, reaching \normRatioMax{}. The mean pairwise absolute
+alignment of per-head Fiedler vectors is \fiedlerAlignmentMean{} with maximum
+\fiedlerAlignmentMax{}, so the equality condition of the proposition is never met, and the across-head standard
+deviation of the per-head Fiedler value averages \perHeadSdMean{}.

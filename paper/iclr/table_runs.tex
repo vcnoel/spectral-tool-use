@@ -1,0 +1,18 @@
+\begin{tabular}{llrrrrl}
+\toprule
+Model & Data & $N$ & Fail & Pos. & Neg. & Attention \\
+\midrule
+Llama-3.2-1B & Glaive & 651 & 47\% & 303 & 348 & 16L, 32H dense \\
+Llama-3.2-3B & Glaive & 651 & 18\% & 119 & 532 & 28L, 24H dense \\
+Gemma-3-1B & Glaive & 651 & 29\% & 190 & 461 & 26L, 4H sliding \\
+Llama-3.2-1B & BFCL & 850 & 72\% & 612 & 238 & 16L, 32H dense \\
+Llama-3.2-3B & BFCL & 850 & 57\% & 488 & 362 & 28L, 24H dense \\
+Qwen3-1.7B & BFCL & 850 & 22\% & 186 & 664 & 28L, 16H dense \\
+MiniCPM5-2B & BFCL & 850 & 11\% & 92 & 758 & 42L, 16H dense \\
+Qwen3.5-0.8B & BFCL & 850 & 39\% & 328 & 522 & 24L, 6 attentive \\
+Qwen3.5-4B & BFCL & 850 & 14\% & 116 & 734 & 32L, 8 attentive \\
+Qwen3.5-2B$^\dagger$ & Glaive & 740 & 3\% & 21 & 719 & 24L, 6 attentive \\
+Llama-3.2-1B & BFCL-live & 765 & 73\% & 559 & 206 & 16L, 32H dense \\
+MiniCPM5-2B & BFCL-live & 779 & 23\% & 178 & 601 & 42L, 16H dense \\
+\bottomrule
+\end{tabular}

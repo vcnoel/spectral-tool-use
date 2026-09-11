@@ -1,8 +1,9 @@
 """Verify the abstract and introduction contain no generated numbers."""
 import os
 import re
+from pathlib import Path
 
-os.chdir(r"c:\Users\valno\Dev\spectral-tool-use\paper\iclr")
+os.chdir(Path(__file__).resolve().parent.parent / "paper" / "iclr")
 
 MACRO = re.compile(r"\\([a-zA-Z]+)\{\}")
 NUMBER = re.compile(r"(?<![A-Za-z])\d+\.\d+")

@@ -126,14 +126,21 @@ def laplacian_eig_profile(attn: torch.Tensor,
 #
 # The library removes self-loops only when asked; the pilot has always built
 # the normalized Laplacian on the loop-free graph, so that is pinned here.
-from spectral_trust import GSPConfig as _GSPConfig
-from spectral_trust import per_head_metrics as _st_per_head_metrics
-
+# The import is deferred to first use so the pure-torch metrics above stay
+# usable (and testable) where the library is absent.
 PER_HEAD_METRICS = ["fiedler_value", "connectivity_ratio",
                     "spectral_entropy_norm", "hfer", "lambda_max"]
 
-_PER_HEAD_CFG = _GSPConfig(normalization="sym", symmetrization="symmetric",
-                           remove_self_loops=True)
+_PER_HEAD_CFG = None
+
+
+def _per_head_backend():
+    global _PER_HEAD_CFG
+    from spectral_trust import GSPConfig, per_head_metrics as st_per_head_metrics
+    if _PER_HEAD_CFG is None:
+        _PER_HEAD_CFG = GSPConfig(normalization="sym", symmetrization="symmetric",
+                                  remove_self_loops=True)
+    return st_per_head_metrics, _PER_HEAD_CFG
 
 
 def per_head_metrics(attn: torch.Tensor,
@@ -150,8 +157,8 @@ def per_head_metrics(attn: torch.Tensor,
     Returns [H][5] in PER_HEAD_METRICS order (the library's
     "spectral_radius" is this list's "lambda_max").
     """
-    return _st_per_head_metrics(
-        attn, config=_PER_HEAD_CFG, token_span=span).values.tolist()
+    st_per_head_metrics, cfg = _per_head_backend()
+    return st_per_head_metrics(attn, config=cfg, token_span=span).values.tolist()
 
 
 def per_head_fiedler(attn: torch.Tensor,

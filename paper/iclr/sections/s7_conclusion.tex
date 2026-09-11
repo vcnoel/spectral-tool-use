@@ -1,0 +1,22 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+A hallucinated tool call can be detected from a single forward pass, and this study is mostly about which signal
+to read and when. The first thing to establish is whether an internal judge is needed at all, because that
+depends on the model: across the families we tested, either output confidence is uninformative and a trained
+probe is the only thing that works, or confidence is already as good as anything we trained, and the two groups
+separate cleanly without being explained by size, attention design, release date, or the number of labelled
+failures available. Where internals are needed, a probe on the residual stream at the structural positions of
+the call is the strongest judge, and attention weights alone come within a few points of it, so an operator
+without access to activations still has a usable option.
+
+For attention, one design choice decides everything. Averaging over heads before building the graph cannot
+represent the contrast between heads, and for algebraic connectivity it can only overstate how well connected
+the graph is, with equality exactly when all heads share a Fiedler vector, a condition every layer we measured
+sits far from. Keeping the heads apart moves the attention family from below a length baseline to within
+reach of the residual stream, and controls that hold the feature count fixed show that it is the resolution
+that does the work. The strongest published attention-only detector already keeps heads apart, and its
+features are an in-degree sequence rather than a spectrum, which is why two very different readouts perform
+alike once resolution is preserved. The same pattern holds in the residual tier, where the detectors that
+read designated positions beat those that pool over the span. Resolution, not the choice of statistic, is what
+carries the signal.

@@ -45,6 +45,3 @@ run_eval_only.py
 # Tool internals
 .claude/
 wandb/
-
-# Paper sources are kept local, not pushed
-paper/

@@ -1,0 +1,12 @@
+\begin{tabular}{llrrcc}
+\toprule
+Model & Data & $N$ & $\Delta$ rate & max $|\Delta$AUC$|$ & detector \\
+\midrule
+Llama-3.2-1B & Glaive & 651 & -0.003 & 0.079 & Per-head hfer (span) \\
+Llama-3.2-3B & Glaive & 651 & -0.014 & 0.079 & Best single spectral (honest sweep) \\
+Gemma-3-1B & Glaive & 651 & -0.005 & 0.047 & Per-head lambda max dynamics \\
+Llama-3.2-1B & BFCL & 850 & +0.002 & 0.021 & Surface (lengths) \\
+Llama-3.2-3B & BFCL & 850 & -0.002 & 0.016 & Sym-Laplacian eig profile \\
+Qwen3-1.7B & BFCL & 850 & +0.000 & 0.003 & All attention-spectral combined \\
+\bottomrule
+\end{tabular}

@@ -1,101 +1,93 @@
-import torch
-import numpy as np
+"""Mathematical properties of the attention-only spectral metrics
+(spectral_guardrails.spectral.metrics)."""
 import sys
-import os
 from pathlib import Path
 
-# Add project root to sys.path
-sys.path.append(str(Path(__file__).parent.parent))
+import numpy as np
+import pytest
+import torch
 
-from spectral_guardrails.spectral.graph import symmetrize, aggregate_heads, laplacian
-from spectral_guardrails.spectral.diagnostics import compute_all, fiedler_value, smoothness, spectral_entropy, hfer, _get_eigendecomposition
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-def test_laplacian_properties():
-    print("Testing Laplacian properties...")
-    N = 100
-    W = torch.rand(N, N)
-    W = (W + W.T) / 2 # Symmetric
-    L = laplacian(W)
-    
-    # 1. Symmetry
-    assert torch.allclose(L, L.T, atol=1e-6), "Laplacian is not symmetric"
-    
-    # 2. Positive semi-definiteness (eigenvalues >= 0)
-    evals, _ = torch.linalg.eigh(L)
-    assert (evals >= -1e-4).all(), f"Laplacian has negative eigenvalues: {evals.min()}"
-    
-    # 3. Null space: L @ ones = 0
-    ones = torch.ones(N, 1)
-    L_ones = L @ ones
-    assert torch.max(torch.abs(L_ones)) < 2e-4, f"L @ ones should be zero, got max abs {torch.max(torch.abs(L_ones))}"
-    print("Laplacian properties: PASS")
+from spectral_guardrails.spectral.metrics import (  # noqa: E402
+    METRIC_NAMES, build_normalized_laplacian, lapeigvals_diag_profile,
+    laplacian_eig_profile, layer_spectral_metrics,
+    spectral_metrics_from_laplacian,
+)
 
-def test_fiedler():
-    print("Testing Fiedler value...")
-    N = 50
-    # Fully connected graph with weights 1.0
-    W = torch.ones(N, N)
-    L = laplacian(W)
-    f = fiedler_value(L)
-    assert f > 0, f"Fiedler value for connected graph should be > 0, got {f}"
-    print("Fiedler value: PASS")
 
-def test_metrics_range():
-    print("Testing metrics range [0, 1]...")
-    for _ in range(100):
-        N = torch.randint(10, 100, (1,)).item()
-        d = 32
-        W = torch.rand(N, N)
-        L = laplacian(W)
-        X = torch.randn(N, d)
-        
-        s = smoothness(L, X)
-        assert -1e-6 <= s <= 1 + 1e-6, f"Smoothness {s} out of range [0, 1]"
-        
-        # HFER
-        h = hfer(L, X)
-        assert -1e-6 <= h <= 1 + 1e-6, f"HFER {h} out of range [0, 1]"
-        
-        # Entropy
-        e = spectral_entropy(L, X)
-        assert e >= -1e-6, f"Spectral entropy {e} should be >= 0"
-        
-    print("Metrics range: PASS")
+def _causal_attention(H=4, T=40, seed=0):
+    """Row-stochastic causal attention [H, T, T]."""
+    g = torch.Generator().manual_seed(seed)
+    logits = torch.randn(H, T, T, generator=g)
+    mask = torch.triu(torch.ones(T, T, dtype=torch.bool), diagonal=1)
+    logits = logits.masked_fill(mask, float("-inf"))
+    return torch.softmax(logits, dim=-1)
 
-def test_lanczos_consistency():
-    print("Testing Lanczos consistency (N=400)...")
-    N = 400
-    W = torch.rand(N, N)
-    W = (W + W.T) / 2
-    L = laplacian(W)
-    
-    # Full eigh
-    evals_full, _ = torch.linalg.eigh(L.to(torch.float32))
-    
-    # Lanczos internal fallback
-    evals_lanc, _ = _get_eigendecomposition(L)
-    
-    # Check top-k eigenvalues
-    k = 50
-    evals_f = evals_full[:k]
-    evals_l = evals_lanc[:k]
-    
-    # Use hybrid error: abs error for small values, rel error for larger
-    # This avoids explosion at near-zero eigenvalues (0 and Fiedler)
-    diff = torch.abs(evals_f - evals_l)
-    error = diff / (torch.abs(evals_f) + 1.0) # Relative to (val + 1)
-    max_err = torch.max(error).item()
-    
-    assert max_err < 0.05, f"Lanczos error too high: {max_err:.4f}"
-    print(f"Lanczos consistency: PASS (max hybrid error: {max_err:.4f})")
 
-if __name__ == "__main__":
-    try:
-        test_laplacian_properties()
-        test_fiedler()
-        test_metrics_range()
-        test_lanczos_consistency()
-        print("\nALL MATH TESTS PASSED")
-    except Exception as e:
-        print(f"\nTEST FAILED: {e}")
-        sys.exit(1)
+def test_normalized_laplacian_is_symmetric_psd_with_spectrum_in_zero_two():
+    L = build_normalized_laplacian(_causal_attention())
+    assert torch.allclose(L, L.T, atol=1e-6)
+    ev = torch.linalg.eigvalsh(L)
+    assert ev.min() > -1e-5
+    assert ev.max() < 2 + 1e-5
+    # D^{1/2} 1 is in the null space of the symmetric normalized Laplacian
+    A = _causal_attention().mean(0)
+    W = 0.5 * (A + A.T)
+    W.fill_diagonal_(0.0)
+    d_sqrt = W.sum(-1).sqrt()
+    assert torch.allclose(L @ d_sqrt, torch.zeros_like(d_sqrt), atol=1e-4)
+
+
+def test_metrics_are_length_invariant_in_range():
+    """Normalized spectra live in [0,2] whatever the graph size, so the
+    metrics must stay bounded as T grows (the v1 length confound is gone)."""
+    for T in (10, 40, 160):
+        m = layer_spectral_metrics(_causal_attention(T=T))
+        assert set(m) == set(METRIC_NAMES)
+        assert 0.0 <= m["fiedler_value"] <= 2.0
+        assert 0.0 <= m["connectivity_ratio"] <= 1.0 + 1e-6
+        assert 0.0 <= m["spectral_entropy_norm"] <= 1.0 + 1e-6
+        assert 0.0 <= m["hfer"] <= 1.0 + 1e-6
+        assert abs(m["energy_norm"] - 1.0) < 1e-4      # trace(L)/T on a loop-free graph
+
+
+def test_span_restriction_extracts_induced_subgraph():
+    attn = _causal_attention(T=30)
+    L_span = build_normalized_laplacian(attn, span=(10, 25))
+    assert L_span.shape == (15, 15)
+    m = spectral_metrics_from_laplacian(L_span)
+    assert np.isfinite(list(m.values())).all()
+
+
+def test_degenerate_small_graph_returns_zeros():
+    L = build_normalized_laplacian(_causal_attention(T=2))
+    assert spectral_metrics_from_laplacian(L) == {n: 0.0 for n in METRIC_NAMES}
+
+
+def test_eig_profile_shape_and_ordering():
+    prof = laplacian_eig_profile(_causal_attention(T=50), k=8)
+    assert len(prof) == 16
+    assert prof[:8] == sorted(prof[:8]) and prof[8:] == sorted(prof[8:])
+    assert prof[0] < 1e-4                                # lambda_1 = 0
+
+
+def test_lapeigvals_diagonal_matches_definition():
+    attn = _causal_attention(H=2, T=12)
+    prof = lapeigvals_diag_profile(attn, k_store=12)
+    H, T, _ = attn.shape
+    for h in range(H):
+        col = attn[h].sum(0)
+        denom = torch.arange(T, 0, -1, dtype=torch.float32)
+        ref = (col / denom - torch.diagonal(attn[h])).sort(descending=True).values
+        assert np.allclose(prof[h], ref.numpy(), atol=1e-5)
+
+
+def test_per_head_metrics_via_spectral_trust_if_available():
+    st = pytest.importorskip("spectral_trust")
+    if not hasattr(st, "per_head_metrics"):
+        pytest.skip("spectral_trust >= 0.3.0 required for per-head metrics")
+    from spectral_guardrails.spectral.metrics import PER_HEAD_METRICS, per_head_metrics
+    out = per_head_metrics(_causal_attention(H=3, T=24))
+    assert len(out) == 3 and all(len(r) == len(PER_HEAD_METRICS) for r in out)
+    assert np.isfinite(out).all()

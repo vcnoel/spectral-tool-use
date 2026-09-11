@@ -208,7 +208,8 @@ def iter_multiturn_examples(limit: int, corrupt_fraction: float = 0.0,
                                      keep_last=keep_last)
             # the injected call must be inside the replayed window to have
             # any chance of affecting the current turn
-            if corrupted and corrupt_turn is not None and                     corrupt_turn < max(0, t - keep_last):
+            if (corrupted and corrupt_turn is not None
+                    and corrupt_turn < max(0, t - keep_last)):
                 corrupted = False
             yield {
                 "tools": tools,

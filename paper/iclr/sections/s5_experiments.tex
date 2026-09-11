@@ -1,0 +1,527 @@
+\section{Experiments}
+\label{sec:exp}
+
+\subsection{Setup}
+\label{sec:exp:setup}
+
+\begin{table}[t]
+\centering
+\small
+\caption{The runs. \emph{Fail} is the fraction of generations that fail and
+\emph{Pos.}\ the number of labelled failures. The attention column gives the
+number of layers, the number of query heads, and whether every layer computes
+softmax attention or only a subset does.}
+\label{tab:runs}
+\input{table_runs}
+\end{table}
+
+Table~\ref{tab:runs} lists the runs. They cover five model families between
+0.8B and 4B parameters and three data distributions: the Glaive
+function-calling corpus \citep{glaive2024}, the curated single-turn categories
+of BFCL-v4 \citep{patil2025bfcl} including the category where no tool applies,
+and the live categories of the same benchmark, which are queries contributed
+by its users rather than written for it. Three attention designs are
+represented: dense grouped-query attention at several head counts, a hybrid
+stack in which only a quarter of the layers compute softmax attention at all,
+and a sliding-window stack that attends locally in all but four of its layers
+and carries four query heads. Failure rates span an order of magnitude, from
+\rateQwenHybridGlaive{}\% to \rateLlamaOneBBfcl{}\%, which lets us separate
+claims about detectors from claims about how often the models fail. The
+Qwen3.5-2B run yields too few labelled failures to support a conclusion and is
+reported only as a boundary case.
+
+Each run is scored on the hardest population it supports. Where the benchmark
+contains the category with no applicable tool, that is the call-expected
+population, because on the remaining items the label reduces to whether a call
+was emitted at all; otherwise it is every parseable call. Calls that fail to
+parse because our generation budget cut them off are excluded throughout, as
+they measure our protocol rather than the model.
+
+\subsection{Head resolution}
+\label{sec:exp:perhead}
+
+\begin{table}[t]
+\centering
+\scriptsize
+\caption{One detector family per column, scored on the hardest population
+each run supports: the items where a call is genuinely required where the
+benchmark has an abstention category, and every parseable call otherwise. Best
+per row in bold. \emph{avg.\ spectral} averages attention over heads before
+computing anything, as the prior literature does; \emph{per-head} keeps the
+heads apart. \emph{surface} is a classifier on lengths alone and is not a
+detector but a floor. Bold marks every detector within one seed standard
+deviation of the row's leader, since the ordering inside that band changes
+with the split seed; Appendix~\ref{app:spread} gives the spread.}
+\label{tab:detectors}
+\input{table_detectors}
+\end{table}
+
+Table~\ref{tab:detectors} is the paper's central measurement, and it isolates one variable. Every row reads the
+same attention tensors of the same generations under the same splits and the same seeds; the blocks differ only
+in whether the heads are averaged before the graph is built. The head-averaged column sits between
+\aucHeadAveragedLayerLlamaOneBGlaiveSem{} and \aucSymEigProfileLlamaThreeBGlaiveSem{} and on several runs
+does not clear the surface-length confound. The per-head block reaches
+\aucPerHeadAllLlamaThreeBGlaiveSem{} on Llama-3B and \aucPerHeadStaticDynLlamaThreeBBfclCall{} on the same model
+on BFCL. Averaged over the \nRunsBothSpectral{} runs where both are available, keeping the heads apart is worth
+\perHeadGainMean{} AUC points, with a range of \perHeadGainMin{} to \perHeadGainMax{}; the single negative entry
+is the hybrid model with too few positives to interpret.
+
+This is what Section~\ref{sec:theory} predicts, and it is worth being clear about the direction of the
+inference. Proposition~\ref{prop:annihilation} says an averaged readout cannot in principle recover
+between-head contrast, and Proposition~\ref{prop:jensen} says the averaged graph systematically overstates
+connectivity unless heads share a Fiedler vector, which they measurably do not. Neither statement guarantees
+that a failure is visible in the contrast. Table~\ref{tab:detectors} establishes that it is.
+
+\begin{figure}[t]
+\centering
+\begin{minipage}[t]{0.42\linewidth}
+\centering
+\includegraphics[width=\linewidth]{fig_heatmap}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.56\linewidth}
+\centering
+\includegraphics[width=\linewidth]{fig_ladder}
+\end{minipage}
+\caption{Left: where the attention signal lives. Univariate AUC of each head's spectral radius on the
+generated call, Llama-3.2-1B on Glaive, direction-free. The signal is concentrated in particular heads of
+particular layers; averaging over a row of this map mixes its best head with its worst. Right: the
+resolution ladder of Section~\ref{sec:exp:ladder}, mean AUC over \ladNRuns{} runs. Grey bars are the two
+$L\times5$ reads, blue bars keep heads apart with an increasing number of heads, and red bars have the full
+per-head width but no head information.}
+\label{fig:ladder}
+\end{figure}
+
+\subsection{Resolution or dimensionality?}
+\label{sec:exp:ladder}
+
+The per-head profile has $L \times H \times 5$ features and the head-averaged block $L \times 5$, so the
+comparison in Table~\ref{tab:detectors} varies two things at once. A ladder of controls separates them,
+all on the same stored features, the same regularised linear classifier and the same tool-grouped splits
+over \ladNRuns{} runs. \emph{Metric averaging} computes every metric per head and then averages over heads,
+giving $L \times 5$ features like the literature's read but with the Jensen effect of
+Proposition~\ref{prop:jensen} removed: it scores \ladMetricAvg{} against \ladGraphAvg{} for the averaged
+graph, a change of \ladGainMetricAvg{} that is positive on \ladGainMetricAvgPos{} of \ladNRuns{} runs.
+Keeping the heads apart adds a further \ladGainPerHead{} on top of that, to \ladPerHead{}. Two controls
+hold the width fixed at the per-head value. Padding the averaged-graph features with Gaussian noise to the
+same width leaves them at \ladNoisePadded{}, a change of \ladNoiseEffect{} from the unpadded value, so
+width without information costs rather than buys. Permuting the head axis independently for every example, which keeps every
+value and destroys only which head it came from, drops the per-head profile to \ladHeadShuffled{}, a
+loss of \ladGainVsShuffle{}. Finally a random subset of one, two, four and eight heads per layer scores
+\ladOneHead{}, \ladTwoHeads{}, \ladFourHeads{} and \ladEightHeads{}, rising with the number of heads
+kept rather than jumping at the first. The signal is carried by which heads do what, and a read that
+cannot tell the heads apart cannot see it, whatever its width.
+
+Which of the five per-head metrics carries the signal changes with the run: the spectral radius leads on
+Llama-1B with \aucPerHeadLmaxLlamaOneBGlaiveSem{} against the Fiedler value's
+\aucPerHeadFiedlerLlamaOneBGlaiveSem{}, and the ordering reverses on Llama-3B. Reporting the per-run best would
+be selection on test, so we recommend and report the five-metric profile, which is at or near the top in every
+run and costs the same single eigendecomposition.
+
+\subsection{The access frontier}
+\label{sec:exp:frontier}
+
+\begin{table}[t]
+\centering
+\small
+\caption{The access frontier. One representative per tier, fixed before any
+result was seen: the mean log-probability, the five-metric per-head profile
+and LapEigvals for attention, the token-role probe for the residual stream,
+and the length classifier as the floor. Subsets as in
+Table~\ref{tab:detectors}.}
+\label{tab:frontier}
+\input{table_frontier}
+\end{table}
+
+Table~\ref{tab:frontier} is the deployment result, and it has two regimes. On the Llama, Qwen3 and Gemma runs
+the ordering of the internal tiers is stable: the residual stream is best, attention-only trails it by a few
+points, and both are far above the confound floor, while the token log-probability reaches
+\aucLogprobLlamaThreeBBfclCall{} on Llama-3B and \aucLogprobQwenDenseBfclCall{} on Qwen3-1.7B, which is chance,
+on a run where the same model's residual stream supports \aucHiddenLRQwenDenseBfclCall{}. A guardrail built on
+output confidence would pass exactly the calls this paper is about on those models. On the MiniCPM5 and Qwen3.5
+runs the picture inverts: the log-probability is the best single detector and no trained judge reaches it.
+Section~\ref{sec:exp:budget} examines that division. Within the internal tiers the token-role probe leads
+the per-head profile on eleven of the twelve runs; on the one where attention leads, the difference is
+within seed noise.
+The weakness of confidence on the first group does not track model quality: Qwen3-1.7B abstains on the
+no-applicable-tool category almost as often as any model in the sweep (Section~\ref{sec:exp:arch}), and its
+confidence is the least informative we measured.
+
+Within the attention tier, LapEigvals and our per-head profile trade places by run and stay within noise of one
+another. We do not claim to beat it. What the per-head profile offers instead is compactness, $L\times H\times 5$
+features against $L\times H\times k$ with $k$ up to $100$, and a readout with a graph-theoretic meaning, which is
+what makes Section~\ref{sec:theory} possible. A smaller probe should also need fewer labelled failures, and
+Figure~\ref{fig:labeleff} tests that by thinning the positives available to the training folds on
+\leNRuns{} runs while scoring on every example. The two attention judges are tied at full budget
+(\lePerHeadFull{} against \leLapEigFull{}) and at the smallest budget, a handful of failures per fold
+(\lePerHeadFive{} against \leLapEigFive{}); in between, with a tenth or a fifth of the labels, the per-head
+profile leads by \leDiffTen{} and \leDiffTwenty{}, on \leWinsTen{} and \leWinsTwenty{} of \leNRuns{} runs.
+The edge is modest and not uniform across runs, so we state it as parity with a small advantage in the
+low-label regime, not as a general label-efficiency result. The residual probe leads both throughout,
+\leHiddenTen{} at a tenth of the labels against \lePerHeadTen{}, and it loses less than either as labels
+shrink.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.5\linewidth]{fig_labeleff}
+\caption{Label efficiency of the trained judges. Positives are thinned in the training folds only, every
+example is scored, and the curve is the mean over \leNRuns{} runs of the Llama, Gemma and Qwen3 families.
+The two attention judges are tied at both ends and the per-head profile leads by a few points in between;
+the residual probe leads throughout.}
+\label{fig:labeleff}
+\end{figure}
+
+\subsection{Decorrelation of the two attention families}
+\label{sec:exp:decorrelate}
+
+Corollary~\ref{cor:decorrelate} makes three predictions from Remark~\ref{prop:lapeig}. Two hold and one
+fails, and the failure carries the more useful lesson.
+
+The first prediction, that the two families' scores are not interchangeable, holds. Over \decorrNRuns{} runs the
+Spearman correlation between the per-head spectral score and the LapEigvals score averages \decorrRhoMean{},
+ranging from \decorrRhoMin{} to \decorrRhoMax{}. They agree substantially, as two competent detectors of the same
+events must, but they are far from being the same function of the forward pass.
+
+The second prediction, that each retains signal once the other is removed, holds strongly. Regressing the
+per-head score on the LapEigvals score and scoring the residual gives \decorrResidPerHead{} AUC on average, and
+the reverse gives \decorrResidLapEig{}. Both are far above chance, so neither family is a noisy copy of the
+other: an in-degree sequence and a symmetrised spectrum carry substantially independent evidence about the same
+call, as Proposition~\ref{prop:lapeig} implies they should.
+
+The third prediction, that a combination should therefore exceed both, fails. Concatenating the two feature sets
+changes AUC by \decorrUnionGain{} on average and improves on the better of the two in only
+\decorrUnionPositiveRuns{} of \decorrNRuns{} runs, with a best case of \decorrUnionGainMax{}. For feature
+concatenation a variance account is at least available: the union carries thousands of features against a few
+hundred positives. The two-score combinations of Section~\ref{sec:exp:agreement} have no such excuse and fail
+too, so that account cannot be the whole story. The distinction matters for practice. Earlier work reported that
+combining internal signals does not help and read that as evidence that the signals are redundant. The residual
+analysis shows they are not redundant in the sense of being the same function of the forward pass. Whether they are redundant for the
+decision is a different question, and Section~\ref{sec:exp:agreement} answers it in the negative direction.
+
+Because this is a negative result that happens to favour our own framing, the union is given the more generous
+of two protocols: its LapEigvals width is selected on validation rather than fixed. Fixing it instead gives
+\decorrUnionGainFixed{}, so the conclusion does not depend on that choice.
+
+\subsection{Combining the two judges}
+\label{sec:exp:agreement}
+
+Section~\ref{sec:exp:decorrelate} shows that the residual-stream and attention
+judges carry substantially independent evidence, which makes it natural to ask
+whether running both is worth the cost. We tried three ways of combining them
+and none of them is.
+
+Concatenating their features changes AUC by \decorrUnionGain{}. Stacking their
+outputs with a combiner fitted on out-of-fold training scores, which is the
+standard remedy for a small validation fold and gives the combiner several
+times more labelled failures to work with, changes AUC by \agrStackGain{} and
+improves on the better single judge in \agrStackPositive{} of \agrNRuns{}
+runs. Putting both scores on one scale first, by mapping each through the
+empirical distribution of its out-of-fold training scores, changes AUC by
+\agrStackRankGain{} and helps in \agrStackRankPositive{} of \agrNRuns{}
+runs, with a best case of \agrStackRankGainMax{}; every fitted combiner
+gave both judges positive weight. Part of the remaining deficit is the
+pooling penalty of Section~\ref{sec:exp:stats}, which a combination pays
+twice, so we also score the simplest combination inside each fold, where no
+such penalty exists: on
+Llama-1B on Glaive the average of the two judges' scores reaches
+\poolWithinMeanLlamaOneBGlaive{} against \poolWithinPerHeadLlamaOneBGlaive{}
+for the better single judge in the same folds, and on Llama-3B
+\poolWithinMeanLlamaThreeBGlaive{} against \poolWithinHiddenLlamaThreeBGlaive{}.
+The combination matches the better judge and does not exceed it.
+
+The third is the one an operator would reach for without any fitting: set a
+threshold for each judge on training data and flag a call only when both fire.
+It appears to work, and the appearance is an artefact of the operating point.
+The rule fires on fewer calls than either judge alone, so it runs at lower
+recall, and lower recall buys precision for nothing. Compared against the
+stronger single judge \emph{at the recall the rule actually achieves}, the
+agreement rule changes precision by \agrMatchedGain{} on average and helps in
+\agrMatchedPositive{} of \agrNRuns{} runs. Moving one judge's threshold does
+the same work.
+
+We therefore report a negative result without a mechanism we can defend. The
+two families are far from interchangeable, and yet nothing we tried converts
+that into a better detector, within folds or pooled. A shortage of labels is
+not the reason: the combiners here had hundreds of out-of-fold positives, and
+Section~\ref{sec:exp:budget} shows a far larger probe surviving a tenfold
+thinning of its labels. The likelier reading is that the two judges disagree
+mostly on examples both already score correctly, and agree on the ones both
+get wrong. The recommendation that follows is to pick the judge the access
+tier allows and spend the labelling effort on its threshold rather than on a
+second judge.
+
+\paragraph{Precision is bounded by how often the model fails.}
+One property of these operating points matters more for deployment than any
+difference between detectors. Across our runs the failure rate ranges from
+\agrBaseMin{}\% to \agrBaseMax{}\%, and precision tracks it: on the models
+that fail most, a judge reaches precision in the high nineties at usable
+recall, and on the model that fails least, no judge we measured exceeds a
+fifth. A guardrail is therefore most deployable exactly where the model is
+worst, and on a well-behaved model the false positives it raises may cost more
+than the failures it catches. That is an argument for measuring the failure
+rate of the deployed model before choosing a guardrail, and it is the same
+measurement Section~\ref{sec:exp:budget} already recommends for a different
+reason.
+
+\subsection{Architecture and abstention}
+\label{sec:exp:arch}
+
+Attention design changes what the attention tier can read, and the effect is smaller than the earlier literature
+suggests. On the sliding-window model, which has four heads and one key-value head and computes local attention
+in all but four of its layers, the per-head profile still reaches \aucPerHeadAllGemmaGlaiveSem{} against a
+confound floor of \aucSurfaceConfoundGemmaGlaiveSem{}. A narrow, sparse attention stack therefore does not
+disable spectral detection. The hybrid families, in which only a quarter of the layers carry softmax attention,
+are where the tier weakens, and there the attention-only detectors fall to the neighbourhood of the residual
+probes rather than below the confound floor.
+
+The clearest architectural effect we find is not about detectors but about the models. On the benchmark category
+where no available tool applies and the correct behaviour is to answer without calling anything, the two Llama
+models fabricate a call almost every time: \modeLlamaOneBBfclOvertrigger{} of
+\nIrrelevanceItems{} items at 1B and \modeLlamaThreeBBfclOvertrigger{} at 3B, with scale making it worse rather
+than better. Every other family we tested abstains most of the time, and abstains at every size we tested it:
+Qwen3-1.7B on \modeQwenDenseBfclValidnocall{} items, Qwen3.5-4B on \modeQwenFourBBfclValidnocall{}, MiniCPM5-2B
+on \modeMiniCpmBfclValidnocall{}, and the smallest model in the study, Qwen3.5-0.8B, on
+\modeQwenSmallBfclValidnocall{}. We inspected these decisions by hand: the Llama outputs are well-formed calls,
+and the others are prose answers to the question that was asked.
+
+Abstention is therefore a property of the training recipe and not of scale, and an earlier version of this study,
+which had only the Llama family in it, drew the opposite and wrong conclusion that small models cannot abstain.
+The practical consequence is unchanged in form but narrower in scope: for a model family that does not abstain,
+the capability has to be supplied from outside the model, and a guardrail of the kind measured here is the only
+option. For a family that does abstain, the guardrail is guarding against a rarer event, which is exactly the
+regime that Section~\ref{sec:exp:budget} shows makes a trained judge hard to fit.
+
+\subsection{Confounds and transfer}
+\label{sec:exp:confound}
+
+Every table reports the confound floor beside the detectors, and the floor is not always low: on Llama-1B on
+BFCL a classifier built from lengths alone reaches \aucSurfaceConfoundLlamaOneBBfclAll{} on the full set,
+because format failures are long. That is why the semantic and call-expected subsets exist, and on them the
+floor falls to \aucSurfaceConfoundLlamaOneBBfclCall{} while the detectors hold.
+
+Transfer separates a detector that learned routing from one that learned a corpus. Trained on Glaive and applied
+unchanged to BFCL on the same model, the residual probe retains
+\transferHiddenLRLlamaThreeBGlaiveToLlamaThreeBBfcl{} on Llama-3B and the per-head profile
+\transferPerHeadAllLlamaThreeBGlaiveToLlamaThreeBBfcl{}, against in-domain values of
+\aucHiddenLRLlamaThreeBBfclSem{} and \aucPerHeadAllLlamaThreeBBfclSem{}. The length confound does not transfer at
+all: it falls to \transferSurfaceConfoundLlamaThreeBGlaiveToLlamaThreeBBfcl{}, below chance, on the same
+comparison. A feature that was carrying corpus-specific length regularities behaves exactly as one would expect
+under distribution shift, and the detectors do not.
+
+\begin{figure}[t]
+\centering
+\begin{minipage}[t]{0.5\linewidth}
+\centering
+\includegraphics[width=\linewidth]{fig_family}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.46\linewidth}
+\centering
+\includegraphics[width=\linewidth]{fig_thinning}
+\end{minipage}
+\caption{Left: the advantage of the best residual probe over mean log-probability on every run, scored on
+every parseable call. The two groups of families do not overlap. Right: the probe's AUC on Llama-3.2-1B on
+BFCL as its labelled failures are thinned, against the confidence baseline on the same data. A tenfold
+reduction does not bring the probe near the baseline, so the split on the left is not a shortage of labels.}
+\label{fig:family}
+\end{figure}
+
+\subsection{Calls with a history}
+\label{sec:exp:multiturn}
+
+Every result so far concerns a single call made from a fresh prompt, and an agent does not work that way: its
+calls are made with a conversation behind them, and a wrong call can be inherited from an earlier one. We
+therefore evaluate on the multi-turn categories of BFCL-v4 under a teacher-forced protocol. A conversation is
+replayed with the ground-truth calls of the two preceding turns in the prompt, the model is asked for the calls
+of the current turn, and the label is whether those calls match the ground truth for that turn. This keeps the
+label unambiguous without running the benchmark's simulated back ends, at the price that the model never sees
+its own earlier mistakes. To restore that condition deliberately, half of the records with a history carry one
+preceding turn whose calls were replaced by a wrong call drawn from another conversation, presented as having
+succeeded, which we call the \emph{cascade} condition. Two models are run, one from each side of the family
+split of Section~\ref{sec:exp:budget}: Llama-3.2-1B on \mtNLlamaOneB{} turns and MiniCPM5-2B on
+\mtNMiniCpm{}. Prompts run to several thousand tokens, so the attention features are reduced layer by layer
+inside a forward hook rather than materialised for the whole stack (Appendix~\ref{app:protocol}). Because a
+weak model echoes tool schemas into argument-less calls here, labels on these runs count arguments the schema
+does not define as a failure (Appendix~\ref{app:validity}).
+
+\paragraph{The models.}
+Multi-turn calling is far harder for these models than the single-turn categories. MiniCPM5 fails on
+\mtFailTurnZeroMiniCpm{}\% of opening turns and \mtFailAllMiniCpm{}\% of all turns; Llama-1B fails on
+\mtFailTurnZeroLlamaOneB{}\% of opening turns, \mtTruncPctLlamaOneB{}\% of its generations run past the budget,
+and the whole run leaves \mtNegLlamaOneB{} well-formed correct calls, too few to train or score a judge on. We
+report Llama-1B as a boundary case, the multi-turn counterpart of the run in Table~\ref{tab:runs} that fails
+too rarely: a judge needs both kinds of example, and a model that almost never succeeds supplies no more of
+them than one that almost never fails. The cascade condition asks whether a wrong call in the history makes the
+next call worse, and on neither model does it. On turns with a history MiniCPM5 fails on
+\mtFailCleanMiniCpm{}\% after a clean history and \mtFailCorruptMiniCpm{}\% after a corrupted one (Fisher
+$p=\mtFisherPMiniCpm{}$ on \mtNCleanMiniCpm{} and \mtNCorruptMiniCpm{} turns), and Llama-1B on
+\mtFailCleanLlamaOneB{}\% against \mtFailCorruptLlamaOneB{}\% ($p=\mtFisherPLlamaOneB{}$). A single wrong
+call that the history reports as successful does not propagate; whether a wrong \emph{result} would is a
+question this protocol cannot ask, and we return to it in Section~\ref{sec:disc}.
+
+\paragraph{The judges.}
+Detection survives the history. On MiniCPM5, with tools held out as before, the token-role probe reaches
+\mtAucHiddenMiniCpm{}, the per-head profile \mtAucPerHeadMiniCpm{} and LapEigvals \mtAucLapEigMiniCpm{}, against
+a length floor of \mtAucSurfaceMiniCpm{}; the probe scores turns with a history at \mtAucHiddenHistMiniCpm{}
+and opening turns at \mtAucHiddenTurnZeroMiniCpm{}, so the history neither helps nor hurts it. The family
+split of Section~\ref{sec:exp:budget} reappears intact: mean log-probability reaches \mtAucLogprobMiniCpm{} on
+this model and no trained judge exceeds it, with a history behind the call as without one. On Llama-1B every
+judge sits near chance on the \mtNegLlamaOneB{} negatives available, LapEigvals highest at
+\mtAucLapEigLlamaOneB{}, and we draw no conclusion from that run.
+
+\paragraph{The judge under cascade.}
+The question a deployment cares about is whether a judge trained on well-behaved histories still works once the
+history contains a failure it has never seen. We train every judge on clean-history items only and score it, on
+held-out tools, separately on clean and on corrupted items. On MiniCPM5 the token-role probe scores
+\mtAucHiddenCleanOnCleanMiniCpm{} on clean and \mtAucHiddenCorruptOnCleanMiniCpm{} on corrupted items, the
+per-head profile \mtAucPerHeadCleanOnCleanMiniCpm{} against \mtAucPerHeadCorruptOnCleanMiniCpm{}, and LapEigvals
+\mtAucLapEigCleanOnCleanMiniCpm{} against \mtAucLapEigCorruptOnCleanMiniCpm{}. A corrupted history does not
+change what a wrong call looks like from inside the model, at least not in a way that a judge trained without
+ever seeing one would miss; training on both conditions gives \mtAucHiddenCorruptOnAllMiniCpm{} on the
+corrupted items, the same figure. For an operator this is the useful half of a null result: the calibration
+set for a judge does not need to contain failed trajectories.
+
+\subsection{When a trained judge beats output confidence}
+\label{sec:exp:budget}
+
+Whether a trained internal judge is worth building at all is the first
+question an operator asks, and our runs do not give it one answer. They
+divide cleanly by model family (Figure~\ref{fig:family}). On the Llama, Qwen3 and Gemma runs a probe on
+the residual stream leads mean log-probability by a wide margin. On the
+MiniCPM5 and Qwen3.5 runs the margin nearly vanishes, and on the harder of
+our two evaluation subsets it reverses and confidence wins.
+
+The division is complete rather than a tendency, and we are careful about
+the unit over which that is claimed. Over \famNRunsSem{} runs scored on
+every parseable call, the probe's advantage averages \famGapRecentSem{} on
+the recent families against \famGapEarlierSem{} on the others, and the two
+groups do not overlap: the largest advantage among the recent families,
+\famRecentMaxSem{}, falls below the smallest among the others,
+\famEarlierMinSem{}. Runs are not independent observations, however, since
+one checkpoint is evaluated on up to three benchmarks, so the unit for any
+test is the checkpoint, of which there are \famNCkptSem{},
+\famNCkptRecentSem{} recent and \famNCkptEarlierSem{} earlier. They too
+separate completely, which is the smallest attainable two-sided rank-test
+value at that size, $p=\famCkptMannWhitneySem{}$. At the level of the
+family, which is what the claim is about, there are five observations and
+no test has power; we report the family means instead, Qwen3
+\famGapQwenThreeSem{}, Gemma-3 \famGapGemmaThreeSem{} and Llama-3.2
+\famGapLlamaThreeTwoSem{} against MiniCPM5 \famGapMiniCPMFiveSem{} and Qwen3.5
+\famGapQwenThreeFiveSem{}, and let the reader judge the gap. Restricting to the
+items where a call is genuinely required, which removes the abstention
+decision and is the population this paper is about, the recent families
+average \famGapRecentCall{}: confidence beats every trained detector we
+measured on \famConfWinsCall{} of \famNRecentCall{} such runs. That subset
+has only \famNCkptCall{} checkpoints, so its separation is descriptive. We
+report both subsets because the sign of the effect for the recent families
+depends on which is used, while the separation between families does not.
+
+The obvious explanation is not the right one, and we report the test because
+we expected it to succeed. The recent families also fail far less often, and
+a supervised probe needs labelled failures while confidence needs none, so
+their probes might simply be starved. Two checks rule that out. First,
+thinning the labelled failures available to the Llama-1B run on BFCL from
+\curveBaseLlamaOneBBfclFullPos{} to \curveBaseLlamaOneBBfclLowPos{}, a
+tenfold reduction, costs the probe only \curveBaseLlamaOneBBfclDrop{} AUC,
+from \curveBaseLlamaOneBBfclFull{} to \curveBaseLlamaOneBBfclLow{}, which
+still leaves it far above the \confBaseLlamaOneBBfcl{} that confidence reaches
+on the same data. A probe trained on twenty-five failures wins comfortably, so
+scarcity of labels is not what holds the other families back. Second, the
+apparent relationship between failures and advantage is an artefact of
+grouping. Across all runs the rank correlation between the number of labelled
+failures and the probe's advantage is \famSpearmanSem{} and does not reach
+significance at $p=\famSpearmanPSem{}$, and computed within each family
+separately it disappears, at \famWithinRecentSem{} and
+\famWithinEarlierSem{}. One run settles it alone: Qwen3.5-0.8B supplies
+\posQwenSmallBfclCount{} labelled failures, more than most runs where the
+probe wins, and confidence still leads there.
+
+We therefore attribute the difference to the model family. The recent
+families we tested express uncertainty that tracks their own tool-calling
+errors, so their output distribution is already informative and a trained
+judge adds little; the older families do not, and there a trained judge is
+the only thing that works. With five families we cannot say which property of
+training produces this, and we do not claim a trend over time. Three
+confounds remain open and we name them rather than argue them away. The two
+recent families both emit their calls in an XML dialect while the others emit
+JSON, so the token probabilities being summarised are taken over different
+surface forms; a control that forces one family into the other's format
+would settle this and we have not run it. One of the two recent families has
+a hybrid attention stack, but the other, MiniCPM5, is a dense stack on which
+confidence wins just as clearly, so attention design is not the explanation.
+Finally, a model that has seen the benchmark in training will fail less and
+know when it fails, which is what we observe; the BFCL-live categories are
+contributed by users after the curated set and are the less likely to have
+been seen, and on them MiniCPM5 shows the same behaviour, which weakens the
+contamination account without excluding it. The practical
+consequence is nevertheless firm, and it is not the rule we set out to write:
+before building an internal guardrail, measure output confidence on a few
+hundred labelled calls from the model that will actually be deployed, because
+whether internals are needed is a property of that model and cannot be
+inferred from its size, its attention design, or its release date.
+
+\subsection{Does the comparison depend on how confidence is summarised?}
+\label{sec:exp:confvariants}
+
+Comparing a trained judge against ``output confidence'' presumes a way of
+summarising the output distribution, and the mean token log-probability is
+only one. If a better summary closed the gap on the families where confidence
+loses, the split of Section~\ref{sec:exp:budget} would be an artefact of that
+choice rather than a property of the models. We therefore record
+\CvLlamaBfclNSummaries{} summaries per generated call, covering the mean,
+minimum, total and mean-lowest-five log-probability, perplexity, the fraction
+of low-probability tokens, and the mean, maximum and final predictive
+entropy, and score each as its own detector under the identical protocol with
+its direction fixed on training folds.
+
+The choice matters, and it matters in the direction that weakens our own
+earlier framing. On Llama-3.2-1B on BFCL the mean log-probability reaches
+\CvLlamaBfclMeanLp{} while the best summary that is not confounded with
+length, the mean of the five least likely tokens, reaches \CvLlamaBfclBest{}.
+A single improbable token is what carries the evidence, and averaging over the
+call dilutes it. The probe's advantage therefore falls from
+\CvLlamaBfclGapMean{} to \CvLlamaBfclGapBest{}. It does not disappear: the
+best available confidence summary still trails the probe's
+\CvLlamaBfclProbe{} by a wide margin. One summary must be set aside. The total
+log-probability of the span scores \CvLlamaBfclSumLp{}, which is close to the
+\CvLlamaBfclSurface{} of the length baseline on the same run, and since it
+grows with length it is largely measuring the same thing; we report it but do
+not treat it as a confidence result.
+
+On the family where confidence wins, the choice of summary makes almost no
+difference. On MiniCPM5-2B the best summary reaches \CvMiniCpmBfclBest{}
+against \CvMiniCpmBfclMeanLp{} for the mean log-probability, and the probe's
+deficit moves from \CvMiniCpmBfclGapMean{} to \CvMiniCpmBfclGapBest{}. The
+summaries also agree with one another there, most of them falling within a
+couple of points, whereas on Llama they range over more than seventeen. That
+is a second and independent way of stating the split: on one family the
+model's expressions of uncertainty agree with each other and with its errors,
+and on the other they neither agree nor track the errors.
+
+The consequence for the rest of the paper is a caveat rather than a
+correction. The cross-run comparison of Section~\ref{sec:exp:budget} uses the
+mean log-probability, which we now know understates confidence on the
+families where it loses; the separation between families survives the fairer
+comparison, but it is smaller than a mean-log-probability comparison alone
+would suggest.
+
+\subsection{Statistical discipline}
+\label{sec:exp:stats}
+
+\paragraph{Pooled scores are conservative.}
+Every AUC in this paper pools the out-of-fold scores of five classifiers, one per fold, each calibrated on
+its own training tools. A deployed judge is one classifier with one calibration, so pooling penalises a
+calibration drift between folds that a deployment never sees. We measured the cost on \poolNRuns{} runs by
+scoring the residual probe both ways: within folds it averages \poolWithinHiddenLlamaOneBGlaive{} on
+Llama-1B on Glaive against \poolPooledHiddenLlamaOneBGlaive{} pooled, and the cost averages
+\poolCostHiddenMean{} AUC across the runs. We keep the pooled protocol because per-fold AUCs on this data
+are computed on a handful of positives and are unstable, but the reader should take every number in
+Tables~\ref{tab:detectors} and~\ref{tab:frontier} as a floor on what a single calibrated judge achieves.
+The same effect is much larger for any score that is only meaningful relative to its fold, such as a rank:
+the within-fold rank average of the residual and attention judges scores
+\poolWithinRankMeanLlamaOneBGlaive{} inside folds and \poolPooledRankMeanLlamaOneBGlaive{} pooled, which is
+why Section~\ref{sec:exp:agreement} reads its combinations within folds.
+
+\paragraph{Ties.}
+Differences within the top group of detectors are smaller than the variation between split seeds. On Llama-1B a
+paired bootstrap over the pooled scores puts the residual probe, LapEigvals and the per-head profile within a
+three-way tie whose ordering changes with the seed. We therefore state the frontier between tiers, which is
+stable and large, and refrain from ranking detectors inside a tier, which is not.

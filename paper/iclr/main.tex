@@ -1,0 +1,83 @@
+\documentclass{article}
+\usepackage{iclr2027_conference,times}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amssymb,amsthm,graphicx,booktabs,enumitem}
+\usepackage{hyperref}
+\usepackage{url}
+\graphicspath{{figures/}}
+
+\newtheorem{lemma}{Lemma}
+\newtheorem{proposition}{Proposition}
+\newtheorem{corollary}{Corollary}
+\newtheorem{remark}{Remark}
+\theoremstyle{definition}
+\newtheorem{assumption}{Assumptions}
+\newtheorem{definition}{Definition}
+
+\newcommand{\lamtwo}{\lambda_{2}}
+\newcommand{\lammax}{\lambda_{\max}}
+
+\input{generated_numbers}
+
+\title{Internal Signals as Judges of Hallucinated Tool Calls}
+\author{Anonymous authors\\Paper under double-blind review}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+When a language model agent calls the wrong tool, the call is usually well formed, its arguments are of the right
+type, and its token probabilities are unremarkable, so the runtime executes it and an action is taken before
+anyone can review it. A guardrail must therefore judge the call at the moment it is generated, using only what
+the model itself exposes in a single forward pass. We study how well the model's own internal signals serve as
+that judge. We compare the published detectors of both internal families, probes on the residual stream and
+diagnostics of the attention graph, together with several related detectors, on identical data, splits and labels
+across a range of small models, attention designs and tool-calling benchmarks, and we evaluate every detector
+against a panel of deliberately uninformative baselines. Three results emerge. Whether an internal judge is
+needed at all depends on the model family rather than on its size: on some families output confidence is
+uninformative and a trained internal judge is the only thing that works, while on others confidence already
+tracks the model's errors and no internal judge we trained improves on it. Where internals are needed, probes
+on the residual stream at the structural positions of the call are the strongest judge we measured, and
+diagnostics of the attention graph come within a few points of them, but only when the attention heads are
+analysed separately. We explain why the head averaging that most of this literature performs is the limiting
+step: algebraic connectivity is a concave function of the attention graph, so averaging over heads can only
+overstate how well connected the graph is, with equality precisely when every head shares a Fiedler vector,
+and we measure how far from that condition real layers sit. Finally, although the two families carry
+partly independent evidence, no combination of their scores that we tried improves on the better one, and we
+report that negative result together with its operating points. The outcome is a practical rule stated in
+terms of the model to be deployed and what its serving stack can expose, rather than a ranking of methods.
+\end{abstract}
+
+\input{sections/s1_intro.tex}
+\input{sections/s2_related.tex}
+\input{sections/s3_method.tex}
+\input{sections/s4_theory.tex}
+\input{sections/s5_experiments.tex}
+\input{sections/s6_discussion.tex}
+\input{sections/s7_conclusion.tex}
+
+\subsubsection*{Reproducibility statement}
+Every number in this paper expands from a macro that a released script builds from the result files; no value is
+typed into the text by hand, a macro with no backing result renders as a visible marker, and an undefined one
+stops the build. The models and all benchmarks are public. One command reproduces each run and one further
+command regenerates every table. Labels are recomputed from the stored generations at evaluation time, so a
+change to the labelling rule cannot leave stale labels behind. Splits are grouped by ground-truth tool, so every
+reported score is on tools absent from training, and each is a single pooled cross-fit score over the whole
+dataset rather than an average over small folds. Appendix~\ref{app:validity} lists the validity defects we found
+in our own measurement chain, each with the artefact it produced and the guard that now prevents it.
+
+\subsubsection*{Ethics statement}
+The study measures open-weight language models on public tool-calling benchmarks. No model was trained or
+fine-tuned, no capability is elicited, and no human subjects or personal data are involved. The work is
+defensive: its aim is to let an operator stop a wrong tool call before it executes. The same detectors could in
+principle guide the construction of calls that evade them, which is why we report operating points, the
+architectures on which each detector weakens, and the model family that never abstains when no tool applies,
+rather than a single headline number.
+
+\bibliographystyle{iclr2027_conference}
+\bibliography{references}
+
+\input{sections/z_appendix.tex}
+
+\end{document}
