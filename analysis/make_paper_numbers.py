@@ -63,6 +63,9 @@ CONTRASTS = {
     "LapEigvals vs surface": "LapEigVsSurface",
     "token-role vs surface": "HiddenVsSurface",
     "token-role vs log-probability": "HiddenVsLogprob",
+    "SinkProbe vs LapEigvals": "SinkVsLapEig",
+    "per-head vs SinkProbe": "PerHeadVsSink",
+    "SinkProbe vs top sink removed": "SinkVsNoTop",
 }
 
 # detector row -> macro infix
@@ -71,6 +74,8 @@ DETECTORS = {
     "Hidden token-role [MLP]": "HiddenMLP",
     "Hidden Gram spectra (EigenScore)": "EigenScore",
     "LapEigvals (official code)": "LapEigvals",
+    "SinkProbe (Binkowski 2026)": "SinkProbe",
+    "SinkProbe, top sink removed": "SinkProbeNoTop",
     "Per-head all metrics (span)": "PerHeadAll",
     "Per-head fiedler_value (span)": "PerHeadFiedler",
     "Per-head lambda_max (span)": "PerHeadLmax",

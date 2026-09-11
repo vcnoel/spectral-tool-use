@@ -191,7 +191,19 @@ python analysis/check_no_numbers.py            # abstract/intro still number-fre
 # 4. wire in main.tex: \input table_paired.tex and table_replication.tex,
 #    widen table_frontier's tabular, cite the new macros; then rebuild and
 #    grep the PDF for "PENDING".
+
+# 5. SinkProbe (Binkowski et al. 2026) rows need the sink-score profile,
+#    which is computed AT EXTRACTION (rec["sink_scores"], rec["sink_top_pos"]);
+#    dumps written before 2026-09-11 do not carry it and `evaluate` skips the
+#    two rows silently. Re-extract the runs you want SinkProbe on (GPU), then
+#    re-run steps 1-3. Priority: the six base_* runs.
 ```
+
+SinkProbe's identity `l_jj = s_j - a_jj` also pre-empts Proposition 3 (April
+2026): cite it there and present Prop 3 as the restatement from which
+Corollary 2 follows. The "top sink removed" row is the BOS ablation both
+papers owe the reader; `sink_top_pos` records how often the top sink is the
+first token.
 
 Things to look at when the numbers land:
 

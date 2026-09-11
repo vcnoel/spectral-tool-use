@@ -64,6 +64,7 @@ COLUMNS = [
     ("avg.\\ spectral", "Spectral per-layer (LMM)"),
     ("per-head", "Per-head all metrics (span)"),
     ("LapEigvals", "LapEigvals (official code)"),
+    ("SinkProbe", "SinkProbe (Binkowski 2026)"),
     ("Lookback", "Lookback Lens"),
     ("token-role", "Hidden token-role [LR]"),
     ("token-level", "Token-level probe (Obeso)"),
@@ -89,6 +90,8 @@ PAIRED_ROWS = [
     ("token-role vs LapEigvals", "token-role $-$ LapEigvals"),
     ("per-head vs surface", "per-head $-$ surface"),
     ("token-role vs surface", "token-role $-$ surface"),
+    ("SinkProbe vs LapEigvals", "SinkProbe $-$ LapEigvals"),
+    ("SinkProbe vs top sink removed", "SinkProbe $-$ no top sink"),
 ]
 
 
