@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from spectral_guardrails.spectral.metrics import (  # noqa: E402
     METRIC_NAMES, build_normalized_laplacian, lapeigvals_diag_profile,
-    laplacian_eig_profile, layer_spectral_metrics,
+    laplacian_eig_profile, layer_spectral_metrics, sink_scores,
     spectral_metrics_from_laplacian,
 )
 
@@ -81,6 +81,25 @@ def test_lapeigvals_diagonal_matches_definition():
         denom = torch.arange(T, 0, -1, dtype=torch.float32)
         ref = (col / denom - torch.diagonal(attn[h])).sort(descending=True).values
         assert np.allclose(prof[h], ref.numpy(), atol=1e-5)
+
+
+def test_sink_scores_match_definition_and_lapeigvals_identity():
+    """SinkProbe's s_j is the mean attention j receives from itself and later
+    positions; Binkowski et al. (2026) note l_jj = s_j - a_jj, so the sorted
+    LapEigvals diagonal must equal the sorted (sink score - self-attention)."""
+    attn = _causal_attention(H=2, T=12)
+    vals, top_pos = sink_scores(attn, k_store=12)
+    lap = lapeigvals_diag_profile(attn, k_store=12)
+    H, T, _ = attn.shape
+    for h in range(H):
+        s = attn[h].sum(0) / torch.arange(T, 0, -1, dtype=torch.float32)
+        assert np.allclose(vals[h], s.sort(descending=True).values.numpy(), atol=1e-5)
+        ident = (s - torch.diagonal(attn[h])).sort(descending=True).values.numpy()
+        assert np.allclose(lap[h], ident, atol=1e-5)
+        assert top_pos[h] == int(s.argmax())
+    # padding when the graph is shorter than k_store
+    vals, _ = sink_scores(attn, k_store=20)
+    assert len(vals[0]) == 20 and vals[0][-1] == 0.0
 
 
 def test_per_head_metrics_via_spectral_trust_if_available():

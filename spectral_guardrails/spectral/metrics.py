@@ -186,20 +186,60 @@ def lapeigvals_diag_profile(attn: torch.Tensor, k_store: int = 100) -> list[list
 
     attn: [H, T, T]. Returns [H][k_store] (padded with 0.0 when T < k_store).
     """
-    # Reduce in float32 without widening the whole layer first: a full
-    # attention tensor at a few thousand tokens is over a gigabyte in
-    # float32, and only the column sums and the diagonal are needed.
+    s, diag = _incoming_by_position(attn)
+    return _topk_desc(s - diag, k_store)
+
+
+def _incoming_by_position(attn: torch.Tensor):
+    """
+    Per head and position j: the mean attention j receives from itself and
+    every later position, s_j = (sum_i A[h, i, j]) / (T - j), together with the
+    self-attention a_jj. Both [H, T], reduced in float32 without widening the
+    whole layer first (a full attention tensor at a few thousand tokens is
+    over a gigabyte in float32, and only column sums and the diagonal are
+    needed). s_j is the SinkProbe sink score; s_j - a_jj is the LapEigvals
+    Laplacian diagonal.
+    """
     H, T, _ = attn.shape
     denom = torch.arange(1, T + 1, device=attn.device,
                          dtype=torch.float32).flip(0)
     col_sum = attn.sum(dim=1, dtype=torch.float32)           # [H, T]
     diag = torch.diagonal(attn, dim1=1, dim2=2).to(torch.float32)
-    lap_diag = col_sum / denom - diag                        # [H, T]
-    vals = lap_diag.sort(dim=-1, descending=True).values[:, :k_store]
+    return col_sum / denom, diag
+
+
+def _topk_desc(vals: torch.Tensor, k_store: int) -> list[list[float]]:
+    """Sort each head's values descending, keep k_store, pad with 0.0."""
+    H = vals.shape[0]
+    vals = vals.sort(dim=-1, descending=True).values[:, :k_store]
     if vals.shape[1] < k_store:
-        pad = torch.zeros(H, k_store - vals.shape[1], device=attn.device)
+        pad = torch.zeros(H, k_store - vals.shape[1], device=vals.device)
         vals = torch.cat([vals, pad], dim=1)
     return [[float(x) for x in row] for row in vals]
+
+
+def sink_scores(attn: torch.Tensor,
+                k_store: int = 100) -> tuple[list[list[float]], list[int]]:
+    """
+    SinkProbe features (Binkowski, Adamczewski & Kajdanowicz, 2026,
+    arXiv:2604.10697): the sink score of position j under head h is the mean
+    attention it receives from itself and every later position,
+        s_j = (1 / (T - j)) * sum_{i >= j} A[h, i, j],
+    sorted descending per head with the top k kept; the official probe is a
+    logistic regression over all layers x heads x k, with k chosen on
+    validation (their optimum is below 10).
+
+    Their identity l_jj = s_j - a_jj says the LapEigvals diagonal profile is
+    this feature minus the self-attention term, so the two families differ by
+    a_jj only; both are computed here from one reduction. Attention-only.
+
+    Returns ([H][k_store] sorted scores, [H] position index of each head's
+    top-ranked sink -- position 0 when it is the first token, which is where a
+    prepended special token sits).
+    """
+    s, _ = _incoming_by_position(attn)
+    top_pos = [int(p) for p in s.argmax(dim=-1)]
+    return _topk_desc(s, k_store), top_pos
 
 
 def gram_spectrum_features(hidden: torch.Tensor, k: int = 8) -> list[float]:

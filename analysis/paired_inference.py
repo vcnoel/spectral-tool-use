@@ -63,6 +63,16 @@ CONTRASTS = [
      "Hidden token-role [LR]", "Surface (lengths) [confound]"),
     ("token-role vs log-probability",
      "Hidden token-role [LR]", "Mean logprob"),
+    # SinkProbe (Binkowski et al. 2026): sink scores are the LapEigvals
+    # diagonal plus the self-attention term, so the first contrast measures
+    # what that term is worth; the third measures how much of the sink signal
+    # is the first-ranked sink, which is almost always the first token
+    ("SinkProbe vs LapEigvals",
+     "SinkProbe (Binkowski 2026)", "LapEigvals (official code)"),
+    ("per-head vs SinkProbe",
+     "Per-head all metrics (span)", "SinkProbe (Binkowski 2026)"),
+    ("SinkProbe vs top sink removed",
+     "SinkProbe (Binkowski 2026)", "SinkProbe, top sink removed"),
 ]
 
 

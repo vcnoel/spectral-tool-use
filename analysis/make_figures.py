@@ -328,8 +328,8 @@ def fig3_ladder():
     ax.text(0, 0.98, "grey: individual runs", transform=ax.transAxes, va="top",
             fontsize=6.2, color=MUTED)
     fig.tight_layout()
-    return _save(fig, "fig3_ladder", {"n_runs": len(runs),
-                                       "first": means[0], "last": means[-1]})
+    return _save(fig, "fig3_ladder",
+                 {"n_runs": len(runs), "first": means[0], "last": means[-1]})
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -368,7 +368,7 @@ def fig4_heatmap(tag="base_llama1b_glaive", metric_idx=4):
     fig.subplots_adjust(left=0.12, right=0.80, bottom=0.2, top=0.86)
     vmax = max(A.max(), B.max(), 0.6)
     im = axes[0].imshow(A, aspect="auto", cmap=SEQ_CMAP, vmin=0.5, vmax=vmax,
-                        interpolation="nearest")  # noqa: E127
+                        interpolation="nearest")
     axes[0].set_xlabel("head")
     axes[0].set_ylabel("layer")
     axes[0].set_xticks(range(0, H, max(1, H // 8)))

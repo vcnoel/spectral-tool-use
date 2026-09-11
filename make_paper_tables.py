@@ -53,6 +53,8 @@ ACCESS_TIER = {
     "Per-head lambda_max static+dynamics": "attention",
     "All attention-spectral combined": "attention",
     "LapEigvals (official code)": "attention",
+    "SinkProbe (Binkowski 2026)": "attention",
+    "SinkProbe, top sink removed": "attention",
     "Lookback Lens": "attention",
     "Best single spectral (honest sweep)": "attention",
     "Hidden token-role [LR]": "hidden",

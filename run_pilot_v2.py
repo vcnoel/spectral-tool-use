@@ -71,7 +71,7 @@ from spectral_guardrails.spectral.streaming import StreamingAttentionFeatures
 from spectral_guardrails.spectral.metrics import (
     METRIC_NAMES, PER_HEAD_METRICS, layer_spectral_metrics,
     laplacian_eig_profile, per_head_metrics, gram_spectrum_features,
-    lapeigvals_diag_profile, lookback_ratio, residual_dynamics,
+    lapeigvals_diag_profile, lookback_ratio, residual_dynamics, sink_scores,
 )
 from spectral_guardrails.utils.data import load_glaive_data, parse_glaive_chat
 from spectral_guardrails.probes.multiturn import iter_multiturn_examples
@@ -495,6 +495,9 @@ def handle_extract(args):
                 feat["eig_span"] = laplacian_eig_profile(a, span=span)
                 feat["ph"] = per_head_metrics(a, span=span)
                 feat["lap"] = lapeigvals_diag_profile(a)
+                # SinkProbe sink scores: the same reduction plus the
+                # self-attention term, and the position of each head's top sink
+                feat["sink"], feat["sink_pos"] = sink_scores(a)
                 feat["lb"] = lookback_ratio(a, prompt_len, T)
                 if full_graph_ok:
                     feat["eig"] = laplacian_eig_profile(a)
@@ -513,6 +516,8 @@ def handle_extract(args):
         eig_profile_span = [f["eig_span"] for f in per_layer if "eig_span" in f]
         head_fiedler_span = [f["ph"] for f in per_layer if "ph" in f]
         lapeig_diag = [f["lap"] for f in per_layer if "lap" in f]
+        sink_prof = [f["sink"] for f in per_layer if "sink" in f]
+        sink_top = [f["sink_pos"] for f in per_layer if "sink_pos" in f]
         lookback = [f["lb"] for f in per_layer if "lb" in f]
 
         pos = find_token_positions_v2(tok, gen_ids, prompt_len)
@@ -578,6 +583,10 @@ def handle_extract(args):
             rec["head_metrics_span"] = head_fiedler_span
             # [L][H][100] official LapEigvals diagonal profile
             rec["lapeig_diag"] = lapeig_diag
+            # [L][H][100] SinkProbe sink-score profile and [L][H] the token
+            # position of each head's top-ranked sink (0 = first token)
+            rec["sink_scores"] = sink_prof
+            rec["sink_top_pos"] = sink_top
             rec["gram_feats"] = gram_feats
             # [L][H][2] Lookback Lens context/generation attention shares
             rec["lookback"] = lookback
@@ -761,23 +770,33 @@ def velocity_matrix(samples, key):
     return np.nan_to_num(np.column_stack(feats).astype(np.float32))
 
 
-def lapeig_official_scores(lap, y, tr, va, te):
+def topk_probe_scores(arr, y, tr, va, te, ks=(5, 10, 25, 50, 100), drop_first=False):
     """
-    Official LapEigvals protocol: per-(layer, head) top-k Laplacian-diagonal
-    values -> balanced logistic regression, k swept in {5,10,25,50,100} and
-    chosen on the validation split.
-    lap: (N, L, H, 100) stored diagonal profiles.
+    Sorted per-(layer, head) top-k profile -> balanced logistic regression,
+    k swept over `ks` and chosen on the validation split. This is the
+    LapEigvals protocol and, on sink scores, the SinkProbe protocol.
+    arr: (N, L, H, K) stored profiles, sorted descending along the last axis.
+    drop_first removes each head's top-ranked value before the sweep (the
+    "top sink removed" ablation: the first-ranked sink is almost always the
+    first token, where a prepended special token sits).
     """
-    N = lap.shape[0]
+    if drop_first:
+        arr = arr[:, :, :, 1:]
+    N = arr.shape[0]
     best_scores, best_val = None, -1.0
-    for k in [5, 10, 25, 50, 100]:
-        Xk = lap[:, :, :, :k].reshape(N, -1)
+    for k in ks:
+        Xk = arr[:, :, :, :k].reshape(N, -1)
         p = fit_lr(Xk, y, tr, va)
         v = auc_safe(y[va], p.predict_proba(Xk[va])[:, 1])
         if not np.isnan(v) and v > best_val:
             best_val = v
             best_scores = p.predict_proba(Xk[te])[:, 1]
     return best_scores
+
+
+def lapeig_official_scores(lap, y, tr, va, te):
+    """Official LapEigvals protocol on the stored (N, L, H, 100) diagonal profiles."""
+    return topk_probe_scores(lap, y, tr, va, te)
 
 
 def honest_sweep_scores(X, y, tr, va, te):
@@ -859,7 +878,7 @@ def _compact(rec):
             a = np.nan_to_num(a, nan=0.0, posinf=65504.0, neginf=-65504.0)
         rec["token_pooled"] = np.concatenate([a.mean(0), a.max(0)])
         rec["token_states"] = None
-    for key in ("lapeig_diag", "head_metrics_span", "eig_profile",
+    for key in ("lapeig_diag", "sink_scores", "head_metrics_span", "eig_profile",
                 "eig_profile_span", "lookback", "res_dynamics"):
         if rec.get(key) is not None:
             rec[key] = np.asarray(rec[key], dtype=np.float32)
@@ -977,6 +996,7 @@ def handle_evaluate(args):
     per_head_rows = []
     extra_rows = []
     lap_official = None
+    sink_official = None
     if rich:
         X["Sym-Laplacian eig profile"] = np.array(
             [np.ravel(s["eig_profile"]) for s in samples], dtype=np.float32)
@@ -986,6 +1006,12 @@ def handle_evaluate(args):
             # (N, L, H, 100) official LapEigvals diagonal profiles
             lap_official = np.array([s["lapeig_diag"] for s in samples],
                                     dtype=np.float32)
+        if samples[0].get("sink_scores") is not None:
+            # (N, L, H, 100) SinkProbe sink-score profiles (= LapEigvals
+            # diagonal + self-attention, sorted); dumps written before the
+            # feature existed do not carry it and the rows are skipped
+            sink_official = np.array([s["sink_scores"] for s in samples],
+                                     dtype=np.float32)
 
         if "head_metrics_span" in samples[0]:
             # (N, L, H, 5) in PER_HEAD_METRICS order
@@ -1074,6 +1100,8 @@ def handle_evaluate(args):
                  "Best single spectral (honest sweep)", "Mean logprob"])
     if lap_official is not None:
         ALL_ROWS.append("LapEigvals (official code)")
+    if sink_official is not None:
+        ALL_ROWS += ["SinkProbe (Binkowski 2026)", "SinkProbe, top sink removed"]
     ALL_ROWS += CONF_ROWS
 
     seeds = [42, 43, 44, 45, 46]
@@ -1124,6 +1152,13 @@ def handle_evaluate(args):
                 s_lap = lapeig_official_scores(lap_official, y, tr, va, te)
                 if s_lap is not None:
                     pooled["LapEigvals (official code)"][te] = s_lap
+            if sink_official is not None:
+                s_sk = topk_probe_scores(sink_official, y, tr, va, te)
+                if s_sk is not None:
+                    pooled["SinkProbe (Binkowski 2026)"][te] = s_sk
+                s_sk = topk_probe_scores(sink_official, y, tr, va, te, drop_first=True)
+                if s_sk is not None:
+                    pooled["SinkProbe, top sink removed"][te] = s_sk
             # The direction of an untrained score is fixed on the training
             # folds. When it differs between folds, the pooled vector mixes
             # +x and -x and its pooled AUC is not interpretable (this is how
