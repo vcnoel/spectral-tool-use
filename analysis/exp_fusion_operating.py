@@ -30,8 +30,10 @@ from run_pilot_v2 import (  # noqa: E402
     SEMANTIC_MODES,
 )
 
-TAGS = ["llama_32_1b", "llama_32_3b", "gemma3_1b",
-        "llama_32_1b_bfcl", "llama_32_3b_bfcl", "qwen3_17b_bfcl"]
+TAGS = ["base_llama1b_glaive", "base_llama3b_glaive", "base_gemma3_glaive",
+        "base_llama1b_bfcl", "base_llama3b_bfcl", "base_qwen3_17b_bfcl",
+        "minicpm5_2b_bfcl", "qwen35_4b_bfcl", "qwen35_08b_bfcl",
+        "llama1b_live", "minicpm5_2b_live"]
 SEEDS = [42, 43]
 TARGET_RECALL = 0.80
 OUT = Path("data/theory/fusion_operating.json")
