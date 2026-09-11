@@ -393,6 +393,31 @@ def main():
     else:
         define("mtNRuns", "\\pending{mtNRuns}")
 
+    le = DATA / "theory" / "label_efficiency.json"
+    if le.exists():
+        d = json.loads(le.read_text(encoding="utf-8"))
+        define("leNRuns", str(len(d["runs"])))
+        frac_names = {"0.05": "Five", "0.1": "Ten", "0.2": "Twenty",
+                      "0.4": "Forty", "1.0": "Full"}
+        for frac, sm in d["summary"].items():
+            nm = frac_names.get(frac)
+            if nm is None:
+                continue
+            define(f"lePerHead{nm}", f"{sm['per_head_mean']:.3f}")
+            define(f"leLapEig{nm}", f"{sm['lapeig_mean']:.3f}")
+            define(f"leHidden{nm}", f"{sm['hidden_mean']:.3f}")
+            define(f"leDiff{nm}", f"{sm['per_head_minus_lapeig_mean']:+.3f}")
+            define(f"leWins{nm}", str(sm["per_head_wins"]))
+        # feature counts on the first run, for the text
+        first = next(iter(d["runs"].values()))
+        define("leMinPosPerFold", f"{first['curve'][0]['train_positives_per_fold']:.0f}")
+    else:
+        for m in ("leNRuns", "lePerHeadTen", "leLapEigTen", "leDiffTen", "leWinsTen",
+                  "lePerHeadTwenty", "leLapEigTwenty", "leDiffTwenty", "leWinsTwenty",
+                  "lePerHeadFive", "leLapEigFive", "lePerHeadFull", "leLapEigFull",
+                  "leDiffFull", "leHiddenTen", "leHiddenFull", "leMinPosPerFold"):
+            define(m, f"\\pending{{{m}}}")
+
     lt = DATA / "theory" / "latency.json"
     if lt.exists():
         d = json.loads(lt.read_text(encoding="utf-8"))

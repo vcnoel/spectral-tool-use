@@ -179,6 +179,31 @@ def ladder():
     plt.close(fig)
 
 
+def label_efficiency():
+    f = THEORY / "label_efficiency.json"
+    if not f.exists():
+        return
+    d = json.loads(f.read_text(encoding="utf-8"))
+    fracs = sorted(d["summary"], key=float)
+    fig, ax = plt.subplots(figsize=(3.2, 2.1))
+    x = [100 * float(f) for f in fracs]
+    for key, label, col in (("hidden_mean", "token-role probe (residual)", "C0"),
+                            ("per_head_mean", "per-head profile (attention)", "C2"),
+                            ("lapeig_mean", "LapEigvals (attention)", "C1")):
+        ax.plot(x, [d["summary"][f][key] for f in fracs], "o-", color=col,
+                label=label, ms=3)
+    ax.set_xscale("log")
+    ax.set_xticks(x)
+    ax.set_xticklabels([f"{v:g}%" for v in x])
+    ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+    ax.set_xlabel("share of labelled failures kept for training")
+    ax.set_ylabel(f"mean AUC over {len(d['runs'])} runs")
+    ax.legend(frameon=False, loc="lower right")
+    fig.tight_layout()
+    fig.savefig(FIG / "fig_labeleff.pdf")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     stats = {}
     stats["heatmap"] = heatmap()
@@ -186,6 +211,7 @@ if __name__ == "__main__":
     jensen()
     family()
     ladder()
+    label_efficiency()
     (THEORY / "figure_stats.json").write_text(json.dumps(stats, indent=2),
                                               encoding="utf-8")
     print("figures ->", FIG, json.dumps(stats))
