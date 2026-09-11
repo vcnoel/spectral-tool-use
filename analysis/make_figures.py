@@ -163,8 +163,8 @@ def fig1_resolution(tag="base_llama1b_glaive", metric_idx=4, layer=None):
         a = roc_auc_score(y, x)
         return max(a, 1 - a)
 
-    per_head_auc = np.array([[auc_free(hm[:, l, h, metric_idx]) for h in range(H)]
-                             for l in range(L)])
+    per_head_auc = np.array([[auc_free(hm[:, li, h, metric_idx]) for h in range(H)]
+                             for li in range(L)])
     if layer is None:
         layer = int(per_head_auc.max(1).argmax())
     avg_auc = auc_free(avg[:, layer])
@@ -360,14 +360,15 @@ def fig4_heatmap(tag="base_llama1b_glaive", metric_idx=4):
         a = roc_auc_score(y, x)
         return max(a, 1 - a)
 
-    A = np.array([[auc_free(hm[:, l, h, metric_idx]) for h in range(H)] for l in range(L)])
-    B = np.array([auc_free(avg[:, l]) for l in range(L)])
+    A = np.array([[auc_free(hm[:, li, h, metric_idx]) for h in range(H)]
+                  for li in range(L)])
+    B = np.array([auc_free(avg[:, li]) for li in range(L)])
     fig, axes = plt.subplots(1, 2, figsize=(4.0, 2.5),
                              gridspec_kw={"width_ratios": [H, 1.2], "wspace": 0.08})
     fig.subplots_adjust(left=0.12, right=0.80, bottom=0.2, top=0.86)
     vmax = max(A.max(), B.max(), 0.6)
     im = axes[0].imshow(A, aspect="auto", cmap=SEQ_CMAP, vmin=0.5, vmax=vmax,
-                        interpolation="nearest")
+                        interpolation="nearest")  # noqa: E127
     axes[0].set_xlabel("head")
     axes[0].set_ylabel("layer")
     axes[0].set_xticks(range(0, H, max(1, H // 8)))
@@ -458,8 +459,10 @@ def fig6_family():
                     color=INK2)
     # family legend below both panels, clear of every bar; the y labels carry
     # the same colour so identity is never colour-alone on the mark
-    fig.legend(handles=[Line2D([], [], color=BLUE, lw=1.5, label="earlier families: Llama / Qwen3 / Gemma"),
-                        Line2D([], [], color=ORANGE, lw=1.5, label="recent families: MiniCPM5 / Qwen3.5")],
+    fig.legend(handles=[Line2D([], [], color=BLUE, lw=1.5,
+                               label="earlier families: Llama / Qwen3 / Gemma"),
+                        Line2D([], [], color=ORANGE, lw=1.5,
+                               label="recent families: MiniCPM5 / Qwen3.5")],
                loc="lower center", ncol=2, handlelength=1.2, bbox_to_anchor=(0.5, -0.01))
     fig.tight_layout(w_pad=1.5, rect=(0, 0.07, 1, 1))
     return _save(fig, "fig6_family", {k: d[k].get("summary") for k, _ in panels})
@@ -602,7 +605,9 @@ if __name__ == "__main__":
         except Exception as e:  # one broken input must not take the others down
             out = {"error": f"{type(e).__name__}: {e}"}
         stats[fn.__name__] = out
-        print(f"{fn.__name__:18s} {'skipped (no input)' if out is None else 'ok' if 'error' not in (out or {}) else out['error']}")
+        status = ("skipped (no input)" if out is None
+                  else out["error"] if "error" in (out or {}) else "ok")
+        print(f"{fn.__name__:18s} {status}")
     THEORY.mkdir(parents=True, exist_ok=True)
     (THEORY / "figure_stats.json").write_text(json.dumps(stats, indent=2, default=str),
                                               encoding="utf-8")
