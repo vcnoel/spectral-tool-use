@@ -28,11 +28,15 @@ Fixes applied relative to the v1 (workshop-paper) pipeline, per the
 
 Known caveats:
   - Some chat templates inject the current date (Llama-3.x writes
-    "Today Date: <today>"), so prompt text -- and therefore prompt_hash --
-    changes from day to day. Splits are grouped by TOOL, not prompt_hash,
-    so results are unaffected; but byte-identical re-extraction requires
-    pinning the date.
+    "Today Date: <today>"). The date is pinned (TEMPLATE_DATE) so prompt
+    text and prompt_hash are stable across days; splits are grouped by
+    TOOL in any case.
   - Per-head spectral features come from spectral_trust (>=0.3.0).
+  - `evaluate` also writes scores.npz (per-item cross-fit scores for every
+    detector and seed) so analysis/paired_inference.py can put a paired
+    bootstrap CI on every between-detector difference, and reports the
+    mean of within-fold AUCs next to the pooled AUC (see
+    spectral_guardrails/utils/inference.py for why the two differ).
 
 Usage:
   python run_pilot_v2.py extract --model Qwen/Qwen3.5-2B --n 750
@@ -42,10 +46,18 @@ import argparse
 import os
 import hashlib
 import json
-import sys
 from pathlib import Path
 
 import numpy as np
+# On some Windows builds the interpreter segfaults if `datasets` (pyarrow)
+# is first imported after torch; utils/data.py imports it, so load pyarrow
+# first. Harmless where the problem does not exist.
+try:
+    import pyarrow  # noqa: F401
+except ImportError:
+    pass
+# sets CUBLAS_WORKSPACE_CONFIG; must precede the first `import torch`
+from spectral_guardrails.utils import determinism
 import torch
 
 from spectral_guardrails.probes.labeling import (
@@ -83,6 +95,9 @@ FULL_GRAPH_MAX_TOKENS = int(os.environ.get("FULL_GRAPH_MAX_TOKENS", "1500"))
 # k-th attentive layer trades feature dimension for memory, which is
 # what makes a conversation history fit at all.
 ATTN_LAYER_STRIDE = int(os.environ.get("ATTN_LAYER_STRIDE", "1"))
+# Chat templates that stamp today's date into the system prompt (Llama-3.x)
+# would otherwise change the prompt text, and prompt_hash, from day to day.
+TEMPLATE_DATE = os.environ.get("TEMPLATE_DATE", "01 Jan 2026")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -225,7 +240,9 @@ def _apply_template(tok, msgs, tools=None):
     (audit 2026-09-09). Templates that do not accept the flag are
     unaffected.
     """
-    kwargs = dict(tokenize=False, add_generation_prompt=True)
+    # date_string is read by the Llama-3.x templates and ignored by the rest
+    kwargs = dict(tokenize=False, add_generation_prompt=True,
+                  date_string=TEMPLATE_DATE)
     if tools is not None:
         kwargs["tools"] = tools
     try:
@@ -275,11 +292,59 @@ def render_tool_prompt(tok, tools, user, history=None):
     return None
 
 
+def _write_run_meta(args, model, tok, n_layers, probe_layers):
+    """Record everything a byte-level replication needs, next to the dump."""
+    import platform
+    import subprocess
+    import time
+    import transformers
+    meta = {
+        "model": args.model,
+        "benchmark": getattr(args, "benchmark", "glaive"),
+        "n_requested": args.n,
+        "seed": SEED,
+        "dtype": str(next(model.parameters()).dtype),
+        "attn_implementation": getattr(model.config, "_attn_implementation", None),
+        "n_layers": int(n_layers),
+        "probe_layers": [int(x) for x in probe_layers],
+        "max_new_tokens": MAX_NEW_TOKENS,
+        "max_prompt_tokens": MAX_PROMPT_TOKENS,
+        "full_graph_max_tokens": FULL_GRAPH_MAX_TOKENS,
+        "attn_layer_stride": ATTN_LAYER_STRIDE,
+        "template_date": TEMPLATE_DATE,
+        **determinism.enable_deterministic_torch(warn_only=True),
+        "torch": torch.__version__,
+        "cuda": torch.version.cuda,
+        "device": (torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"),
+        "transformers": transformers.__version__,
+        "python": platform.python_version(),
+        "tokenizer_class": type(tok).__name__,
+        "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    try:
+        import spectral_trust
+        meta["spectral_trust"] = getattr(spectral_trust, "__version__", "unknown")
+    except Exception:
+        meta["spectral_trust"] = None
+    try:
+        meta["git_commit"] = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL).strip()
+        meta["git_dirty"] = bool(subprocess.check_output(
+            ["git", "status", "--porcelain"], text=True, stderr=subprocess.DEVNULL).strip())
+    except Exception:
+        meta["git_commit"] = None
+    with open(OUT_DIR / "run_meta.json", "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+
 def handle_extract(args):
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
     torch.manual_seed(SEED)
     np.random.seed(SEED)
+    # Deterministic kernels wherever CUDA offers them (warn_only: an op with
+    # no deterministic implementation warns instead of aborting the run).
+    determinism.enable_deterministic_torch(warn_only=True)
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     done = set()
@@ -297,8 +362,10 @@ def handle_extract(args):
     )
     model.eval()
     n_layers = model.config.num_hidden_layers
-    probe_layers = sorted(set(np.linspace(1, n_layers, N_PROBE_LAYERS).round().astype(int).tolist()))
+    probe_layers = sorted(set(
+        np.linspace(1, n_layers, N_PROBE_LAYERS).round().astype(int).tolist()))
     print(f"[extract] {args.model}: {n_layers} layers, probe layers {probe_layers}")
+    _write_run_meta(args, model, tok, n_layers, probe_layers)
 
     from tqdm import tqdm
 
@@ -470,7 +537,8 @@ def handle_extract(args):
                 gram_feats[str(li)] = gram_spectrum_features(
                     mo.hidden_states[li][0][prompt_len:T])
 
-        res_dyn = residual_dynamics(mo.hidden_states, prompt_len, T)             if args.rich else None
+        res_dyn = (residual_dynamics(mo.hidden_states, prompt_len, T)
+                   if args.rich else None)
 
         del mo, out
         torch.cuda.empty_cache()
@@ -858,6 +926,10 @@ def load_and_relabel(features_path):
 
 def handle_evaluate(args):
     from spectral_guardrails.probes.gbt import train_lmm_gbt, predict_lmm
+    from spectral_guardrails.utils.inference import (
+        MIN_CLASS_PER_SUBSET, class_counts, fold_mean_auc, fold_offset_auc,
+        underpowered,
+    )
 
     samples, relabel_changes = load_and_relabel(FEATURES)
 
@@ -1004,13 +1076,23 @@ def handle_evaluate(args):
         ALL_ROWS.append("LapEigvals (official code)")
     ALL_ROWS += CONF_ROWS
 
-
-
     seeds = [42, 43, 44, 45, 46]
-    results = {}   # name -> {"all": [pooled aucs], "semantic": [pooled aucs]}
+    results = {}      # name -> {"all": [pooled aucs], "semantic": [...]}
+    results_fm = {}   # same shape; mean of within-fold AUCs (no fold offsets)
+    fold_offset = {}  # name -> [pooled AUC of the per-fold-constant predictor]
+    sign_flips = {}   # name -> [folds whose fitted sign differs from fold 0]
+    score_store = {}  # per-item scores per seed, for paired inference
+    subsets = {"all": np.ones(len(samples), dtype=bool), "semantic": semantic}
+    if expect_call_mask is not None:
+        # BFCL mixes call-expected categories with the irrelevance category.
+        # On irrelevance items the label is "called a tool at all", which
+        # any call-presence feature predicts trivially, so a mixed-pool AUC
+        # is inflated. The call-expected subset is the semantically hard
+        # population and is scored separately.
+        subsets["call_expected"] = semantic & expect_call_mask
 
-    def add(name, subset, val):
-        results.setdefault(
+    def add(store, name, subset, val):
+        store.setdefault(
             name, {"all": [], "semantic": [], "call_expected": []}
         )[subset].append(val)
 
@@ -1018,9 +1100,12 @@ def handle_evaluate(args):
         # cross-fit: every sample scored exactly once by a model that never
         # saw its tool; ONE pooled AUC per seed over all N samples.
         pooled = {name: np.full(len(samples), np.nan) for name in ALL_ROWS}
-        for tr, va, te in grouped_kfold(samples, seed, key="tool"):
+        fold_id = np.full(len(samples), -1, dtype=int)
+        fold_signs = {}
+        for fi, (tr, va, te) in enumerate(grouped_kfold(samples, seed, key="tool")):
             if len(np.unique(y[tr])) < 2 or len(np.unique(y[va])) < 2:
                 continue
+            fold_id[te] = fi
             for name in LMM_ROWS:
                 m, sc, _ = train_lmm_gbt(X[name], y, tr, va)
                 pooled[name][te] = predict_lmm(m, sc, X[name][te])
@@ -1039,28 +1124,36 @@ def handle_evaluate(args):
                 s_lap = lapeig_official_scores(lap_official, y, tr, va, te)
                 if s_lap is not None:
                     pooled["LapEigvals (official code)"][te] = s_lap
+            # The direction of an untrained score is fixed on the training
+            # folds. When it differs between folds, the pooled vector mixes
+            # +x and -x and its pooled AUC is not interpretable (this is how
+            # a below-chance log-probability row arises); the fold-mean AUC
+            # below is unaffected, and the flip count is reported.
             sign = 1.0 if auc_safe(y[tr], -logprob[tr]) >= 0.5 else -1.0
             pooled["Mean logprob"][te] = sign * -logprob[te]
+            fold_signs.setdefault("Mean logprob", []).append(sign)
             for cname, cvec in conf_vecs.items():
                 row = f"Confidence: {cname}"
                 if row not in pooled:
                     continue
                 sgn = 1.0 if auc_safe(y[tr], cvec[tr]) >= 0.5 else -1.0
                 pooled[row][te] = sgn * cvec[te]
+                fold_signs.setdefault(row, []).append(sgn)
 
         for name, scores in pooled.items():
+            score_store[f"score__{name}__{seed}"] = scores
+            for sub, smask in subsets.items():
+                ok = ~np.isnan(scores) & smask
+                add(results, name, sub, auc_safe(y[ok], scores[ok]))
+                add(results_fm, name, sub,
+                    fold_mean_auc(y[ok], scores[ok], fold_id[ok]))
             ok = ~np.isnan(scores)
-            add(name, "all", auc_safe(y[ok], scores[ok]))
-            ok_sem = ok & semantic
-            add(name, "semantic", auc_safe(y[ok_sem], scores[ok_sem]))
-            # BFCL mixes call-expected categories with the irrelevance
-            # category. On irrelevance items the label is "called a tool at
-            # all", which any call-presence feature predicts trivially, so a
-            # mixed-pool AUC is inflated. Score the call-expected subset
-            # separately (this is the semantically hard population).
-            if expect_call_mask is not None:
-                ok_ec = ok_sem & expect_call_mask
-                add(name, "call_expected", auc_safe(y[ok_ec], scores[ok_ec]))
+            fold_offset.setdefault(name, []).append(
+                fold_offset_auc(y[ok], scores[ok], fold_id[ok]))
+        score_store[f"fold__{seed}"] = fold_id
+        for name, sg in fold_signs.items():
+            sign_flips.setdefault(name, []).append(
+                int(sum(1 for s_ in sg if s_ != sg[0])))
 
     # ── report ─────────────────────────────────────────────────────────────────
     n_pos_sem = int(y[semantic].sum())
@@ -1072,11 +1165,23 @@ def handle_evaluate(args):
                       f"{int(y[ec_sem].sum())} pos")
     else:
         hdr_extra, info_extra = "", ""
+    n_class = {sub: dict(zip(("n_pos", "n_neg"), class_counts(y, m)))
+               for sub, m in subsets.items()}
+    eval_subset = "call_expected" if "call_expected" in subsets else "semantic"
+    flagged = underpowered(n_class[eval_subset]["n_pos"],
+                           n_class[eval_subset]["n_neg"])
     width = 92 + (22 if has_ec else 0)
     lines = ["", "=" * width,
              f"Pooled cross-fit AUC over N={len(samples)} "
              f"({int(y.sum())} pos; semantic: {n_pos_sem} pos{info_extra}), "
              f"tool-level folds, {len(seeds)} seeds",
+             (f"UNDERPOWERED: minority class on the {eval_subset} subset is "
+              f"{min(n_class[eval_subset].values())} < {MIN_CLASS_PER_SUBSET}; "
+              f"report this run with a dagger and keep it out of aggregates"
+              if flagged else
+              f"evaluated subset: {eval_subset} "
+              f"({n_class[eval_subset]['n_pos']} pos / "
+              f"{n_class[eval_subset]['n_neg']} neg)"),
              "=" * width,
              f"{'Detector':<38} {'AUC (all)':>18} {'AUC (semantic only)':>24}"
              + hdr_extra,
@@ -1095,20 +1200,43 @@ def handle_evaluate(args):
     report = "\n".join(lines)
     print(report)
 
+    def _ser(store):
+        return {k: {kk: [float(x) for x in vv] for kk, vv in v.items()}
+                for k, v in store.items()}
+
     out = {
         "n": len(samples),
         "halluc_rate": float(y.mean()),
         "failure_modes": {m: int((modes == m).sum()) for m in sorted(set(modes))},
         "seeds": seeds,
-        "results": {k: {kk: [float(x) for x in vv] for kk, vv in v.items()}
-                    for k, v in results.items()},
+        "n_class": n_class,
+        "eval_subset": eval_subset,
+        "min_class_per_subset": MIN_CLASS_PER_SUBSET,
+        "underpowered": bool(flagged),
+        # pooled cross-fit AUC per seed (the historical quantity)
+        "results": _ser(results),
+        # mean of within-fold AUCs per seed: free of fold-composition offsets
+        "results_fold_mean": _ser(results_fm),
+        # pooled AUC of the per-fold-constant predictor: the offset component
+        "fold_offset_auc": {k: [float(x) for x in v] for k, v in fold_offset.items()},
+        "sign_flips": sign_flips,
+        "scores_file": "scores.npz",
     }
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     with open(OUT_DIR / "results.json", "w", encoding="utf-8") as f:
         json.dump(out, f, indent=2)
     with open(OUT_DIR / "report.txt", "w", encoding="utf-8") as f:
         f.write(report + "\n")
-    print(f"\nsaved -> {OUT_DIR / 'results.json'}")
+    # Per-item scores for every detector and seed, so between-detector
+    # differences get a PAIRED bootstrap CI (analysis/paired_inference.py).
+    np.savez_compressed(
+        OUT_DIR / "scores.npz",
+        y=y, semantic=semantic,
+        expect_call=(expect_call_mask if expect_call_mask is not None
+                     else np.ones(len(samples), dtype=bool)),
+        tools=tools.astype(str), seeds=np.array(seeds),
+        **score_store)
+    print(f"\nsaved -> {OUT_DIR / 'results.json'}  and  {OUT_DIR / 'scores.npz'}")
 
 
 def handle_transfer(args):

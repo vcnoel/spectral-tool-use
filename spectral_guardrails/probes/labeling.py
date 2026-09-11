@@ -240,15 +240,15 @@ def assign_label(predicted_text: str, ground_truth_text: str) -> int:
 # detectors can be evaluated on semantic hallucinations separately from
 # format failures.
 
-import re as _re
+import re as _re  # noqa: E402
 
 FAILURE_MODES = [
-    "valid",            # name + all GT args match
-    "no_call",          # model produced prose / refused to call
-    "unparseable_call", # something call-shaped but not parseable
-    "wrong_name",       # wrong function selected
-    "missing_args",     # required GT args absent
-    "wrong_arg_values", # right function, wrong argument values
+    "valid",             # name + all GT args match
+    "no_call",           # model produced prose / refused to call
+    "unparseable_call",  # something call-shaped but not parseable
+    "wrong_name",        # wrong function selected
+    "missing_args",      # required GT args absent
+    "wrong_arg_values",  # right function, wrong argument values
     "extra_args",       # right function, arguments the schema does not define
 ]
 

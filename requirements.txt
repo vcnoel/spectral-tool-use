@@ -2,10 +2,14 @@ torch>=2.0.0
 transformers>=4.40.0
 datasets>=2.19.0
 accelerate>=0.30.0
-spectral-trust>=0.1.4
+# 0.3.0 adds per_head_metrics and the symmetric-solver dispatch; every
+# spectral number in the current result files was produced under >=0.3.0.
+# (0.2.1 and earlier diagonalised the random-walk Laplacian with a symmetric
+# solver -- see the spectral-trust 0.2.2 changelog -- and must not be used.)
+spectral-trust>=0.3.0
 scikit-learn
+scipy
 pandas
 numpy
 tqdm
 bitsandbytes
-spectral_trust>=0.3.0
