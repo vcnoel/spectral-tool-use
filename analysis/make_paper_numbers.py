@@ -309,6 +309,32 @@ def main():
                   "famMannWhitneySem"):
             define(m, f"\\pending{{{m}}}")
 
+    cv = DATA / "theory" / "confidence_variants.json"
+    if cv.exists():
+        d = json.loads(cv.read_text(encoding="utf-8"))
+        alias = {"conf_llama1b_bfcl": "CvLlamaBfcl",
+                 "conf_llama1b_glaive": "CvLlamaGlaive",
+                 "conf_minicpm_bfcl": "CvMiniCpmBfcl"}
+        for tag, infix in alias.items():
+            if tag not in d:
+                continue
+            q = d[tag]
+            define(f"{infix}Probe", f"{q['probe_auc']:.3f}")
+            define(f"{infix}MeanLp", f"{q['mean_logprob_auc']:.3f}")
+            define(f"{infix}Best", f"{q['best_genuine_auc']:.3f}")
+            define(f"{infix}BestName",
+                   q["best_genuine"].replace("_", " "))
+            define(f"{infix}Surface", f"{q['surface_auc']:.3f}")
+            define(f"{infix}GapMean", f"{q['gap_mean_logprob']:+.3f}")
+            define(f"{infix}GapBest", f"{q['gap_best_confidence']:+.3f}")
+            define(f"{infix}NSummaries", str(len(q["all_confidence"])))
+            sl = q["all_confidence"].get("Confidence: sum_logprob")
+            if sl is not None:
+                define(f"{infix}SumLp", f"{sl:.3f}")
+    else:
+        for m in ("CvLlamaBfclProbe", "CvLlamaBfclBest", "CvMiniCpmBfclBest"):
+            define(m, f"\\pending{{{m}}}")
+
     # transfer results
     for f in sorted(DATA.glob("pilot_v2_*/transfer_from_*.json")):
         test_tag = f.parent.name.replace("pilot_v2_", "")
