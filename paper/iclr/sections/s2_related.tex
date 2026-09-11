@@ -8,7 +8,11 @@ which no available tool applies and the model is expected to abstain \citep{pati
 capability. The question here is different: given that a model sometimes fails, can the failure be detected from
 the model's own state before the call executes. \citet{healy2026internal} first showed that it can, with a probe
 on residual-stream states at the function-name, argument and delimiter positions, and that probe is the
-residual-stream baseline we compare against and extend.
+residual-stream baseline we compare against and extend. Concurrently, \citet{yeats2026calls} train linear
+probes on the hidden states of eighteen models on the same benchmark and find that the probes catch
+argument errors of the right type and wrong value and generalise to unseen error kinds. That work establishes
+breadth on the residual tier; it has no attention tier, no surface floor and no held-out-tool split, which are
+the three things that decide the comparison this paper makes.
 
 \paragraph{Probing the residual stream.}
 Supervised probes on hidden states detect factual error \citep{azaria2023internal,marks2024geometry}, predict
@@ -34,7 +38,12 @@ against generation \citep{chuang2024lookback}, to aggregate multi-layer attentio
 \citet{sriramanan2024llmcheck} read eigenvalues of attention kernel maps and of hidden-state covariance in a
 single pass, \citet{noel2025gsp} introduced Laplacian diagnostics of the attention graph, and
 \citet{binkowski2025lapeigvals} obtained the strongest attention-only results to date from top-$k$ Laplacian
-values. Two features of this literature motivate our theory section. First, nearly all of it averages over
+values; the same group has since read hallucination from attention sinks \citep{binkowski2026sinks}, a
+per-head signal we do not evaluate here. \citet{dahlem2026transport} prove that every transpose-invariant
+spectral diagnostic of attention is blind to the direction of attention flow and evaluate spectral detectors
+under length control; every spectrum in this paper is of a symmetrised graph and is therefore
+orientation-blind in their sense, which bounds what the attention tier can see and is why our length floor
+sits in every table. Two features of this literature motivate our theory section. First, nearly all of it averages over
 heads before computing anything, which Section~\ref{sec:theory} shows is the decisive step. Second, part of it
 computes quantities that require residual states as a graph signal while presenting them as properties of
 attention; we separate the two and tag every feature by the tensors it consumes.

@@ -78,5 +78,8 @@ come from comparing a call against a benchmark's ground truth, which is a proxy 
 have been harmful: a wrong but harmless call and a correct but unsafe one are not distinguished, and on the
 single-turn runs arguments the schema does not define are not penalised (Appendix~\ref{app:validity}). The
 family split is confounded with the call format the families emit, which a forced-format control would
-resolve. Finally, the attention tier is the most expensive to read (Appendix~\ref{app:cost}); on the hardware
-we measured the cost is a few percent of generation, and we have not measured it on a production stack.
+resolve. Every attention feature here is computed on a symmetrised graph and so cannot see the direction of
+attention flow \citep{dahlem2026transport}; the antisymmetric part of the attention matrix is an unread
+channel, as are the attention-sink statistics of \citet{binkowski2026sinks}. Finally, the attention tier is
+the most expensive to read (Appendix~\ref{app:cost}); on the hardware we measured the cost is a few percent of
+generation, and we have not measured it on a production stack.
