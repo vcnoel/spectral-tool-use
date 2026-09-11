@@ -77,7 +77,8 @@ FRONTIER = [
     ("attention: LapEigvals", "LapEigvals (official code)"),
     ("residual: token-role", "Hidden token-role [LR]"),
 ]
-FLOOR_ROWS = ["Surface (lengths) [confound]", "Gen length only [confound]"]
+# one floor definition, shared with the paired contrasts (delta vs surface)
+FLOOR_ROWS = ["Surface (lengths) [confound]"]
 
 # contrasts shown in table_paired.tex, in this order (labels from
 # analysis/paired_inference.py)

@@ -119,7 +119,10 @@ FRONTIER = [
     ("attention: LapEigvals", "LapEigvals (official code)"),
     ("residual: token-role", "Hidden token-role [LR]"),
 ]
-FLOOR_ROWS = ["Surface (lengths) [confound]", "Gen length only [confound]"]
+# The floor is the surface-feature baseline (prompt length, generation length,
+# truncation): one definition, the same one the paired contrasts are taken
+# against, so a table margin and a paired interval always refer to one thing.
+FLOOR_ROWS = ["Surface (lengths) [confound]"]
 
 HEADLINE = ["Mean logprob", "Surface (lengths) [confound]",
             "Spectral per-layer (LMM)", "LapEigvals (official code)",
@@ -256,8 +259,9 @@ def main():
 
     # ── 3. frontier with fixed representatives and margin over the floor ────
     lines += ["## 3. Access-tier frontier (fixed representatives, margin over floor)", "",
-              "Representatives are fixed in advance; the floor is the larger of the "
-              "two length confounds on that run. Δ = representative − floor.", "",
+              "Representatives are fixed in advance; the floor is the surface-feature "
+              "baseline (lengths and truncation), the same baseline the paired contrasts "
+              "in section 4 are taken against. Δ = representative − floor.", "",
               "| Run | floor | " +
               " | ".join(f"{name} | Δ" for name, _ in FRONTIER) + " |",
               "|---|---|" + "---|---|" * len(FRONTIER)]
