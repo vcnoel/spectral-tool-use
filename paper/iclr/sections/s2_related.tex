@@ -38,10 +38,7 @@ orientation-blind in their sense, which bounds what the attention tier can see a
 sits in every table. Two features of this literature motivate Section~\ref{sec:theory}: nearly all of it
 averages over heads before computing anything, and part of it computes quantities that need residual states
 as a graph signal while presenting them as properties of attention. We tag every feature by the tensors it
-consumes (Appendix~\ref{app:provenance}).
-
-\paragraph{Sampling and output-side signals.}
-Semantic entropy and self-consistency detect hallucination by sampling several continuations
-\citep{farquhar2024semantic,manakul2023selfcheckgpt}. They multiply inference cost and require the freedom to
-sample, which an agent about to act does not have; we restrict the study to a single pass and include the
-cheapest output-side signals, summaries of the token log-probabilities, as baselines rather than competitors.
+consumes (Appendix~\ref{app:provenance}). Sampling-based signals such as semantic entropy and
+self-consistency \citep{farquhar2024semantic,manakul2023selfcheckgpt} multiply inference cost and need the
+freedom to sample, which an agent about to act does not have; we restrict the study to a single pass and
+include summaries of the token log-probabilities as baselines rather than competitors.
