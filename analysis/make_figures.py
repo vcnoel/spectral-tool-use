@@ -95,14 +95,18 @@ def _load_json(p: Path):
     return json.loads(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
-def _runs():
-    """results.json (+ paired.json) for every run in RUN_ORDER that exists,
-    plus any other run directory, so a partial grid still draws."""
+def _runs(include_all=False):
+    """results.json (+ paired.json) for the runs the paper reports, in
+    RUN_ORDER. Superseded extractions and auxiliary runs (the confidence-
+    summary re-extractions, synthetic tests) are excluded unless
+    include_all=True, so a model/benchmark pair is drawn once."""
     order = [t for t, _ in RUN_ORDER]
     labels = dict(RUN_ORDER)
     found = {}
     for p in sorted(DATA.glob("pilot_v2_*/results.json")):
         tag = p.parent.name.replace("pilot_v2_", "")
+        if tag not in order and not include_all:
+            continue
         found[tag] = (_load_json(p), _load_json(p.parent / "paired.json"))
     tags = [t for t in order if t in found] + [t for t in found if t not in order]
     return [(t, labels.get(t, t.replace("_", " ")), *found[t]) for t in tags]
@@ -178,14 +182,28 @@ def fig1_resolution(tag="base_llama1b_glaive", metric_idx=4, layer=None):
             v = hm[y == lab, layer, h, metric_idx]
             ax.scatter(h + off + rng.uniform(-0.07, 0.07, len(v)), v, s=3, alpha=0.35,
                        color=col, linewidths=0, rasterized=True)
-    ax.set_xticks(range(H))
-    # the per-head univariate AUC rides under each head index
-    ax.set_xticklabels([f"{h}\n{per_head_auc[layer, h]:.2f}" for h in range(H)])
-    ax.set_xlabel(f"head (layer {layer}); second row: that head's AUC")
+    aucs = per_head_auc[layer]
+    if H <= 12:
+        # the per-head univariate AUC rides under each head index
+        ax.set_xticks(range(H))
+        ax.set_xticklabels([f"{h}\n{aucs[h]:.2f}" for h in range(H)])
+        ax.set_xlabel(f"head (layer {layer}); second row: that head's AUC")
+    else:
+        # too many heads to label each: index every fourth head, and name the
+        # three most discriminative heads with their AUC above the strip
+        step = 4 if H <= 32 else 8
+        ax.set_xticks(range(0, H, step))
+        ax.set_xticklabels([str(h) for h in range(0, H, step)])
+        ax.set_xlabel(f"head (layer {layer}); labelled: the three heads with the highest AUC")
+        lo0, hi0 = ax.get_ylim()
+        for h in np.argsort(aucs)[::-1][:3]:
+            ax.annotate(f"AUC {aucs[h]:.2f}", (h, hi0), xytext=(0, 2), textcoords="offset points",
+                        ha="center", va="bottom", fontsize=5.8, color=INK2,
+                        arrowprops=dict(arrowstyle="-", lw=0.4, color=INK2, shrinkA=0, shrinkB=1))
     ax.set_ylabel(r"spectral radius $\lambda_{\max}$")
     ax.tick_params(axis="x", length=0)
     lo, hi = ax.get_ylim()
-    ax.set_ylim(lo, hi + 0.12 * (hi - lo))          # headroom for the two labels
+    ax.set_ylim(lo, hi + 0.16 * (hi - lo))          # headroom for the labels
     ax.text(0.01, 0.98, "correct", color=MUTED, va="top", ha="left", fontsize=6.8,
             transform=ax.transAxes)
     ax.text(0.01, 0.90, "failed", color=ORANGE, va="top", ha="left", fontsize=6.8,

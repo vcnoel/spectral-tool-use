@@ -158,8 +158,13 @@ def f3(v, signed=False):
     return f"{v:+.3f}" if signed else f"{v:.3f}"
 
 
-def write(name, rows):
+def write(name, rows, fit=False):
+    """fit=True scales the tabular to the text width: the frontier and paired
+    tables carry a delta column per representative and overrun the margin at
+    the paper's \\small otherwise (graphicx is loaded by main.tex)."""
     OUT.mkdir(parents=True, exist_ok=True)
+    if fit:
+        rows = [r"\resizebox{\linewidth}{!}{%"] + rows + ["}"]
     (OUT / name).write_text("\n".join(rows) + "\n", encoding="utf-8")
 
 
@@ -260,7 +265,7 @@ def main():
             cells.append("--" if np.isnan(v) or np.isnan(floor) else f3(v - floor, signed=True))
         rows.append(f"{model}{dagger(runs[tag], sub)} & {data} & " + " & ".join(cells) + r" \\")
     rows += [r"\bottomrule", r"\end{tabular}"]
-    write("table_frontier.tex", rows)
+    write("table_frontier.tex", rows, fit=True)
     n_written += 1
 
     # ── table 4: paired contrasts ───────────────────────────────────────────
@@ -288,7 +293,7 @@ def main():
                     + " & ".join(cells) + r" \\")
     rows += [r"\bottomrule", r"\end{tabular}"]
     if any_paired:
-        write("table_paired.tex", rows)
+        write("table_paired.tex", rows, fit=True)
         n_written += 1
     else:
         write("table_paired.tex",

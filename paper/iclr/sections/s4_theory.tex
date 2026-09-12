@@ -12,8 +12,9 @@ measure, which is a degree sequence rather than a global spectrum.
 \subsection{Setup}
 \label{sec:theory:setup}
 
-Fix one layer with $H$ heads and $T$ token positions. Head $h$ produces a row-stochastic attention matrix
-$A_h \in \mathbb{R}^{T \times T}$, which we symmetrise into a weighted adjacency and strip of self-loops,
+Fix one layer with $H$ heads and $T$ token positions. Head $h$ produces a row-stochastic, causal attention
+matrix $A_h \in \mathbb{R}^{T \times T}$, with $(A_h)_{ij} = 0$ for $j > i$, which we symmetrise into a
+weighted adjacency and strip of self-loops,
 \begin{equation}
 W_h = \tfrac{1}{2}\left(A_h + A_h^{\top}\right) - \operatorname{diag}\!\left(\tfrac{1}{2}(A_h + A_h^{\top})\right),
 \label{eq:adj}
@@ -40,14 +41,19 @@ per-head read separates them by a constant.
 \end{proposition}
 
 \begin{proof}
-The first claim is immediate, since $\Phi$ factors through $\bar W$. For the second, take $T \ge 3$, let $P$ be
-the path graph on $T$ nodes with weights $\tfrac12$ and let $K$ be the complete graph with weights
-$1/(T-1)$. Both have row sums at most one, so each is the symmetrised, self-loop-free adjacency
-(Eq.~\ref{eq:adj}) of some row-stochastic attention matrix, and so is their mean. Put $W_1 = P$, $W_2 = K$
-and $W_1' = W_2' = \tfrac12(P+K)$, and for $H > 2$ repeat the pattern. Both configurations have mean
-$\tfrac12(P+K)$. The path has $\lamtwo(L_P) = 1-\cos(\pi/T) = \Theta(T^{-2})$ while the complete graph has
-$\lamtwo(L_K) = T/(T-1) > 1$, so the per-head vectors differ in their maximum by more than
-$1 - \Theta(T^{-2})$, whereas every head-averaged functional returns the same value on both. \end{proof}
+The first claim is immediate, since $\Phi$ factors through $\bar W$. For the second, note first which
+symmetric graphs Eq.~\ref{eq:adj} can produce from a causal head. Since $(A_h)_{ij} = 0$ for $j > i$, the
+off-diagonal entries are $W_{ij} = \tfrac12 (A_h)_{ij}$ for $i > j$, so a symmetric zero-diagonal $W$ is
+realisable exactly when every node sends total weight at most $\tfrac12$ to the nodes before it,
+$2\sum_{j<i} W_{ij} \le 1$ for all $i$: set $(A_h)_{ij} = 2W_{ij}$ for $i > j$ and put the remaining mass on
+the diagonal. The condition is convex, so a mean of realisable graphs is realisable. Take $T \ge 3$, let $P$
+be the path graph on $T$ nodes with weights $\tfrac12$, in which every node attends fully to its predecessor,
+and let $K$ be the complete graph with weights $1/(2(T-1))$; both satisfy the condition. Put $W_1 = P$,
+$W_2 = K$ and $W_1' = W_2' = \tfrac12(P+K)$, and for $H > 2$ repeat the pattern. Both configurations have
+mean $\tfrac12(P+K)$. The path has $\lamtwo(L_P) = 1-\cos(\pi/T) = \Theta(T^{-2})$ while the complete graph
+has $\lamtwo(L_K) = T/(2(T-1)) > \tfrac12$, so the per-head vectors differ in their maximum by more than
+$\tfrac12 - \Theta(T^{-2})$, whereas every head-averaged functional returns the same value on both.
+\end{proof}
 
 Proposition~\ref{prop:annihilation} is elementary, and we state it because the literature it addresses has
 behaved as though it were false: averaging is a many-to-one map, and the proposition only makes precise what
