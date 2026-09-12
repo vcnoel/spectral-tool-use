@@ -1,103 +1,121 @@
 \appendix
+\section{Proofs}
+\label{app:proofs}
+
+\begin{proof}[Proof of Proposition~\ref{prop:annihilation}]
+The first claim is immediate, since $\Phi$ factors through $\bar W$. For the second, note first which
+symmetric graphs Eq.~\ref{eq:adj} can produce from a causal head. Since $(A_h)_{ij}=0$ for $j>i$, the
+off-diagonal entries are $W_{ij}=\tfrac12(A_h)_{ij}$ for $i>j$, so a symmetric zero-diagonal $W$ is realisable
+exactly when every node sends total weight at most $\tfrac12$ to the nodes before it, $2\sum_{j<i}W_{ij}\le 1$
+for all $i$: set $(A_h)_{ij}=2W_{ij}$ for $i>j$ and put the remaining mass on the diagonal. The condition is
+convex, so a mean of realisable graphs is realisable. Take $T\ge 3$, let $P$ be the path graph on $T$ nodes
+with weights $\tfrac12$, in which every node attends fully to its predecessor, and let $K$ be the complete
+graph with weights $1/(2(T-1))$; both satisfy the condition. Put $W_1=P$, $W_2=K$ and
+$W_1'=W_2'=\tfrac12(P+K)$, and for $H>2$ repeat the pattern. Both configurations have mean $\tfrac12(P+K)$.
+The path has $\lamtwo(L_P)=1-\cos(\pi/T)=\Theta(T^{-2})$ while the complete graph has
+$\lamtwo(L_K)=T/(2(T-1))>\tfrac12$, so the per-head vectors differ in their maximum by more than
+$\tfrac12-\Theta(T^{-2})$, whereas every head-averaged functional returns the same value on both.
+\end{proof}
+
+\begin{proof}[Proof of Proposition~\ref{prop:jensen}]
+The Laplacian is linear in the adjacency, so $\bar L=\frac1H\sum_h L_h$. Since $L_h\mathbf{1}=0$ and
+$L_h\succeq 0$, Courant--Fischer gives $\lamtwo(L)=\min_{x\perp\mathbf{1},\,\|x\|=1}x^{\top}Lx$, a pointwise
+minimum of functions linear in $L$, hence concave on the convex cone of graph Laplacians, and Jensen's
+inequality applied to the uniform average over heads gives Eq.~\ref{eq:jensen}. For the equality case let
+$x^\star$ attain the minimum for $\bar L$. Then
+$\lamtwo(\bar L)=\frac1H\sum_h(x^\star)^{\top}L_hx^\star\ge\frac1H\sum_h\lamtwo(L_h)$, tight exactly when
+$(x^\star)^{\top}L_hx^\star=\lamtwo(L_h)$ for every $h$, that is, when $x^\star$ is a Fiedler vector of every
+head; conversely a common Fiedler vector $x$ gives $\lamtwo(\bar L)\le x^\top\bar L x=\frac1H\sum_h\lamtwo(L_h)$.
+\end{proof}
+
+\begin{lemma}[bounded spectrum]
+\label{lem:bounded}
+For any weighted graph with non-negative weights and no isolated vertices,
+$\operatorname{spec}(\mathcal{L})\subset[0,2]$, with $\lammax=2$ if and only if a connected component is
+bipartite; the bound is independent of the number of nodes.
+\end{lemma}
+\begin{proof}
+Standard \citep{chung1997spectral}: for $x\ne 0$ and $y=D^{-1/2}x$, the Rayleigh quotient
+$x^\top\mathcal{L}x/x^\top x$ has numerator $\sum_{i<j}W_{ij}(y_i-y_j)^2\le 2\sum_{i<j}W_{ij}(y_i^2+y_j^2)=2x^\top x$,
+with equality only in the bipartite case.
+\end{proof}
+
 \section{Validity defects found in our own pipeline}
 \label{app:validity}
 
-Every defect below was present in a working pipeline, produced a plausible number, and was found only because a
-confound baseline or a failure-mode count disagreed with it. We list them because the class is systematic in
-internal-state detection work, where nothing external checks the measurement chain.
+Every defect below was present in a working pipeline, produced a plausible number, and was found only because
+a confound baseline or a failure-mode count disagreed with it. The class is systematic in internal-state
+detection work, where nothing external checks the measurement chain.
 
 \begin{enumerate}[topsep=2pt,itemsep=2pt,leftmargin=1.4em]
-
-\item \textbf{The chat template silently dropped the tools.} One model family's template ignores the argument
-that carries tool schemas. The model never saw a tool, answered in prose, and all
-\nGemmaDiscardedRecords{} extracted examples were labelled \texttt{no\_call}: a hallucination rate of 100\%
-that was a property of prompt rendering. \emph{Guard:} the renderer asserts that every tool name appears in the
-rendered prompt, falls back to an explicit system-prompt specification when the native template drops them, and
-refuses to emit an example otherwise.
-
-\item \textbf{A reasoning model spent its budget before calling.} A model whose template defaults to
-chain-of-thought emitted long reasoning before any call, so within a fixed generation budget the call was often
-never reached. The run produced mostly format failures, and a classifier on generation length alone scored
-\aucLengthConfoundQwenDenseBfclAll{}. It measured reasoning length. \emph{Guard:} disable the thinking mode where
-the template supports it, and treat any run whose confound floor approaches its detectors as uninterpretable.
-
-\item \textbf{The labeller punished the model for knowing the date.} Ground-truth calls in a corpus written in
-an earlier year contain arguments such as \texttt{current\_date}. A model using its own sense of today was
-labelled hallucinating. \emph{Guard:} arguments whose ground-truth value encodes the corpus author's present are
-excluded from the comparison, and a small alias table handles interchangeable encodings such as a language name
-against its ISO code.
-
-\item \textbf{Hidden states entered the ``attention-only'' features.} In the library that prior spectral work
-was built on, four of five nominally spectral metrics project residual-stream states onto the attention eigenbasis, and
-require both tensors. Reported as attention-only, they inherit the performance of a residual-stream probe.
-\emph{Guard:} every metric is tagged with the tensors it consumes, and the attention tier admits only metrics
-that are functions of the attention weights alone (Appendix~\ref{app:provenance}).
-
-\item \textbf{Probe checkpoints collided.} The probe trainer wrote its early-stopping checkpoint to a fixed path
-in the working directory, so two trainings running at once overwrote each other. With mismatched dimensions this
-crashes; with matching dimensions it silently reports one probe's weights as another's.
-\emph{Guard:} the best state is held in memory.
-
-\item \textbf{Repeated prompts were extracted twice.} The set of already-seen prompts was loaded once and never
-updated, so a benchmark that repeats prompts produced duplicate rows, 13\% of each Glaive dump. The duplicates
-are identical and group with their originals, so they never crossed a train/test boundary, but they up-weighted
-the repeated examples. \emph{Guard:} deduplicate at write time and again at load time.
-
-\item \textbf{Task identity leaked through prompt-level splits.} Errors concentrate on particular tools, so with
-splits grouped by prompt a classifier reading only the tool identity reaches
-\aucToolConfoundLlamaOneBGlaiveAll{} AUC. \emph{Guard:} group splits by tool, and keep the tool-identity
-classifier in the confound panel, where it sits at or below chance.
-
-\item \textbf{A third call format went unparsed.} One model family writes a call as
-\texttt{<function name="f"><param name="k">v</param></function>}, with CDATA around multi-line values, rather
-than in either format our parser knew. Every call from that family was scored as absent. \emph{Guard:} the
-parser covers all three dialects and the label distribution of a new model is inspected before its numbers are
-used.
-
-\item \textbf{Decoding deleted the structural tags.} The same family tokenises \texttt{<function} and
-\texttt{<param} as special tokens, so decoding the generation with \texttt{skip\_special\_tokens} removed them
-and left a fragment that could not be parsed. The model appeared to never call a tool. \emph{Guard:} generations
-are decoded with special tokens kept and only chat control markers removed.
-
-\item \textbf{The truncation flag was wrong for a whole family.} Truncation was detected by the absence of the
-end-of-sequence id, but Llama closes a tool call with a different marker, so the flag read ``truncated'' for
-$97.8\%$ of generations on one split and carried no information in the confound panel. \emph{Guard:} truncation
-is the generated length against the budget, which no tokeniser convention can break.
-
-\item \textbf{Our own budget was charged to the model.} A call that fails to parse because the generation budget
-cut it off is an artefact of the protocol, not a failure of the model. \emph{Guard:} such cases carry a distinct
-mode and are excluded from the semantic subset.
-
-\item \textbf{A massive activation overflowed the storage type.} Per-token residual states were stored at half
-precision, but one dimension in two thousand carries an activation whose magnitude exceeds that range, and it was
-written as infinity, which crashed the probe on most records of one run. \emph{Guard:} single precision for
-stored states, and a finiteness check at load.
-
-\item \textbf{Confidence was summarised one way.} The comparison against output confidence used the mean token
-log-probability, which understates it: the mean of the five least likely tokens scores ten points higher on the
-family where confidence loses. \emph{Guard:} nine summaries are recorded and each is scored as its own detector,
-so the trained judges are compared against the best available summary rather than a convenient one
-(Section~\ref{sec:exp:confvariants}).
-
-\item \textbf{Arguments the schema does not define were not penalised.} A call whose expected arguments
-are right but which carries an invented or schema-echoed extra field was scored valid, whereas the
-benchmark's own checker rejects it. \emph{Guard:} the labeller has a rule that counts such calls as a
-distinct failure mode; applied to every stored single-turn run it changes at most \extraFlipsMaxPct{}\% of
-labels (\extraFlipsMaxRun{}) and none on most BFCL runs, so the single-turn tables report the lenient labels
-and the strict ones are available with one switch. On the multi-turn runs a weak model echoes tool schemas
-into argument-less calls often enough that the rule matters, and Section~\ref{sec:exp:multiturn} uses it.
-
+\item \textbf{The chat template silently dropped the tools.} One family's template ignores the argument that
+carries tool schemas; the model answered in prose and all \nGemmaDiscardedRecords{} extracted examples were
+labelled \texttt{no\_call}, a hallucination rate of 100\% that was a property of prompt rendering.
+\emph{Guard:} the renderer asserts every tool name appears in the rendered prompt, falls back to an explicit
+system-prompt specification, and refuses to emit an example otherwise.
+\item \textbf{A reasoning model spent its budget before calling.} A template defaulting to chain-of-thought
+emitted long reasoning before any call, so within a fixed budget the call was often never reached; a
+classifier on generation length alone scored \aucLengthConfoundQwenDenseBfclAll{}. \emph{Guard:} disable
+thinking mode where the template supports it, and treat any run whose floor approaches its detectors as
+uninterpretable.
+\item \textbf{The labeller punished the model for knowing the date.} Ground-truth calls in a corpus written
+earlier contain arguments such as \texttt{current\_date}. \emph{Guard:} arguments encoding the corpus author's
+present are excluded from the comparison, with an alias table for interchangeable encodings.
+\item \textbf{Hidden states entered the ``attention-only'' features.} In the library prior spectral work was
+built on, four of five nominally spectral metrics project residual states onto the attention eigenbasis.
+\emph{Guard:} every metric is tagged with its tensors and the attention tier admits only functions of the
+attention weights (Appendix~\ref{app:provenance}).
+\item \textbf{Probe checkpoints collided.} The trainer wrote its early-stopping checkpoint to a fixed path,
+so concurrent trainings overwrote each other, silently with matching dimensions. \emph{Guard:} the best state
+is held in memory.
+\item \textbf{Repeated prompts were extracted twice}, 13\% of each Glaive dump, up-weighting them though
+never crossing a split. \emph{Guard:} deduplicate at write and load time.
+\item \textbf{Task identity leaked through prompt-level splits.} Errors concentrate on particular tools, so
+with prompt-grouped splits a classifier on the tool identity reaches \aucToolConfoundLlamaOneBGlaiveAll{}.
+\emph{Guard:} group splits by tool and keep the tool-identity classifier in the confound panel.
+\item \textbf{A third call format went unparsed}, and \textbf{decoding deleted structural tags}: one family
+writes \texttt{<function name="f"><param name="k">v</param></function>} and tokenises the tags as special
+tokens, so a parser that knew two dialects and a decoder that skipped specials both scored every call as
+absent. \emph{Guard:} three dialects parsed, specials kept and only chat control markers removed, and the
+label distribution of a new model inspected before use.
+\item \textbf{The truncation flag was wrong for a whole family}, reading ``truncated'' for $97.8\%$ of one
+split because Llama closes a call with a marker other than end-of-sequence. \emph{Guard:} truncation is the
+generated length against the budget.
+\item \textbf{Our own budget was charged to the model.} \emph{Guard:} calls cut off by the budget carry a
+distinct mode and are excluded from the semantic subset.
+\item \textbf{A massive activation overflowed half precision} in one dimension of two thousand and was stored
+as infinity. \emph{Guard:} single precision for stored states and a finiteness check at load.
+\item \textbf{Confidence was summarised one way.} The mean of the five least likely tokens scores ten points
+higher than the mean log-probability on the family where confidence loses. \emph{Guard:} nine summaries are
+recorded and each scored as its own detector (Appendix~\ref{app:confvariants}).
+\item \textbf{Arguments the schema does not define were not penalised}, whereas the benchmark's checker
+rejects them. \emph{Guard:} a strict rule counts them as a distinct mode; on the stored single-turn runs it
+changes at most \extraFlipsMaxPct{}\% of labels (\extraFlipsMaxRun{}), so those tables report the lenient
+labels, and the multi-turn runs, where a weak model echoes schemas into argument-less calls, use the strict
+one.
+\item \textbf{Comparisons were read off seed spreads.} An earlier version placed seed standard deviations side
+by side and read orderings off them; seed spread is not the uncertainty of a difference between detectors
+scored on the same items. \emph{Guard:} a paired bootstrap over items on every reported difference
+(Appendix~\ref{app:stats}).
+\item \textbf{A control that pooled below chance was read as anti-predictive.} Under tool-grouped folds the
+tool-identity classifier pools at 0.28--0.50 AUC. Its per-fold prediction is a constant, the training base
+rate, which is anti-correlated with the held-out fold's rate, so the pooled AUC measures fold composition
+and nothing else. \emph{Guard:} the mean of within-fold AUCs and the pooled AUC of the per-fold-constant
+predictor are reported beside every pooled score (Appendix~\ref{app:stats}).
+\item \textbf{An underpowered run was reported as data.} One run has \minClassPerSubset{} or fewer positives
+on its evaluated population and spreads across seeds wider than the effects discussed. \emph{Guard:} a
+minority-class floor gates every table; \nUnderpoweredRuns{} run carries a dagger.
+\item \textbf{Two extractions of one model and benchmark were both counted}, and differed. \emph{Guard:} each
+pair is counted once and the drift between extractions is reported as a replication bound
+(Appendix~\ref{app:stats}); extraction now uses deterministic kernels and a pinned template date.
 \end{enumerate}
 
-Most of these inflate or fabricate a result rather than deflating one. The general lesson is that a detection number in
-this area should not be believed without a confound panel evaluated under the same protocol, and a
-stratification of the labels by failure mode.
+Most of these inflate a result rather than deflate one. A detection number in this area should not be
+believed without a confound panel evaluated under the same protocol and a stratification of labels by
+failure mode.
 
 \section{Feature provenance}
 \label{app:provenance}
-
-Signals are grouped by the tensors they consume, because the grouping determines both what a deployment needs to
-expose and what a claim may say.
 
 \begin{center}
 \small
@@ -105,106 +123,297 @@ expose and what a claim may say.
 \toprule
 Family & Tensors & Members \\
 \midrule
-Attention & attention weights & per-head profile, cross-layer dynamics, trajectory and \\
-          &                   & velocity summaries, eigenvalue profile, LapEigvals \\
-Residual  & block outputs     & token-role probe, Gram spectrum \\
-Hybrid    & both              & Dirichlet energy, smoothness, spectral entropy and \\
-          &                   & HFER with residual states as the graph signal \\
-Logits    & output logits     & mean token log-probability \\
+Attention & attention weights & per-head profile, cross-layer dynamics, trajectory and velocity \\
+          &                   & summaries, eigenvalue profile, LapEigvals, Lookback Lens \\
+Residual  & block outputs     & token-role probe, token-level probe, Gram spectrum, ICR-style dynamics \\
+Hybrid    & both              & Dirichlet energy, smoothness, spectral entropy and HFER with \\
+          &                   & residual states as the graph signal \\
+Logits    & output logits     & nine log-probability and entropy summaries \\
 \bottomrule
 \end{tabular}
 \end{center}
-
-The hybrid family is excluded from the attention tier of this paper. It is not weak, and it may well be a strong
-detector, but a result obtained from it does not support a statement about attention topology, and it cannot be
-computed where only attention maps are exposed. What Hugging Face returns as hidden states are residual-stream
-snapshots after each block; module-internal activations are a fourth family that nothing in this literature yet
-probes.
+The hybrid family is excluded from the attention tier. It is not weak, but a result obtained from it does not
+support a statement about attention topology and cannot be computed where only attention maps are exposed.
 
 \section{Protocol details}
 \label{app:protocol}
 
-\paragraph{Generation.} Greedy decoding, temperature zero, budget 256 new tokens (160 on the multi-turn runs,
-whose prompts are long), tool schemas passed through the model's own chat template so the model answers in its
-native call format. Truncation is recorded and available as a feature to the confound panel.
+\paragraph{Generation.} Greedy decoding, budget 256 new tokens (160 on the multi-turn runs), tool schemas
+passed through the model's own chat template, bfloat16, deterministic CUDA kernels, seeded, chat-template date
+pinned; every dump records library versions, hardware and commit.
 
-\paragraph{Multi-turn.} The four multi-turn categories of BFCL-v4 (base, missing parameter, missing function,
-long context), one record per conversation turn up to the fourth, with the ground-truth calls of the two
-preceding turns rendered as assistant messages each followed by a fixed acknowledgement that the calls
-succeeded. Conversations involving more than 22 tools are skipped rather than truncated. In the cascade
-condition one of the two preceding turns carries a call drawn from another conversation instead, with the same
-acknowledgement. Attention is reduced to its features inside a forward hook on each attention module, so that
-a layer's probabilities are released before the next layer computes; the full-sequence graph features, cubic
-in the prompt length, are not computed on these runs. Labels use the strict rule that penalises arguments
-the schema does not define.
+\paragraph{Multi-turn.} The four multi-turn categories of BFCL-v4, one record per conversation turn up to the
+fourth, with the ground-truth calls of the two preceding turns rendered as assistant messages each followed by
+a fixed acknowledgement of success. Conversations with more than 22 tools are skipped. In the cascade
+condition one preceding turn carries a call from another conversation with the same acknowledgement.
+Attention is reduced to its features inside a forward hook on each attention module so a layer's
+probabilities are released before the next layer computes; full-sequence graph features, cubic in the prompt
+length, are not computed on these runs. Labels use the strict rule on undefined arguments.
 
-\paragraph{Layers and heads.} Residual probes read eight depths spaced by \texttt{linspace} over the model's
-layer count, so depth is comparable across models of different size. Per-head features use every attentive
-layer, which for hybrid stacks is the subset carrying softmax attention.
+\paragraph{Layers, heads and probes.} Residual probes read eight depths spaced by \texttt{linspace} over the
+layer count; per-head features use every attentive layer. Logistic regression is $\ell_2$-regularised,
+class-balanced, $C\in\{0.01,0.1,1,10\}$ chosen on validation; the token-role network has one hidden layer of
+512 units, dropout 0.1, AdamW with warm restarts and early stopping. Gradient-boosted trees with a fallback to
+logistic regression, decided on training folds, are used for the head-averaged per-layer sets.
 
-\paragraph{Probes.} Logistic regression with $\ell_2$ regularisation, class-balanced, $C$ chosen on validation
-from $\{0.01,0.1,1,10\}$; the token-role network is a single hidden layer of 512 units with dropout 0.1, AdamW,
-cosine schedule with warm restarts, early stopping with patience five. Gradient-boosted trees with an automatic
-fallback to logistic regression are used for the per-layer feature sets, with the fallback triggered by feature
-count or by a train-validation gap, decided on those folds only.
+\section{Statistics: paired intervals, pooling and replication}
+\label{app:stats}
+\label{sec:exp:stats}
 
-\paragraph{Scoring.} Five-fold cross-fit with folds grouped by ground-truth tool, one pooled AUC per seed over
-all examples, five seeds, reported as mean and standard deviation across seeds. Bootstrap comparisons of two
-detectors resample positives and negatives separately and are computed on the pooled scores.
+\paragraph{Paired intervals.}
+Every difference between two detectors is scored on the items both scored, resampled with replacement within
+class, and the difference in AUC recomputed on each resample; draws are pooled across the five split seeds so
+the interval reflects item resampling and fold assignment. The contrast family below was fixed before any
+result was read, and $p$-values are Holm-corrected within it per run; bold marks an interval that excludes zero
+with Holm $p<0.05$.
+\begin{center}
+\scriptsize
+\input{table_paired}
+\end{center}
+\label{tab:paired}
 
-\section{Seed spread of Table~\ref{tab:detectors}}
+\paragraph{Pooled cross-fit scores.}
+Every AUC pools the out-of-fold scores of five classifiers, one per fold, each calibrated on its own training
+tools. Two consequences follow. First, a deployed judge is one classifier with one calibration, so pooling
+penalises calibration drift a deployment never sees: scoring the residual probe within folds gives
+\poolWithinHiddenLlamaOneBGlaive{} on Llama-1B on Glaive against \poolPooledHiddenLlamaOneBGlaive{} pooled, a
+cost of \poolCostHiddenMean{} AUC averaged over \poolNRuns{} runs, and the effect is far larger for a score
+meaningful only relative to its fold, such as a rank (\poolWithinRankMeanLlamaOneBGlaive{} within folds against
+\poolPooledRankMeanLlamaOneBGlaive{} pooled), which is why combinations are read within folds. Second, the
+direction of the pooling effect is not fixed. Under tool-grouped folds the training base rate of each fold is
+anti-correlated with the base rate of the tools held out from it, so a predictor that is constant within
+each fold pools below chance; the tool-identity control, whose per-fold prediction is exactly such a
+constant, pools at \foldOffsetToolOneHotBaseLlamaOneBGlaive{} on Llama-1B on Glaive with a within-fold AUC of
+one half. Every pooled score in this paper is therefore accompanied in the result files by the mean of
+within-fold AUCs (\aucFmHiddenLRBaseLlamaOneBGlaiveSem{} for the residual probe on that run) and by the pooled
+AUC of its per-fold-constant predictor, and rows below one half are not inverted: for untrained scores whose
+sign is fixed on training folds, a sign that flips between folds makes the pooled AUC uninterpretable and the
+within-fold value is the one to read.
+
+\paragraph{Replication.}
+Six model--benchmark pairs were extracted twice, before and after the extraction pipeline was fixed. Each
+pair is counted once in every table, and the drift between the two extractions bounds the reproducibility of
+the pipeline on the hardware used.
+\begin{center}
+\small
+\input{table_replication}
+\end{center}
+No difference smaller than the largest drift is claimed as a result in the text.
+
+\section{Full detector grid}
+\label{app:tables}
+
+\begin{table}[h]
+\centering
+\scriptsize
+\caption{One detector family per column, scored on the hardest population each run supports: the
+call-expected items where the benchmark has an abstention category, every parseable call otherwise. Bold
+marks every detector within one seed standard deviation of the row's leader, since the ordering inside that
+band changes with the seed; the paired intervals of Appendix~\ref{app:stats} are the uncertainty of any
+comparison. \emph{avg.\ spectral} averages over heads before computing anything; \emph{surface} is the length
+floor.}
+\label{tab:detectors}
+\input{table_detectors}
+\end{table}
+
+\begin{table}[h]
+\centering
+\small
+\caption{The access frontier in numbers: fixed representatives per tier, the length floor, and each
+representative's margin over the floor. Subsets as in Table~\ref{tab:detectors}.}
+\label{tab:frontier}
+\input{table_frontier}
+\end{table}
+
+\paragraph{Seed spread.}
 \label{app:spread}
-
-Every entry of Table~\ref{tab:detectors} is a mean over five split seeds of a pooled cross-fit AUC. The
-spread across seeds, given here, is a spread over ways of partitioning the same tools into folds and not a
-sampling uncertainty over examples; it is nevertheless the right scale on which to read differences between
-detectors in the same row, and it is why the main text ranks tiers and not detectors within a tier.
-
+The spread across seeds of every entry of Table~\ref{tab:detectors}, a spread over ways of partitioning the
+same tools into folds and not a sampling uncertainty over items:
 \begin{center}
 \tiny
 \input{table_detectors_sd}
 \end{center}
 
-\section{Every run on one population}
+\paragraph{Every run on one population.}
 \label{app:onepop}
-
-Table~\ref{tab:detectors} scores each run on the hardest population it supports, which mixes the
-call-expected population of the BFCL runs with the semantic population of the Glaive runs. The same
-detectors scored on the semantic population for every run, so that all rows share one definition, are
-given here; the ordering of tiers is unchanged.
-
+The same detectors on the semantic population for every run, so all rows share one definition; the ordering
+of tiers is unchanged:
 \begin{center}
 \scriptsize
 \input{table_detectors_semantic}
 \end{center}
 
+\paragraph{Where the per-head signal lives.}
+Figure~\ref{fig:resolution} shows one layer of Llama-3.2-1B on Glaive head by head, and Figure~\ref{fig:heatmap}
+the univariate AUC of each head's spectral radius on the generated call beside the layer's head-averaged
+value. Which of the five per-head metrics leads changes with the run: the spectral radius leads on Llama-1B
+with \aucPerHeadLmaxLlamaOneBGlaiveSem{} against the Fiedler value's \aucPerHeadFiedlerLlamaOneBGlaiveSem{}, and
+the ordering reverses on Llama-3B.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{fig1_resolution}
+\caption{What per-head resolution keeps. (a) The spectral radius of every head of one layer on Llama-3.2-1B on
+Glaive, for correct (grey) and failed (orange) calls, with the most discriminative heads labelled by their
+univariate AUC. (b) The head-averaged Fiedler value of the same layer on the same calls, with its AUC. The
+signal is carried by particular heads; the average mixes them with the rest.}
+\label{fig:resolution}
+\end{figure}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.6\linewidth]{fig4_heatmap}
+\caption{Univariate AUC of each (layer, head) spectral-radius feature on the generated call, Llama-3.2-1B on
+Glaive, direction-free, beside the head-averaged Fiedler value of each layer on the same colour scale.}
+\label{fig:heatmap}
+\end{figure}
+
+\section{Label efficiency}
+\label{app:budget}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.55\linewidth]{fig7_budget}
+\caption{The token-role probe's AUC as its labelled failures are thinned in the training folds only, one run
+highlighted and the others in grey, against the mean log-probability on the highlighted run.}
+\label{fig:labeleff}
+\end{figure}
+
+A smaller probe should need fewer labelled failures. Thinning the positives available to the training folds
+on \leNRuns{} runs while scoring every example, the two attention judges are tied at full budget
+(\lePerHeadFull{} against \leLapEigFull{}) and at the smallest budget (\lePerHeadFive{} against
+\leLapEigFive{}); with a tenth or a fifth of the labels the per-head profile leads by \leDiffTen{} and
+\leDiffTwenty{}, on \leWinsTen{} and \leWinsTwenty{} of \leNRuns{} runs. The edge is modest and not uniform,
+so we state it as parity with a small advantage at low budgets. The residual probe leads both throughout,
+\leHiddenTen{} at a tenth of the labels against \lePerHeadTen{}, and loses least as labels shrink
+(Figure~\ref{fig:labeleff}).
+
+\section{Confidence summaries}
+\label{app:confvariants}
+\label{sec:exp:confvariants}
+
+Comparing a trained judge against ``output confidence'' presumes a summary of the output distribution. We
+record \CvLlamaBfclNSummaries{} per call, covering the mean, minimum, total and mean-lowest-five
+log-probability, perplexity, the fraction of low-probability tokens, and the mean, maximum and final predictive
+entropy, each scored as its own detector with its direction fixed on training folds. On Llama-3.2-1B on BFCL
+the mean log-probability reaches \CvLlamaBfclMeanLp{} while the mean of the five least likely tokens reaches
+\CvLlamaBfclBest{}: a single improbable token carries the evidence and averaging dilutes it, so the probe's
+advantage falls from \CvLlamaBfclGapMean{} to \CvLlamaBfclGapBest{} without disappearing against the probe's
+\CvLlamaBfclProbe{}. The total log-probability scores \CvLlamaBfclSumLp{}, close to the \CvLlamaBfclSurface{}
+of the length floor, and is set aside as a length feature. On MiniCPM5-2B the best summary reaches
+\CvMiniCpmBfclBest{} against \CvMiniCpmBfclMeanLp{}, the probe's deficit moves from \CvMiniCpmBfclGapMean{} to
+\CvMiniCpmBfclGapBest{}, and the summaries fall within a couple of points of one another where on Llama they
+range over seventeen: on one family the model's expressions of uncertainty agree with each other and with its
+errors, on the other they do neither. The cross-run comparison of Section~\ref{sec:exp:budget} uses the mean
+log-probability and therefore understates confidence on the families where it loses; the separation between
+families survives the fairer comparison but is smaller than the mean alone suggests.
+
+\section{Combining the two judges}
+\label{app:combining}
+
+Stacking the residual and attention scores with a combiner fitted on out-of-fold training scores, which
+gives the combiner several times more labelled failures than a validation fold, changes AUC by
+\agrStackGain{} and improves on the better single judge in \agrStackPositive{} of \agrNRuns{} runs; mapping
+each score through the empirical distribution of its out-of-fold training scores first changes AUC by
+\agrStackRankGain{} and helps in \agrStackRankPositive{} runs, with a best case of \agrStackRankGainMax{}, and
+every fitted combiner gave both judges positive weight. Within folds the average of the two judges reaches
+\poolWithinMeanLlamaOneBGlaive{} against \poolWithinPerHeadLlamaOneBGlaive{} for the better single judge on
+Llama-1B on Glaive and \poolWithinMeanLlamaThreeBGlaive{} against \poolWithinHiddenLlamaThreeBGlaive{} on
+Llama-3B. The agreement rule, compared against the stronger single judge at the recall it actually achieves,
+changes precision by \agrMatchedGain{} and helps in \agrMatchedPositive{} of \agrNRuns{} runs.
+
+\section{Architecture, abstention and confounds}
+\label{app:arch}
+\label{sec:exp:arch}
+\label{sec:exp:confound}
+\label{app:confound}
+
+On the sliding-window model, with four heads, one key-value head and local attention in all but four layers,
+the per-head profile reaches \aucPerHeadAllGemmaGlaiveSem{} against a floor of
+\aucSurfaceConfoundGemmaGlaiveSem{}, so a narrow, sparse attention stack does not disable spectral detection.
+The hybrid families, in which only a quarter of the layers carry softmax attention, are where the tier
+weakens, to the neighbourhood of the residual probes rather than below the floor.
+
+The clearest architectural effect is about the models. On the category where no tool applies, the two Llama
+models fabricate a call almost every time, \modeLlamaOneBBfclOvertrigger{} of \nIrrelevanceItems{} items at
+1B and \modeLlamaThreeBBfclOvertrigger{} at 3B, while every other family abstains most of the time at every
+size: Qwen3-1.7B on \modeQwenDenseBfclValidnocall{} items, Qwen3.5-4B on \modeQwenFourBBfclValidnocall{},
+MiniCPM5-2B on \modeMiniCpmBfclValidnocall{} and Qwen3.5-0.8B on \modeQwenSmallBfclValidnocall{}. Abstention is
+a property of the training recipe and not of scale; for a family that does not abstain, the capability has to
+be supplied from outside the model.
+
+The floor is not always low: on Llama-1B on BFCL a classifier on lengths alone reaches
+\aucSurfaceConfoundLlamaOneBBfclAll{} on the full set, because format failures are long, and falls to
+\aucSurfaceConfoundLlamaOneBBfclCall{} on the call-expected items while the detectors hold. Transfer separates
+a detector that learned routing from one that learned a corpus: trained on Glaive and applied unchanged to
+BFCL on Llama-3B, the residual probe retains \transferHiddenLRLlamaThreeBGlaiveToLlamaThreeBBfcl{} and the
+per-head profile \transferPerHeadAllLlamaThreeBGlaiveToLlamaThreeBBfcl{} against in-domain values of
+\aucHiddenLRLlamaThreeBBfclSem{} and \aucPerHeadAllLlamaThreeBBfclSem{}, while the length floor falls to
+\transferSurfaceConfoundLlamaThreeBGlaiveToLlamaThreeBBfcl{}.
+
+\section{Calls with a history}
+\label{app:multiturn}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\linewidth]{fig8_multiturn}
+\caption{Calls made with a conversation behind them, on the multi-turn categories of BFCL-v4. (a) Failure
+rate after a clean history and after one in which an earlier call was replaced by a wrong call reported as
+successful. (b) What each judge still sees: AUC on opening turns, on turns with a history, and on
+corrupted-history turns for a judge trained on clean histories only.}
+\label{fig:multiturn}
+\end{figure}
+
+Multi-turn calling is far harder for these models than the single-turn categories: MiniCPM5 fails on
+\mtFailTurnZeroMiniCpm{}\% of opening turns and \mtFailAllMiniCpm{}\% of all turns; Llama-1B fails on
+\mtFailTurnZeroLlamaOneB{}\% of opening turns and \mtTruncPctLlamaOneB{}\% of its generations run past the
+budget, so every judge sits near chance on the \mtNegLlamaOneB{} negatives it leaves, LapEigvals highest at
+\mtAucLapEigLlamaOneB{}, and we draw no conclusion from that run. On MiniCPM5 the probe scores turns with a
+history at \mtAucHiddenHistMiniCpm{} and opening turns at \mtAucHiddenTurnZeroMiniCpm{}; trained on clean
+histories only, the per-head profile scores \mtAucPerHeadCleanOnCleanMiniCpm{} on clean against
+\mtAucPerHeadCorruptOnCleanMiniCpm{} on corrupted items and LapEigvals \mtAucLapEigCleanOnCleanMiniCpm{}
+against \mtAucLapEigCorruptOnCleanMiniCpm{}. Llama-1B fails on \mtFailCleanLlamaOneB{}\% after a clean
+history and \mtFailCorruptLlamaOneB{}\% after a corrupted one ($p=\mtFisherPLlamaOneB{}$).
+
 \section{What a judge costs at generation time}
 \label{app:cost}
 
-A guardrail that judges the call before it executes adds its cost to every call. On Llama-3.2-1B and a
-\latGpu{}, over \latNPrompts{} BFCL prompts of median \latPromptTokens{} tokens producing calls of median
-\latGenTokens{} tokens, generation itself takes \latGen{}\,ms. Every internal judge then needs one
-teacher-forced pass over prompt and call with the eager attention path, which costs \latPass{}\,ms; a
-serving stack that keeps the generation pass's hidden states can skip it for the residual tier, but not for
-attention, whose probabilities a fused kernel never materialises. On top of that pass, gathering the
-token-role probe's features takes under a millisecond, the LapEigvals column sums \latLapEig{}\,ms, and the
-per-head profile's $L \times H$ eigendecompositions on the call span \latPerHead{}\,ms, or \latPerHeadPct{}\%
-of the generation time, when reduced layer by layer inside the forward hook (\latPassPerHead{}\,ms for pass
-and features together). The eigendecompositions are issued one layer at a time; batching them across
-layers would remove most of that cost. The probe itself is a logistic regression and is free at this scale.
-The attention tier is therefore the most expensive to read, by an amount that is small next to generation
-on this hardware and that grows with the square of the call length, not of the prompt.
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.55\linewidth]{fig9_latency}
+\caption{Median cost per call of each stage on Llama-3.2-1B, log scale.}
+\label{fig:latency}
+\end{figure}
+
+On Llama-3.2-1B and a \latGpu{}, over \latNPrompts{} BFCL prompts of median \latPromptTokens{} tokens producing
+calls of median \latGenTokens{} tokens, generation takes \latGen{}\,ms. Every internal judge then needs one
+teacher-forced pass over prompt and call with the eager attention path, \latPass{}\,ms, which a stack that
+keeps the generation pass's hidden states can skip for the residual tier but not for attention, whose
+probabilities a fused kernel never materialises. Gathering the token-role features takes under a
+millisecond, the LapEigvals column sums \latLapEig{}\,ms, and the per-head eigendecompositions on the call span
+\latPerHead{}\,ms, \latPerHeadPct{}\% of generation, when reduced layer by layer inside the forward hook
+(\latPassPerHead{}\,ms for pass and features together). The eigendecompositions are issued one layer at a
+time; batching them across layers would remove most of that cost.
 
 \section{Head-disagreement measurement}
 \label{app:jensen}
 
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.8\linewidth]{fig5_jensen}
+\caption{Proposition~\ref{prop:jensen} measured. One point per layer, model and input: the mean over heads
+of algebraic connectivity against the connectivity of the head-averaged graph. Every point lies above the
+diagonal for the combinatorial Laplacian, as the proposition requires; all but \normGapViolations{} do for
+the normalised Laplacian, where the inequality is not a theorem. The distance from the diagonal is the
+connectivity that averaging invents.}
+\label{fig:jensen}
+\end{figure}
+
 Proposition~\ref{prop:jensen} is verified on \nJensenLayers{} layers from \nJensenModels{} models and three
-inputs spanning a well-formed call, a second call and ordinary prose. For the combinatorial Laplacian, where the
-inequality is a theorem, it holds with \combGapViolations{} violations and a gap bounded below by
-\combGapMin{}, mean \combGapMean{}. For the symmetric normalised Laplacian, where the Rayleigh quotient is not
-linear in the adjacency and the inequality is therefore not implied, it holds on all but
-\normGapViolations{} layers, with mean gap \normGapMean{} and a median ratio of \normRatioMedian{} between the
-averaged graph's connectivity and the mean over heads, reaching \normRatioMax{}. The mean pairwise absolute
-alignment of per-head Fiedler vectors is \fiedlerAlignmentMean{} with maximum
-\fiedlerAlignmentMax{}, so the equality condition of the proposition is never met, and the across-head standard
-deviation of the per-head Fiedler value averages \perHeadSdMean{}.
+inputs spanning a well-formed call, a second call and prose. For the combinatorial Laplacian the inequality
+holds with \combGapViolations{} violations and a gap bounded below by \combGapMin{}, mean \combGapMean{}. For
+the symmetric normalised Laplacian it holds on all but \normGapViolations{} layers, with mean gap
+\normGapMean{} and a median ratio of \normRatioMedian{} between the averaged graph's connectivity and the mean
+over heads, reaching \normRatioMax{}. The mean pairwise absolute alignment of per-head Fiedler vectors is
+\fiedlerAlignmentMean{} with maximum \fiedlerAlignmentMax{}, and the across-head standard deviation of the
+Fiedler value averages \perHeadSdMean{}.

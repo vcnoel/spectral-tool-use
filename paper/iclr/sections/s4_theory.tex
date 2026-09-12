@@ -1,189 +1,100 @@
-\section{Theory}
+\section{Why averaging heads destroys the signal}
 \label{sec:theory}
 
-Almost every attention-graph diagnostic begins by averaging the attention matrix over heads, and then reads a
-spectral quantity off the single graph that remains \citep{noel2025gsp,li2025hsad,badash2026layers}. This section
-shows that the averaging step, not the choice of spectral quantity, is what decides whether the diagnostic can
-see a failure at all. Three statements follow. The first is about any functional of the averaged graph, the
-second gives the direction and the equality condition of the error that averaging makes for algebraic
-connectivity, and the third draws out what the features of the strongest published attention-only detector
-measure, which is a degree sequence rather than a global spectrum.
+Almost every attention-graph diagnostic averages the attention matrix over heads and reads a spectral
+quantity off the graph that remains \citep{noel2025gsp,li2025hsad,badash2026layers}. The averaging step, not
+the quantity read afterwards, decides whether the diagnostic can see a failure. Proofs are in
+Appendix~\ref{app:proofs}.
 
-\subsection{Setup}
+\paragraph{Setup.}
 \label{sec:theory:setup}
-
-Fix one layer with $H$ heads and $T$ token positions. Head $h$ produces a row-stochastic, causal attention
-matrix $A_h \in \mathbb{R}^{T \times T}$, with $(A_h)_{ij} = 0$ for $j > i$, which we symmetrise into a
-weighted adjacency and strip of self-loops,
+Fix one layer with $H$ heads and $T$ positions. Head $h$ produces a row-stochastic, causal attention matrix
+$A_h \in \mathbb{R}^{T\times T}$, $(A_h)_{ij}=0$ for $j>i$, symmetrised and stripped of self-loops,
 \begin{equation}
 W_h = \tfrac{1}{2}\left(A_h + A_h^{\top}\right) - \operatorname{diag}\!\left(\tfrac{1}{2}(A_h + A_h^{\top})\right),
 \label{eq:adj}
 \end{equation}
-with combinatorial Laplacian $L_h = D_h - W_h$, where $D_h = \operatorname{diag}(W_h \mathbf{1})$, and symmetric
-normalised Laplacian $\mathcal{L}_h = I - D_h^{-1/2} W_h D_h^{-1/2}$ on the support of $D_h$. The
-\emph{head-averaged} graph is $\bar W = \frac{1}{H}\sum_h W_h$, with $\bar L$ and $\bar{\mathcal{L}}$ built from
-it. We write $\lamtwo(\cdot)$ for the second-smallest eigenvalue, the algebraic connectivity, and $\lammax$ for
-the largest. A \emph{per-head} read of the layer keeps the vector
-$\left(\phi(W_1),\dots,\phi(W_H)\right)$ for a scalar functional $\phi$; a \emph{head-averaged} read keeps the
-single number $\phi(\bar W)$.
-
-\subsection{Averaging is a lossy projection, whatever is read off it}
-\label{sec:theory:annihilation}
+with combinatorial Laplacian $L_h = D_h - W_h$, $D_h=\operatorname{diag}(W_h\mathbf{1})$, and symmetric
+normalised Laplacian $\mathcal{L}_h = I - D_h^{-1/2}W_hD_h^{-1/2}$. The \emph{head-averaged} graph is
+$\bar W = \frac1H\sum_h W_h$ with Laplacian $\bar L$; $\lamtwo$ is algebraic connectivity. A \emph{per-head}
+read keeps $(\phi(W_1),\dots,\phi(W_H))$ for a scalar $\phi$; a \emph{head-averaged} read keeps $\phi(\bar W)$.
 
 \begin{proposition}[annihilation]
 \label{prop:annihilation}
-Let $\Phi$ be any function of the head-averaged graph, that is, any map of the form
-$\{W_h\}_{h\le H} \mapsto \Phi(\bar W)$. Then $\Phi$ is constant on every set of head configurations sharing the
-same mean. In particular, for every $H \ge 2$ and every $T \ge 3$ there exist configurations $\{W_h\}$ and
-$\{W_h'\}$ with $\bar W = \bar W'$ whose per-head connectivities differ by
-$\max_h \lamtwo(L_h) - \max_h \lamtwo(L_h') = \Omega(1)$, so no head-averaged read can separate them while a
-per-head read separates them by a constant.
+Any function $\{W_h\}\mapsto\Phi(\bar W)$ of the head-averaged graph is constant on every set of head
+configurations sharing the same mean. For every $H\ge 2$ and $T\ge 3$ there exist configurations
+$\{W_h\}$, $\{W_h'\}$, each realisable by causal heads, with $\bar W=\bar W'$ and
+$\max_h\lamtwo(L_h)-\max_h\lamtwo(L_h')=\Omega(1)$.
 \end{proposition}
+\label{sec:theory:annihilation}
 
-\begin{proof}
-The first claim is immediate, since $\Phi$ factors through $\bar W$. For the second, note first which
-symmetric graphs Eq.~\ref{eq:adj} can produce from a causal head. Since $(A_h)_{ij} = 0$ for $j > i$, the
-off-diagonal entries are $W_{ij} = \tfrac12 (A_h)_{ij}$ for $i > j$, so a symmetric zero-diagonal $W$ is
-realisable exactly when every node sends total weight at most $\tfrac12$ to the nodes before it,
-$2\sum_{j<i} W_{ij} \le 1$ for all $i$: set $(A_h)_{ij} = 2W_{ij}$ for $i > j$ and put the remaining mass on
-the diagonal. The condition is convex, so a mean of realisable graphs is realisable. Take $T \ge 3$, let $P$
-be the path graph on $T$ nodes with weights $\tfrac12$, in which every node attends fully to its predecessor,
-and let $K$ be the complete graph with weights $1/(2(T-1))$; both satisfy the condition. Put $W_1 = P$,
-$W_2 = K$ and $W_1' = W_2' = \tfrac12(P+K)$, and for $H > 2$ repeat the pattern. Both configurations have
-mean $\tfrac12(P+K)$. The path has $\lamtwo(L_P) = 1-\cos(\pi/T) = \Theta(T^{-2})$ while the complete graph
-has $\lamtwo(L_K) = T/(2(T-1)) > \tfrac12$, so the per-head vectors differ in their maximum by more than
-$\tfrac12 - \Theta(T^{-2})$, whereas every head-averaged functional returns the same value on both.
-\end{proof}
-
-Proposition~\ref{prop:annihilation} is elementary, and we state it because the literature it addresses has
-behaved as though it were false: averaging is a many-to-one map, and the proposition only makes precise what
-that map cannot preserve and shows the loss is of constant size on admissible graphs. It says nothing about
-which spectral quantity is read, so it applies to the Fiedler value, to the whole eigenvalue
-profile, to Dirichlet energy, and to any statistic of the averaged graph that a future paper might propose. The
-information that distinguishes the two configurations is carried by the \emph{contrast between heads}, and the
-mean is precisely the statistic that discards contrast. Whether real failures are visible in that contrast is an
-empirical question, which Section~\ref{sec:exp:perhead} answers, but no averaged read can answer it either way.
-
-\subsection{The direction of the error, and when it vanishes}
-\label{sec:theory:jensen}
-
-Proposition~\ref{prop:annihilation} exhibits a worst case. The next statement is about the typical case, and it
-fixes the sign of the discrepancy.
+The statement is elementary; we make it because the literature it addresses has behaved as though it were
+false. It says nothing about which quantity is read, so it covers the Fiedler value, the whole eigenvalue
+profile, Dirichlet energy and any statistic of the averaged graph a future paper might propose: what
+distinguishes the two configurations is the \emph{contrast between heads}, and the mean is the statistic that
+discards contrast. Whether real failures are visible in that contrast is empirical
+(Section~\ref{sec:exp:perhead}); no averaged read can answer it either way.
 
 \begin{proposition}[head averaging overstates connectivity]
 \label{prop:jensen}
 For any heads $W_1,\dots,W_H$,
 \begin{equation}
-\lamtwo(\bar L) \;\ge\; \frac{1}{H}\sum_{h=1}^{H} \lamtwo(L_h),
+\lamtwo(\bar L)\;\ge\;\frac1H\sum_{h=1}^{H}\lamtwo(L_h),
 \label{eq:jensen}
 \end{equation}
-with equality if and only if the heads admit a common Fiedler vector, that is, a unit $x \perp \mathbf{1}$
-attaining $\min_{y \perp \mathbf{1}, \|y\|=1} y^{\top} L_h y$ simultaneously for every $h$.
+with equality if and only if the heads admit a common Fiedler vector.
 \end{proposition}
+\label{sec:theory:jensen}
 
-\begin{proof}
-The Laplacian is linear in the adjacency, so $\bar L = \frac{1}{H}\sum_h L_h$. Since $L_h \mathbf{1} = 0$ and
-$L_h \succeq 0$, Courant--Fischer gives
-$\lamtwo(L) = \min_{x \perp \mathbf{1},\, \|x\|=1} x^{\top} L x$, a pointwise minimum of functions that are
-linear in $L$. A pointwise minimum of linear functions is concave, so $\lamtwo$ is concave on the convex cone of
-graph Laplacians, and Jensen's inequality applied to the uniform average over heads gives
-Eq.~\ref{eq:jensen}. For the equality case, let $x^\star$ attain the minimum for $\bar L$. Then
-$\lamtwo(\bar L) = \frac1H \sum_h (x^\star)^{\top} L_h x^\star \ge \frac1H \sum_h \lamtwo(L_h)$, and the
-inequality is tight exactly when $(x^\star)^{\top} L_h x^\star = \lamtwo(L_h)$ for every $h$, that is, when
-$x^\star$ is a Fiedler vector of every head. \end{proof}
+The Laplacian is linear in the adjacency and $\lamtwo$ is a pointwise minimum of linear functionals, hence
+concave, so Eq.~\ref{eq:jensen} is Jensen's inequality. The consequence is one-directional: a hallucinated
+call that fragments the routing of a few heads lowers their $\lamtwo$, but the averaged graph is bounded
+below by the mean over heads and its minimising direction is a consensus the fragmented heads need not share,
+so the evidence of fragmentation is compressed toward that consensus. How far real layers sit from the
+equality condition is measurable (Appendix~\ref{app:jensen}, Figure~\ref{fig:jensen}). On
+\nJensenLayers{} layers from \nJensenModels{} models, Eq.~\ref{eq:jensen} holds with \combGapViolations{}
+violations and a gap bounded away from zero, mean \combGapMean{}; the mean pairwise alignment of per-head
+Fiedler vectors is \fiedlerAlignmentMean{}, far from the $1$ that equality needs. For the normalised
+Laplacian the detectors use, the Rayleigh quotient is not linear in $W$ and Eq.~\ref{eq:jensen} is not a
+theorem; empirically it holds on all but \normGapViolations{} layers, with the averaged graph reporting
+connectivity a median \normRatioMedianPct{}\% above the mean over heads.
 
-The consequence is one-directional and therefore diagnostically bad in a specific way. A hallucinated call that
-fragments the routing of a few heads lowers $\lamtwo$ for those heads, but Eq.~\ref{eq:jensen} bounds the
-averaged graph's connectivity \emph{below} by the mean over heads, and the minimising direction of the average is
-a consensus direction that the fragmented heads need not share. Averaging thus reports a graph that is at least
-as well connected as the typical head, and the evidence of fragmentation is compressed toward the consensus.
-
-The equality condition is a measure-zero event, so the question is not whether it holds but how far real layers
-sit from it, and that is measurable. On
-\nJensenLayers{} layers drawn from \nJensenModels{} models and three inputs, the combinatorial inequality
-Eq.~\ref{eq:jensen} holds with \combGapViolations{} violations, as it must, and the gap is bounded away from zero
-everywhere, with minimum \combGapMin{} and mean \combGapMean{} (Figure~\ref{fig:jensen}). The mean pairwise absolute
-alignment between
-per-head Fiedler vectors is \fiedlerAlignmentMean{}, far from the value $1$ that equality requires, and the
-standard deviation of $\lamtwo$ across the heads of a layer averages \perHeadSdMean{}. For the normalised
-Laplacian actually used by our detectors the Rayleigh quotient is not linear in $W$, so Eq.~\ref{eq:jensen} is
-not a theorem; empirically it holds on all but \normGapViolations{} of the \nJensenLayers{} layers, and the
-averaged graph reports connectivity a median \normRatioMedianPct{}\% above the mean over heads, reaching
-$\normRatioMax{}\times$ at the extreme. Head averaging is therefore not a mild smoothing of a per-head quantity;
-it reports a systematically better connected graph than any head in the layer, and it does so by an amount that
-varies from layer to layer.
-
-\begin{figure}[t]
-\centering
-\includegraphics[width=0.85\linewidth]{fig_jensen}
-\caption{Proposition~\ref{prop:jensen} measured. Each point is one layer of one model on one input; the
-horizontal axis is the mean over heads of the per-head algebraic connectivity and the vertical axis the
-connectivity of the head-averaged graph. Every point lies above the diagonal for the combinatorial Laplacian,
-as the proposition requires, and all but \normGapViolations{} do for the normalised Laplacian the detectors
-use, where the inequality is not a theorem. The distance from the diagonal is the connectivity that head
-averaging invents.}
-\label{fig:jensen}
-\end{figure}
-
-\subsection{The strongest attention-only baseline reads degrees, not a spectrum}
+\paragraph{The strongest attention-only baseline reads degrees, not a spectrum.}
 \label{sec:theory:lapeig}
-
-LapEigvals \citep{binkowski2025lapeigvals} is the strongest published attention-only hallucination detector. Its
-features are the top-$k$ eigenvalues of the Laplacian $L = D - A$ of the unsymmetrised causal attention matrix,
-and its authors observe (their Lemma~1) that because $A_{ij}=0$ for $j>i$ the matrix $L$ is lower triangular,
-so its eigenvalues are its diagonal entries and no eigendecomposition is needed:
+LapEigvals \citep{binkowski2025lapeigvals} takes the top-$k$ eigenvalues of $L=D-A$ for the unsymmetrised
+causal $A$, and its authors observe (their Lemma~1) that $L$ is lower triangular, so
 \begin{equation}
-\operatorname{spec}(L) = \{\, d_j - A_{jj} \,\}_{j \le T},
+\operatorname{spec}(L)=\{\,d_j-A_{jj}\,\}_{j\le T},
 \label{eq:lapeigdiag}
 \end{equation}
-where $d$ is their position-normalised in-degree. We take that observation as given and draw out what it
-implies for the comparison in this paper.
+with $d$ their position-normalised in-degree; the same identity, read as sink score minus self-attention,
+underlies \citet{binkowski2026sinks}. We take it as given and draw out what it implies.
 
 \begin{remark}[LapEigvals is a degree statistic]
 \label{prop:lapeig}
-By Eq.~\ref{eq:lapeigdiag} the LapEigvals features depend on $A$ only through the column sums and the diagonal.
-Any two causal attention matrices with the same in-degree sequence and the same self-attention weights have
-identical features, however differently they route attention between positions. The features are therefore a
-per-position, per-head degree statistic: local, invariant to in-degree-preserving rewiring, and carrying no
-eigenvector and no connectivity information. The symmetrisation in Eq.~\ref{eq:adj} destroys triangularity,
-so the spectra our detectors read are global functionals of the routing that change under such rewiring.
+By Eq.~\ref{eq:lapeigdiag} the features depend on $A$ only through column sums and the diagonal: two causal
+attention matrices with the same in-degree sequence and self-attention have identical features however
+differently they route attention. They are a per-position degree statistic carrying no eigenvector
+information, whereas the symmetrisation in Eq.~\ref{eq:adj} destroys triangularity and the spectra our
+detectors read are global functionals of the routing.
 \end{remark}
 
-This is not a criticism of the method, which works, and works well enough that our detectors do not beat it
-(Section~\ref{sec:exp:frontier}). It is a statement about what the two families measure: they are not two
-estimates of the same object, and the fact that both keep heads apart is the one thing they share.
+This is not a criticism of a method ours does not beat (Section~\ref{sec:exp:frontier}); it says the two
+families are not two estimates of one object, and that keeping heads apart is the one thing they share.
 
 \begin{corollary}[decorrelation prediction]
 \label{cor:decorrelate}
-If the two families measure different functionals, their scores should not be interchangeable: the rank
-correlation between them should be well below one, each should retain predictive signal once the other is
-conditioned on, and a combination of the two should exceed both. Section~\ref{sec:exp:decorrelate} tests the
-three predictions; two hold and the third fails.
+If the two families measure different functionals, their rank correlation should be well below one, each
+should retain signal once the other is conditioned on, and a combination should exceed both.
+Section~\ref{sec:exp:decorrelate} tests the three; two hold and the third fails.
 \end{corollary}
 
-\subsection{Why the call-local subgraph is length-invariant}
+\paragraph{Length invariance by construction.}
 \label{sec:theory:length}
-
-The detectors read the subgraph induced on the generated call rather than on the whole sequence, which matters
-for a confound. Lengths differ systematically between correct and hallucinated calls, so any feature that scales
-with $T$ can carry label information that has nothing to do with routing. The normalised Laplacian removes the
-crudest version of this.
-
-\begin{lemma}[bounded spectrum]
-\label{lem:bounded}
-For any weighted graph with non-negative weights and no isolated vertices,
-$\operatorname{spec}(\mathcal{L}) \subset [0,2]$, with $\lammax = 2$ if and only if a connected component is
-bipartite. The bound is independent of the number of nodes.
-\end{lemma}
-
-\begin{proof}
-Standard \citep{chung1997spectral}: for $x \ne 0$,
-$\frac{x^\top \mathcal{L} x}{x^\top x}$ equals a ratio whose numerator
-$\sum_{i<j} W_{ij} (y_i - y_j)^2$ with $y = D^{-1/2}x$ is bounded by
-$2\sum_{i<j} W_{ij}(y_i^2 + y_j^2) = 2 x^\top x$, with equality only in the bipartite case. \end{proof}
-
-Every per-head feature we use is a function of a spectrum contained in $[0,2]$ whatever the length of the call,
-whereas the combinatorial spectrum grows with degree and hence with $T$. Length invariance by construction does
-not prove the absence of a length confound, since the routing itself may correlate with length, so
-Section~\ref{sec:exp:confound} measures a surface-feature baseline built from lengths alone and reports every
-detector against it.
+Lengths differ systematically between correct and hallucinated calls, so a feature that scales with $T$ can
+carry label information unrelated to routing. For any weighted graph with non-negative weights and no isolated
+vertices, $\operatorname{spec}(\mathcal{L})\subset[0,2]$ whatever the number of nodes (Lemma~\ref{lem:bounded},
+Appendix~\ref{app:proofs}), so every per-head feature is a function of a bounded spectrum whatever the call
+length, whereas the combinatorial spectrum grows with $T$. Invariance by construction does not prove the
+absence of a length confound, since routing may itself correlate with length; the floor in every table
+measures it.

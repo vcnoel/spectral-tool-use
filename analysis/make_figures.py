@@ -552,7 +552,7 @@ def fig8_multiturn():
     ax.set_xlim(-0.5, len(tags) - 0.5 + 0.45)
     ax.tick_params(axis="x", length=0)
     ax.set_ylabel("failure rate, %")
-    ax.set_ylim(0, top * 1.3)                       # headroom for the two labels
+    ax.set_ylim(0, min(100, top * 1.3))             # headroom for the two labels
     ax.text(0.02, 0.97, "clean history", transform=ax.transAxes, va="top", fontsize=6.4,
             color=MUTED)
     ax.text(0.02, 0.89, "corrupted history", transform=ax.transAxes, va="top",
@@ -574,14 +574,19 @@ def fig8_multiturn():
     ax.tick_params(axis="x", length=0)
     ax.set_ylabel("AUC")
     ax.set_ylim(0.5, 1.0)
-    for di, (det, col) in enumerate(dets):
-        ax.text(0.98, 0.97 - 0.08 * di, det, transform=ax.transAxes, ha="right", va="top",
-                fontsize=6.2, color=col)
-    ax.text(0.02, 0.03, "● " + names.get(tags[0], tags[0])
-            + ("   ■ " + names.get(tags[1], tags[1]) if len(tags) > 1 else ""),
-            transform=ax.transAxes, ha="left", va="bottom", fontsize=6.2, color=INK2)
+    # detector identity as a figure-level legend above the panels, model
+    # identity by marker shape; neither can collide with the data
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], color=col, lw=1.4, label=det) for det, col in dets]
+    handles += [Line2D([], [], color=INK2, lw=0, marker="o", ms=3.5,
+                       label=names.get(tags[0], tags[0]))]
+    if len(tags) > 1:
+        handles += [Line2D([], [], color=INK2, lw=0, marker="s", ms=3.5,
+                           label=names.get(tags[1], tags[1]))]
+    fig.legend(handles=handles, loc="upper center", ncol=len(handles), fontsize=6.2,
+               handlelength=1.4, columnspacing=1.0, bbox_to_anchor=(0.5, 1.0))
     _panel_title(ax, "(b) what each detector still sees")
-    fig.tight_layout(w_pad=1.5)
+    fig.tight_layout(w_pad=1.5, rect=(0, 0, 1, 0.92))
     return _save(fig, "fig8_multiturn", {t: {"fisher_p": d[t]["fisher_p"]} for t in tags})
 
 

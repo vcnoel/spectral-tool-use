@@ -1,122 +1,65 @@
-\section{Method}
+\section{Reading the model at three levels}
 \label{sec:method}
 
-\subsection{Task}
+\paragraph{Task and labels.}
 \label{sec:method:task}
+A model receives a user request and tool schemas in its own chat format and generates greedily. We compare
+the call against the benchmark's ground truth after normalising both to a canonical name and argument
+dictionary, and record a \emph{failure mode} rather than a bit: \texttt{valid}, \texttt{wrong\_name},
+\texttt{wrong\_arg\_values}, \texttt{missing\_args}, \texttt{missing\_calls}, \texttt{no\_call},
+\texttt{unparseable\_call}, and, where no tool applies, \texttt{valid\_nocall} and \texttt{over\_trigger}. The
+two format failures, \texttt{no\_call} and \texttt{unparseable\_call}, are detectable from length alone, so every
+result is reported on the \emph{semantic} subset that excludes them, where a detector must separate a correct
+call from a well-formed wrong one; where the benchmark mixes in the no-applicable-tool category we further
+restrict to the \emph{call-expected} items. Calls cut off by our generation budget are excluded.
 
-A model is given a user request and a set of tool schemas in its own chat format, and generates greedily. The
-generated span either contains a tool call or does not. We label the call by comparing it against the benchmark's
-ground truth after normalising both sides to a canonical name and argument dictionary, and we record a
-\emph{failure mode} rather than a bit: \texttt{valid}, \texttt{wrong\_name}, \texttt{wrong\_arg\_values},
-\texttt{missing\_args}, \texttt{missing\_calls}, \texttt{no\_call} (prose instead of a call),
-\texttt{unparseable\_call}, and, on the benchmark category where no tool applies, \texttt{valid\_nocall} and
-\texttt{over\_trigger}. The binary label is \texttt{valid} and \texttt{valid\_nocall} against the rest.
-
-The modes are not bookkeeping. Two of them, \texttt{no\_call} and \texttt{unparseable\_call}, are format
-failures that a length feature can detect without any access to internals, so every result is reported both on
-the full set and on the \emph{semantic} subset that excludes them, where the detector must separate a correct
-call from a well-formed but wrong one. On the benchmark that mixes a category with no applicable tool, we report
-a third column restricted to the \emph{call-expected} items, because on the remaining items the label reduces to
-whether a call was emitted at all.
-
-\subsection{Access tiers}
+\paragraph{Access tiers.}
 \label{sec:method:tiers}
+Token log-probabilities are returned by every serving API; residual-stream states are a forward hook away in
+a stack that runs the model's own code but are not returned by hosted APIs; attention probabilities are the
+most awkward, since fused kernels never materialise them (Appendix~\ref{app:protocol}). We group detectors by
+what they consume, \emph{logits}, \emph{attention} (functions of the attention weights alone) and
+\emph{residual} (functions of the block outputs), and measure what each costs (Appendix~\ref{app:cost}).
+Keeping the tiers apart requires care: a family of published ``attention'' diagnostics projects residual states
+onto the attention eigenbasis \citep{noel2025gsp}, and in prior work built on that library four of five
+nominally spectral features were of this hybrid kind. Appendix~\ref{app:provenance} tags every feature by its
+tensors.
 
-Deployments differ in what they can read from a model, and the difference is not cosmetic. Token
-log-probabilities are returned by every serving API. Residual-stream states are a forward hook away in any
-stack that runs the model's own code, but are not returned by hosted APIs. Attention probabilities are the
-most awkward of the three: fused attention kernels never materialise them, so reading them requires the eager
-attention path or a second pass, which is what we do (Appendix~\ref{app:protocol}). The attention tier is
-therefore not the cheapest tier to reach; its interest is that it needs no activations, so a judge built on it
-can be trained and audited from attention maps alone, and that its features have a graph-theoretic reading
-that the theory of Section~\ref{sec:theory} can address. We group detectors by what they consume and report a
-frontier over tiers rather than a single ranking, and we measure what each costs at the moment the call is
-produced (Appendix~\ref{app:cost}).
-
-\begin{description}[topsep=2pt,itemsep=1pt,leftmargin=1.2em]
-\item[Logits.] Mean token log-probability of the generated span, with the sign fixed on training folds only.
-\item[Attention.] Functions of the attention weight matrices alone (Section~\ref{sec:method:attn}).
-\item[Residual.] Functions of the residual-stream states, that is, the block outputs that
-\texttt{output\_hidden\_states} returns (Section~\ref{sec:method:resid}).
-\end{description}
-
-We keep the tiers strictly separate, which requires care. A family of published ``attention'' diagnostics
-projects residual-stream vectors onto the attention eigenbasis, giving Dirichlet energy, smoothness, spectral
-entropy and high-frequency energy ratio \citep{noel2025gsp}. Those quantities require both tensors and cannot be
-computed under attention-only access. In prior work built on that library, four of five nominally spectral
-features were of this hybrid kind, which inflates an attention-only claim with residual-stream information. Appendix~\ref{app:provenance} tags every feature by the tensors it consumes.
-
-\subsection{Attention-only detectors}
+\paragraph{Attention-only detectors.}
 \label{sec:method:attn}
+All are computed on the subgraph induced on the generated call, using Eq.~\ref{eq:adj} and the normalised
+Laplacian. \emph{Per-head spectral profile (ours)}: for each layer $\ell$ and head $h$, one eigendecomposition
+of $\mathcal{L}_{\ell h}$ yields five eigenvalue-only quantities, the Fiedler value $\lamtwo$, the ratio
+$\lamtwo/\lammax$, the normalised spectral entropy of the eigenvalues, the eigenvalue mass in the upper half of
+the spectrum, and the spectral radius $\lammax$; the feature vector is the $L\times H\times 5$ array and five
+cost what one costs. \emph{Cross-layer dynamics (ours)}: per-head differences of a chosen quantity between
+consecutive layers. \emph{Head-averaged summaries}: the per-layer values, trajectory statistics and
+layer-to-layer derivatives the prior literature uses, retained as ablations. \emph{LapEigvals}
+\citep{binkowski2025lapeigvals}: the published attention-only state of the art from the authors' code, per
+layer and head the position-normalised in-degree minus self-loop, sorted, top-$k$ kept with $k$ chosen on
+validation from $\{5,10,25,50,100\}$, and a balanced logistic regression. \emph{Lookback Lens}
+\citep{chuang2024lookback}: per-head attention shares on prompt against generation.
 
-All of the following are computed on the subgraph induced on the generated call, using
-Eq.~\ref{eq:adj} and the normalised Laplacian.
-
-\paragraph{Per-head spectral profile (ours).}
-For each layer $\ell$ and head $h$ we take one eigendecomposition of $\mathcal{L}_{\ell h}$ and read five
-eigenvalue-only quantities: the Fiedler value $\lamtwo$, the connectivity ratio $\lamtwo/\lammax$, the
-normalised spectral entropy of the eigenvalue distribution, the fraction of eigenvalue mass in the upper half of
-the spectrum, and the spectral radius $\lammax$. Because all five come from the same decomposition, five cost
-what one costs. The feature vector is the $L \times H \times 5$ array. We also evaluate each of the five alone,
-to see which carries the signal.
-
-\paragraph{Cross-layer dynamics (ours).}
-Per-head differences between consecutive layers, $\phi_{\ell+1,h}-\phi_{\ell,h}$, for a chosen $\phi$. A flat
-per-layer feature set represents depth only implicitly; the differences make the evolution explicit, and the
-theory in Section~\ref{sec:theory:lapeig} predicts that a purely local feature family cannot express it.
-
-\paragraph{Trajectory and velocity summaries.}
-The head-averaged families that the prior literature uses, retained as ablations rather than as competitors:
-per-layer metric values, trajectory statistics over layers (mean, dispersion, slope, range, extremal steps), and
-layer-to-layer derivatives. Section~\ref{sec:exp:perhead} contrasts them with the per-head profile on identical
-data.
-
-\paragraph{LapEigvals \citep{binkowski2025lapeigvals}.}
-The published attention-only state of the art, run from the authors' released implementation: per-layer,
-per-head, position-normalised in-degree minus self-loop, sorted, top-$k$ kept, with $k$ selected on validation
-from $\{5,10,25,50,100\}$ and a balanced logistic regression on the concatenation. Section~\ref{sec:theory:lapeig}
-discusses what these features measure.
-
-\subsection{Residual-stream detectors}
+\paragraph{Residual-stream detectors.}
 \label{sec:method:resid}
+\emph{Token-role probe} \citep{healy2026internal}: at eight depths spaced over the model's layers, the residual
+state at the function-name token, the mean over argument-value tokens and the state at the closing delimiter
+are concatenated and a classifier is trained on them; we evaluate the original one-hidden-layer network and a
+regularised linear probe, with positions located inside the generated span only. \emph{Token-level probe}
+\citep{obeso2025realtime}, \emph{Gram spectrum} \citep{chen2024inside} and \emph{cross-layer dynamics}
+\citep{icrprobe2025} complete the tier.
 
-\paragraph{Token-role probe \citep{healy2026internal}.}
-The published state of the art for this task. At eight evenly spaced depths, the residual state at the
-function-name token, the mean over argument-value tokens, and the state at the closing delimiter are
-concatenated, and a classifier is trained on the concatenation. We evaluate both the original single-hidden-layer
-network and a regularised linear probe, and the token positions are located inside the generated span only.
-
-\paragraph{Gram spectrum \citep{chen2024inside}.}
-Eigenvalues of the covariance of the residual states over the generated span, together with effective rank and a
-log-determinant surrogate, following the EigenScore family.
-
-\subsection{Evaluation protocol}
+\paragraph{Protocol.}
 \label{sec:method:protocol}
-
-\paragraph{Grouped splits at the level of the tool.}
-Examples are grouped by ground-truth tool name and split at the group level in a five-fold cross-fit, so every
-score is on tools absent from training. This is stricter than splitting by prompt, and it is necessary: with
-prompt-level splits, a classifier built from the tool identity alone reaches
-\aucToolConfoundLlamaOneBGlaiveAll{} AUC on one of our runs, because errors concentrate on particular tools.
-Under tool-level splits the same classifier is at or below chance everywhere.
-
-\paragraph{Pooled cross-fit scoring.}
-Each example is scored exactly once, by a model that never saw its tool, and we report one AUC pooled over the
-whole dataset rather than the mean of per-fold AUCs, which on this data would be computed on folds containing a
-handful of positives. We repeat the whole procedure over five split seeds and report the mean and standard
-deviation across seeds.
-
-\paragraph{Selection discipline.}
-Every hyperparameter, the direction of every unsupervised score, and the $k$ of LapEigvals are chosen on
-training and validation folds only. The one place a sweep over features appears, we select the feature on
-training folds and report it on test, and label it as such.
-
-\paragraph{Confound panel.}
-Alongside the detectors we train three deliberately uninformative classifiers: prompt and generation lengths plus
-a truncation flag, generation length alone, and a one-hot encoding of the ground-truth tool. A detector is only
-interesting to the extent that it exceeds these.
-
-\paragraph{Labels are recomputed at evaluation time.}
-Labels are a function of the labelling code, not of the extraction run, so the evaluator re-derives every label
-from the stored generation. This is what let us discover, after the fact, that an earlier labelling rule counted
-a model's use of its own current date as a hallucination.
+(i) Examples are grouped by ground-truth tool and split at the group level in a five-fold cross-fit, so every
+score is on tools absent from training; with prompt-level splits a classifier on the tool identity alone
+reaches \aucToolConfoundLlamaOneBGlaiveAll{} AUC on one run. (ii) Each example is scored once by a model that
+never saw its tool, one AUC is pooled over the dataset, and the procedure is repeated over five split seeds.
+(iii) Every hyperparameter, the direction of every untrained score and the $k$ of LapEigvals are chosen on
+training and validation folds only. (iv) Three deliberately uninformative classifiers, lengths with a
+truncation flag, generation length alone, and the tool identity, are trained under the same protocol. (v)
+Every difference between detectors carries a paired, class-stratified bootstrap interval over items, pooled
+across seeds, with Holm correction inside a contrast family fixed before any result was read
+(Appendix~\ref{app:stats}). (vi) A run whose minority class is below \minClassPerSubset{} carries a dagger
+and enters no aggregate. (vii) Labels are recomputed from the stored generations at evaluation time
+(Appendix~\ref{app:validity}).

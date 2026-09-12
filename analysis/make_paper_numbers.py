@@ -699,9 +699,12 @@ def main():
                     counts[label]["below"] += 1
                 else:
                     counts[label]["span"] += 1
+    # with no paired.json anywhere the counts are not zero, they are unmeasured
+    any_paired = any((DATA / f"pilot_v2_{tag}" / "paired.json").exists() for tag in RUNS)
     for label, cinfix in CONTRASTS.items():
         for k, v in counts[label].items():
-            define(f"nRuns{cinfix}{k.capitalize()}", str(v))
+            define(f"nRuns{cinfix}{k.capitalize()}",
+                   str(v) if any_paired else f"\\pending{{nRuns{cinfix}{k.capitalize()}}}")
 
     # replication drift between an earlier run and its superseding re-extraction
     for old, new in SUPERSEDED.items():

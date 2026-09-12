@@ -3,62 +3,45 @@
 
 \paragraph{Hallucination in tool use.}
 Tool-calling benchmarks measure whether a model can call the right function with the right arguments
-\citep{patil2024gorilla,qin2024toolllm,patil2025bfcl}, and the current leaderboard adds an explicit category in
-which no available tool applies and the model is expected to abstain \citep{patil2025bfcl}. These evaluate
-capability. The question here is different: given that a model sometimes fails, can the failure be detected from
-the model's own state before the call executes. \citet{healy2026internal} first showed that it can, with a probe
-on residual-stream states at the function-name, argument and delimiter positions, and that probe is the
-residual-stream baseline we compare against and extend. Concurrently, \citet{yeats2026calls} train linear
-probes on the hidden states of eighteen models on the same benchmark and find that the probes catch
-argument errors of the right type and wrong value and generalise to unseen error kinds. That work establishes
-breadth on the residual tier; it has no attention tier, no surface floor and no held-out-tool split, which are
-the three things that decide the comparison this paper makes.
+\citep{patil2024gorilla,qin2024toolllm,patil2025bfcl}, and the current leaderboard adds a category in which no
+tool applies and the model should abstain \citep{patil2025bfcl}. These evaluate capability; our question is
+whether a failure can be detected from the model's own state before the call executes.
+\citet{healy2026internal} first showed that it can, with a probe on residual-stream states at the
+function-name, argument and delimiter positions; that probe is the residual-stream reference we compare
+against. Concurrently, \citet{yeats2026calls} train linear probes on the hidden states of eighteen models on
+the same benchmark and find they catch argument errors of the right type and wrong value and generalise to
+unseen error kinds. That work establishes breadth on the residual tier; it has no attention tier, no length
+floor and no held-out-tool split, which are the three things that decide the comparison made here.
 
 \paragraph{Probing the residual stream.}
 Supervised probes on hidden states detect factual error \citep{azaria2023internal,marks2024geometry}, predict
 hallucination risk from the query alone \citep{ji2024internal}, and stand in for sampling-based estimates at
-the cost of a single pass \citep{kossen2024sep}. \citet{orgad2025know} showed that the signal concentrates at
-the exact-answer tokens rather than being spread over the response, which is the observation the token-role
-probe applies to a call's name, arguments and delimiter. The family has been developed in several further
-directions: covariance and eigenvalue statistics of the states
-\citep{chen2024inside}, token-level probes trained on entity-level annotations that operate in real time on
-long-form generation \citep{obeso2025realtime}, cross-layer dynamics of the residual stream
-\citep{icrprobe2025}, spectral analysis of hidden-layer trajectories \citep{li2025hsad}, and probes over factual
-claims \citep{bhatnagar2026halt}. Process reward models verify reasoning steps with a similar supervised
-signal \citep{lightman2024verify}. All of these require residual-stream access. Our contribution to this family
-is not a new probe but the observation that the token-role probe remains the strongest single detector we
-measured, and that the correct comparison for it is an attention-only method at matched protocol.
+the cost of one pass \citep{kossen2024sep}; \citet{orgad2025know} showed the signal concentrates at the
+exact-answer tokens, which is what the token-role probe applies to a call. The family also includes
+covariance spectra \citep{chen2024inside}, real-time token-level probes \citep{obeso2025realtime},
+cross-layer dynamics \citep{icrprobe2025}, hidden-layer trajectories \citep{li2025hsad} and claim-level probes
+\citep{bhatnagar2026halt}, all requiring residual-stream access. Our contribution here is not a new probe but
+the finding that the token-role probe remains the strongest single detector under a stricter protocol.
 
 \paragraph{Reading attention.}
-Attention is the tensor practitioners are most likely to be able to read, and it has been used to decide
-cache eviction \citep{zhang2023h2o}, to detect hallucination through the ratio of attention paid to context
-against generation \citep{chuang2024lookback}, to aggregate multi-layer attention into a single map
-\citep{abnar2020quantifying}, and to score consistency of attention across depth
-\citep{badash2026layers}. The spectral line treats a layer as a weighted graph or kernel:
-\citet{sriramanan2024llmcheck} read eigenvalues of attention kernel maps and of hidden-state covariance in a
-single pass, \citet{noel2025gsp} introduced Laplacian diagnostics of the attention graph, and
-\citet{binkowski2025lapeigvals} obtained the strongest attention-only results to date from top-$k$ Laplacian
-values; the same group has since read hallucination from attention sinks \citep{binkowski2026sinks}, a
-per-head signal we do not evaluate here. \citet{dahlem2026transport} prove that every transpose-invariant
-spectral diagnostic of attention is blind to the direction of attention flow and evaluate spectral detectors
-under length control; every spectrum in this paper is of a symmetrised graph and is therefore
-orientation-blind in their sense, which bounds what the attention tier can see and is why our length floor
-sits in every table. Two features of this literature motivate our theory section. First, nearly all of it averages over
-heads before computing anything, which Section~\ref{sec:theory} shows is the decisive step. Second, part of it
-computes quantities that require residual states as a graph signal while presenting them as properties of
-attention; we separate the two and tag every feature by the tensors it consumes.
+Attention is the tensor practitioners can most often read, used for cache eviction \citep{zhang2023h2o},
+for hallucination through the ratio of attention to context against generation \citep{chuang2024lookback},
+for multi-layer aggregation \citep{abnar2020quantifying} and for cross-depth consistency
+\citep{badash2026layers}. The spectral line treats a layer as a graph or kernel: \citet{sriramanan2024llmcheck}
+read eigenvalues of attention kernel maps, \citet{noel2025gsp} introduced Laplacian diagnostics of the
+attention graph, and \citet{binkowski2025lapeigvals} obtained the strongest attention-only results to date
+from top-$k$ Laplacian values; the same group has since read hallucination from attention sinks
+\citep{binkowski2026sinks}, a per-head signal we do not evaluate here. \citet{dahlem2026transport} prove that
+every transpose-invariant spectral diagnostic is blind to the direction of attention flow and evaluate
+spectral detectors under length control; every spectrum in this paper is of a symmetrised graph and is
+orientation-blind in their sense, which bounds what the attention tier can see and is why a length floor
+sits in every table. Two features of this literature motivate Section~\ref{sec:theory}: nearly all of it
+averages over heads before computing anything, and part of it computes quantities that need residual states
+as a graph signal while presenting them as properties of attention. We tag every feature by the tensors it
+consumes (Appendix~\ref{app:provenance}).
 
 \paragraph{Sampling and output-side signals.}
 Semantic entropy and self-consistency detect hallucination by sampling several continuations
-\citep{farquhar2024semantic,manakul2023selfcheckgpt}. They are strong but they multiply inference cost and they
-require the freedom to sample, which an agent about to execute an action does not have. We therefore restrict
-this study to a single forward pass and include the cheapest output-side signal, mean token log-probability, as a
-baseline rather than as a competitor.
-
-\paragraph{Position of this work.}
-The two internals families were developed independently, and the open question was which to deploy. We answer it
-as a frontier over access rather than a ranking, and in the course of answering it we find that the interesting
-axis is not residual versus attention but averaged versus per head. The negative half of the result is as
-informative as the positive half: at matched protocol our per-head detector does not beat
-\citet{binkowski2025lapeigvals}, and Section~\ref{sec:theory:lapeig} says why the two should be close despite
-computing different functionals.
+\citep{farquhar2024semantic,manakul2023selfcheckgpt}. They multiply inference cost and require the freedom to
+sample, which an agent about to act does not have; we restrict the study to a single pass and include the
+cheapest output-side signals, summaries of the token log-probabilities, as baselines rather than competitors.

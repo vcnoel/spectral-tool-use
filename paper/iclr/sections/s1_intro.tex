@@ -1,104 +1,55 @@
 \section{Introduction}
 \label{sec:intro}
 
-Language model agents act by calling tools. A wrong call is rarely obvious at the moment it is made: it parses,
+Language model agents act by calling tools, and a wrong call is rarely obvious when it is made: it parses,
 its arguments have the right types, it satisfies the schema, and the probabilities the model assigned to its
-tokens look ordinary. The runtime has no reason to hesitate, so a transfer is made or a resource is provisioned
-before a person sees it. Anything that catches such an error must therefore act in the interval between the model
-producing the call and the system executing it. That interval is too short to sample several continuations, to
-consult a second model, or to check an external source, and the only evidence available in it is the state of the
-model that produced the call.
+tokens look ordinary. The runtime has no reason to hesitate, so a transfer is made or a resource is
+provisioned before a person sees it. Whatever catches such an error must act between the model producing the
+call and the system executing it, an interval too short to sample continuations, consult a second model or
+check an external source. The only evidence available in it is the state of the model that produced the
+call.
 
-This paper asks how good a judge that internal state can be. The question has a practical form as well as a
-scientific one, because different signals require different access. Serving stacks expose token probabilities
-almost everywhere, attention weights with some effort, and residual-stream activations only rarely. A detector
-that needs activations and one that needs only attention are therefore not alternatives competing for the same
-place in a system; they belong to different deployments. We accordingly report our results as a frontier over
-levels of access rather than as a ranking of methods.
+This paper asks how good a judge that state can be, and the question has a practical shape because
+different signals need different access. Serving stacks expose token probabilities almost everywhere,
+attention weights with some effort, and residual-stream activations rarely. A detector that needs
+activations and one that needs only attention are not alternatives competing for one place in a system;
+they belong to different deployments. We therefore report a frontier over levels of access rather than a
+ranking of methods.
 
-Two lines of work have proposed internal judges for this task. One trains a probe on the residual stream at the
-structural positions of the generated call, the function name, the argument values, and the closing delimiter.
-The other reads a layer of attention as a weighted graph and computes spectral properties of it. Both report
-strong results, both need only a single forward pass, and because they consume different tensors neither has
-served as a baseline for the other. Several related detectors read hidden-state covariance, cross-layer
-dynamics of the residual stream, per-token activations with token-level supervision, or the balance of attention
-between the prompt and the generated text. This paper places them on the same data, splits and labels, and
-measures each against baselines built from surface properties that carry no information about the model's
-internal state.
+Two lines of work have proposed internal judges for this task: probes on the residual stream at the
+structural positions of the call \citep{healy2026internal}, and spectral diagnostics of a layer of attention
+read as a weighted graph \citep{noel2025gsp,binkowski2025lapeigvals}. Because they consume different tensors,
+neither has served as a baseline for the other. We place them and the related detectors on the same data,
+splits and labels, with every tool held out at test and every detector measured against baselines built from
+lengths alone.
 
-Three findings organise the results. The first concerns when internal signals are worth reading at all. On the
-model family that hallucinates most, averaged token log-probability is useless and falls to chance or below,
-while probes on internal state are strong: these are models that make wrong calls confidently, which is the case
-a guardrail exists to catch. On the more recent families we tested, the picture reverses. Those models fail far
-less often, they express appropriate uncertainty when they do, and averaged log-probability then outscores every
-trained detector we measured. The reversal is not a curiosity, because it decides whether an operator should
-build an internal judge at all, so we test the obvious explanation for it. A trained probe needs labelled
-failures and confidence needs none, so a family that rarely fails supplies few positives to train on. We measure
-the relationship between the number of labelled failures and the advantage of a probe over confidence across
-runs, and we thin the positives of a well-supplied run to see whether scarcity alone reproduces the reversal. It
-does not: the probe survives a tenfold reduction of its labels, so the split is a property of the model family
-and not of the label budget, and we say plainly that with five families we cannot yet name the property.
-
-The second finding is that among trained detectors, probes on the residual stream at the structural positions of
-the call are the strongest judge we measured, and that diagnostics of the attention graph come within a few
-points of them. An operator without access to activations is therefore not restricted to reading confidence,
-which is the practically useful half of the comparison. Both findings hold when the call is made with a
-conversation behind it: on the multi-turn categories of the benchmark, replayed with the correct earlier
-calls or with one deliberately wrong one in the history, the judges score as they do on a fresh prompt, and
-a judge that has never seen a corrupted history is not fooled by one.
-
-The third concerns how attention must be read. Nearly all attention-graph diagnostics average the attention
-matrix over heads before computing anything, and that step, rather than the choice of spectral quantity computed
-afterwards, determines whether the diagnostic works at all. Analysing the heads separately moves the attention
-family from below a surface baseline to within reach of the residual stream, and a ladder of controls that
-hold the number of features fixed while varying the resolution shows that it is resolution, not
-dimensionality, that does the work. Section~\ref{sec:theory} explains
-why this must be so. The graph Laplacian is linear in the adjacency matrix and algebraic connectivity is a
-pointwise minimum of linear functionals of it, hence concave, so averaging over heads reports a graph at least as
-well connected as the typical head, with equality exactly when all heads share a Fiedler vector. We measure how far
-from that condition real layers sit, and find the averaged graph reports connectivity well above the mean
-over heads in every layer we examined. A companion result requires no assumptions at
-all: any function of the averaged graph is constant across head configurations with the same mean, so the loss
-belongs to averaging rather than to any particular readout.
-
-The same analysis accounts for a baseline we do not surpass. The strongest published attention-only detector
-survives our stricter protocol and remains within noise of ours. Its authors note that the causal Laplacian is
-triangular, so its eigenvalues are its diagonal; we draw out what follows, namely that the features are a
-per-position degree sequence, invariant to any rewiring of attention that preserves in-degrees, whereas the
-symmetrised spectra we read are global functionals of the routing. That two such different quantities perform
-alike once heads are kept apart is the clearest evidence that head resolution, not the readout, carries the
-signal.
-
-Finally we examine whether the two families should be combined, which is the natural question once both are shown
-to work. They are demonstrably not redundant: each retains substantial predictive signal after the other is
-regressed away. Yet nothing we tried converts that independence into a better detector. Concatenating their
-features does not help, stacking their scores does not help, and requiring both judges to agree does not help
-either once it is compared against a single judge at the recall the rule actually achieves rather than at a
-higher one. We report this as a negative result with its operating points rather than explain it away, and
-the recommendation that follows is to choose the judge the access tier allows and spend the labelling effort
-on its threshold.
+Three findings organise the results. First, whether an internal judge is worth building at all divides
+cleanly by model family. On the families that hallucinate most, mean token log-probability is at chance or
+below while probes on internal state are strong: these models make wrong calls confidently, which is the case
+a guardrail exists for. On the more recent families we tested the picture reverses and confidence outscores
+every trained detector; the obvious explanation, that a family which rarely fails starves its probe of
+labels, fails a direct test. Second, where internals are needed, the residual-stream probe is the strongest
+judge we measured and attention-only diagnostics come within a few points of it, so an operator without
+activations is not reduced to reading confidence; both findings survive a conversation behind the call,
+including one carrying a deliberately wrong earlier call. Third, how attention is read decides whether the
+attention tier works at all: nearly every published diagnostic averages the attention matrix over heads
+before computing anything, and analysing the heads separately moves the family from below a length baseline
+to within reach of the residual stream, with width-matched controls attributing the gain to resolution.
+Section~\ref{sec:theory} says why this must be so, and why the strongest published attention-only detector,
+which already keeps heads apart and reads an in-degree sequence rather than a spectrum, is a baseline we
+match and do not beat.
 
 \paragraph{Contributions.}
 \begin{enumerate}[topsep=2pt,itemsep=1pt,leftmargin=1.4em]
-\item A controlled comparison of internal judges for hallucinated tool calls, covering the published detectors of
-both families and several related ones, across small models spanning several attention designs and two
-tool-calling benchmarks in four configurations including multi-turn conversations with a corrupted-history
-condition, under splits that hold out whole tools and against a panel of uninformative baselines.
-\item The finding that whether a trained internal judge beats untrained output confidence divides cleanly by
-model family and is not explained by the number of labelled failures, by size, or by attention design, tested
-across runs and within one run by thinning its positives; the practical consequence is a measurement to make
-on the model to be deployed before choosing a guardrail.
-\item An account of why head averaging limits attention-graph diagnostics: an annihilation result that holds
-for any averaged readout, a concavity result that fixes the direction of the error and its equality
-condition, a measurement of how far real layers sit from that condition, and a ladder of controls showing
-that the gain from keeping heads apart is a matter of resolution and not of feature count. We also draw
-out, from its authors' own observation that the causal Laplacian is triangular, that the strongest published
-attention-only detector reads a degree sequence rather than a spectrum, which explains why two very different
-readouts perform alike.
-\item An analysis of whether the two families combine, showing that they are far from interchangeable and
-yet that feature concatenation, score stacking and an agreement rule all fail to improve on the better single
-judge once compared at matched recall, together with the observation that precision is bounded by the
-model's failure rate.
-\item An audit of the measurement chain itself, listing the defects that make results in this area fragile
-together with the guards that catch them.
+\item A controlled comparison of internal judges for hallucinated tool calls across five model families,
+three attention designs and three data distributions, with a multi-turn condition, held-out tools, a length
+floor in every table and a paired interval on every reported difference.
+\item The finding that whether a trained judge beats output confidence is a property of the model family,
+not of size, attention design or label budget, tested across runs and by thinning one run's positives.
+\item An account of why head averaging limits attention-graph diagnostics: an annihilation result for any
+averaged readout, a concavity result fixing the direction of the error, a measurement of how far real layers
+sit from its equality condition, and controls separating resolution from width.
+\item A negative result on combining the two families, which carry independent evidence yet do not combine
+into a better detector at matched recall, and an audit of the measurement defects that make results in this
+area fragile.
 \end{enumerate}

@@ -2,84 +2,34 @@
 \label{sec:disc}
 
 \paragraph{Whether to build an internal judge is a question about the model.}
-The result we did not expect is that the answer changes by model family, and changes completely
-(Section~\ref{sec:exp:budget}). On one group of families output confidence is uninformative and a trained probe
-is the only thing that works; on the other, confidence is already as good as anything we trained. The two groups
-separate without overlap on both of our evaluation populations, and the separation is not explained by how many
-labelled failures each model supplies, by its size, by its attention design, or by when it was released. We
-cannot say which property of training produces the difference, and with five families we would not try. What
-follows practically is a measurement rather than a rule of thumb: score output confidence on a few hundred
-labelled calls from the model that will be deployed, and build an internal judge only if that score is poor.
-
-\paragraph{What the two internal tensors measure.}
-Where internals do help, the residual stream at the structural positions of the call is the strongest signal, and
-it should be: those states are close to the decision the model is making, and a probe reads that decision almost
-directly. The attention graph is one step removed, describing how information was routed while the call was
-produced rather than what was concluded. That a routing summary recovers most of the probe's performance says the
-two are tightly coupled during a tool call, and the few points between them are a reasonable estimate of what the
-summary loses. The practical consequence is the frontier of Section~\ref{sec:exp:frontier}: an operator who
-cannot reach the residual stream is not thereby reduced to reading confidence.
+The result we did not expect is that the answer changes by family, and changes completely, with the
+separation explained neither by labelled failures, size, attention design nor release date. What follows is a
+measurement rather than a rule of thumb: score confidence on a few hundred labelled calls from the model to be
+deployed, and build an internal judge only if that score is poor. Two earlier conclusions of this study,
+drawn when it contained one family, were overturned by more: that small models cannot abstain when no tool
+applies, and that confidence is uniformly useless (Appendix~\ref{app:arch}).
 
 \paragraph{Resolution, not the readout.}
-Two observations point the same way. Within the attention tier, the head-averaged readouts fail and the
-per-head readouts succeed on identical data (Table~\ref{tab:detectors}), controls that hold the number of
-features fixed attribute the difference to resolution rather than dimensionality
-(Section~\ref{sec:exp:ladder}), and Section~\ref{sec:theory:lapeig} shows that the strongest published member
-of that tier is an in-degree sequence rather than a spectrum, so the two best attention detectors agree on
-almost nothing except keeping heads apart.
-Within the residual tier the two detectors that read designated positions, the token-role probe and the
-token-level probe, are the strongest, while the two that pool over the whole span, a covariance spectrum and a
-cross-layer dynamics summary, are markedly weaker. In both tiers the detectors that preserve resolution win and
-the detectors that pool it away lose, which suggests the useful signal is local, carried by particular heads and
-particular positions, and that a practitioner's effort is better spent preserving that locality than selecting a
-statistic to compute on top of it.
-
-\paragraph{Combining the two families.}
-They are not redundant: each retains substantial predictive signal after the other is regressed away
-(Section~\ref{sec:exp:decorrelate}). Yet nothing we tried converts that independence into a better detector.
-Concatenating features does not help, stacking scores does not help, and the rule an operator would reach for
-without any fitting, flagging a call when both judges fire, does not help either once it is compared against one
-judge at the recall the rule actually reaches. We do not have a mechanism for this that survives our own
-checks: a shortage of labels cannot be the reason, since a two-weight combiner had hundreds of out-of-fold
-positives on the runs where it failed and a far larger probe survives a tenfold thinning of its labels
-(Section~\ref{sec:exp:budget}). The two scores agree on the failures that matter more than their overall
-correlation suggests. The practical advice is duller than we expected to give: use the judge your access allows
-and spend the labelling budget on its threshold.
+Within the attention tier the head-averaged readouts fail and the per-head readouts succeed on identical
+data, width-matched controls attribute the difference to resolution, and the strongest published member of
+the tier reads an in-degree sequence, so the two best attention detectors agree on almost nothing except
+keeping heads apart. Within the residual tier the detectors that read designated positions lead and those
+that pool over the span trail. In both tiers the detectors that preserve locality win.
 
 \paragraph{Negative results worth stating.}
-We do not beat the attention-only state of the art; at matched protocol the two are within seed noise, and our
-contribution to that tier is an explanation and a compression rather than an improvement. The cross-layer
-dynamics features that our own analysis motivates help in some runs and not in others, so we report them as an
-available channel rather than a default. And the first version of this study, which contained only one model
-family, produced two conclusions that more families overturned: that small models cannot abstain when no tool
-applies, and that output confidence is uniformly useless. Both were artefacts of the sample.
-
-\paragraph{Plumbing dominates method.}
-The largest effects we met while building this study were not differences between detectors but defects in the
-measurement chain, and each produced a plausible and wrong number: a chat template that silently discarded the
-tool schemas, so a model appeared to fail on every example; a reasoning model left in its default mode, which
-spent its generation budget before calling anything and turned a length feature into an apparent detector; a
-labelling rule that counted a model's use of its own current date as a fabrication; a tokeniser whose structural
-call tags were deleted by a routine decoding option; and a truncation flag that was wrong for an entire model
-family. Because internal-state detection has no external check on any of these, the confound panel and the
-stratification of labels by failure mode were not decoration; they were the only reason we noticed.
-Appendix~\ref{app:validity} records each defect with the guard that now prevents it.
+We do not beat the attention-only state of the art; at matched protocol the two are within their paired
+intervals, and our contribution to that tier is an explanation and a compression. The two families are not
+redundant, yet nothing we tried converts that into a better detector: use the judge your access allows and
+spend the labelling budget on its threshold. The largest effects we met while building the study were defects
+in the measurement chain, each producing a plausible wrong number, and the confound panel and the
+failure-mode stratification were the only reason we noticed (Appendix~\ref{app:validity}).
 
 \paragraph{Limitations.}
-The models run from 0.8B to 4B parameters, chosen so that a dozen runs with per-head eigendecompositions fit a
-single consumer GPU, and nothing here establishes how the family split behaves at larger scale, which is the
-first experiment we would add. Detectors are trained per model, since per-head features are indexed by layer and
-head and do not transfer across architectures; the practical recipe is a small labelled calibration set for each
-deployed model. The multi-turn evaluation is teacher-forced: the history holds the benchmark's calls, or one
-deliberately wrong call reported as successful, rather than the model's own trajectory with executed tool
-outputs. It shows that a judge is not disturbed by a wrong call in the history; it cannot show what a wrong
-tool \emph{result} does, which needs the benchmark's simulated back ends and is the next experiment. Labels
-come from comparing a call against a benchmark's ground truth, which is a proxy for whether the action would
-have been harmful: a wrong but harmless call and a correct but unsafe one are not distinguished, and on the
-single-turn runs arguments the schema does not define are not penalised (Appendix~\ref{app:validity}). The
-family split is confounded with the call format the families emit, which a forced-format control would
-resolve. Every attention feature here is computed on a symmetrised graph and so cannot see the direction of
-attention flow \citep{dahlem2026transport}; the antisymmetric part of the attention matrix is an unread
-channel, as are the attention-sink statistics of \citet{binkowski2026sinks}. Finally, the attention tier is
-the most expensive to read (Appendix~\ref{app:cost}); on the hardware we measured the cost is a few percent of
-generation, and we have not measured it on a production stack.
+Models run from 0.8B to 4B parameters, chosen so a dozen runs with per-head eigendecompositions fit one
+consumer GPU; how the family split behaves at scale is the first experiment we would add. Detectors are
+trained per model. The multi-turn evaluation is teacher-forced and cannot show what a wrong tool result
+does. Labels compare a call to a benchmark's ground truth, a proxy for harm. The family split is confounded
+with the call format the families emit. Every attention feature is computed on a symmetrised graph and cannot
+see the direction of attention flow \citep{dahlem2026transport}; the antisymmetric part and the sink
+statistics of \citet{binkowski2026sinks} are unread channels. The attention tier's cost was measured on one
+GPU, not a production stack.
