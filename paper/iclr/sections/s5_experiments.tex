@@ -61,7 +61,7 @@ while the floor falls to \transferSurfaceConfoundLlamaThreeBGlaiveToLlamaThreeBB
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.9\linewidth]{fig6_family}
+\includegraphics[width=0.85\linewidth]{fig6_family}
 \caption{The advantage of the best residual probe over mean log-probability on every run, (a) on every
 parseable call and (b) on the call-expected items, coloured by model family. The two groups do not overlap
 on either population; for the recent families the sign of the effect depends on the population, the
@@ -82,12 +82,12 @@ so we report the family means, Qwen3 \famGapQwenThreeSem{}, Gemma-3 \famGapGemma
 the call-expected items the recent families average \famGapRecentCall{} and confidence beats every trained
 detector on \famConfWinsCall{} of \famNRecentCall{} such runs.
 
-The obvious explanation fails. The recent families also fail far less often, and a probe needs labelled
-failures while confidence needs none, so their probes might be starved. Thinning the labelled failures of the
-Llama-1B run on BFCL from \curveBaseLlamaOneBBfclFullPos{} to \curveBaseLlamaOneBBfclLowPos{}, a tenfold
-reduction, costs the probe \curveBaseLlamaOneBBfclDrop{} AUC, from \curveBaseLlamaOneBBfclFull{} to
-\curveBaseLlamaOneBBfclLow{}, still far above the \confBaseLlamaOneBBfcl{} confidence reaches on the same
-data. Across runs the rank correlation between labelled failures and the probe's advantage is
+The obvious explanation fails. The recent families also fail far less often, so their probes might be
+starved of labelled failures. Thinning the labelled failures of the Llama-1B run on BFCL from
+\curveBaseLlamaOneBBfclFullPos{} to \curveBaseLlamaOneBBfclLowPos{} costs the probe
+\curveBaseLlamaOneBBfclDrop{} AUC, from \curveBaseLlamaOneBBfclFull{} to \curveBaseLlamaOneBBfclLow{}, still
+far above the \confBaseLlamaOneBBfcl{} confidence reaches on the same data. Across runs the rank correlation
+between labelled failures and the probe's advantage is
 \famSpearmanSem{} ($p=\famSpearmanPSem{}$) and vanishes within each family, and Qwen3.5-0.8B supplies
 \posQwenSmallBfclCount{} failures, more than most runs where the probe wins, with confidence still ahead. Nor
 is it the summary: the best of nine confidence summaries narrows the probe's advantage on Llama-1B on BFCL
@@ -115,7 +115,7 @@ Appendix~\ref{app:tables} (Figure~\ref{fig:resolution}) establish that it is.
 
 \begin{figure}[t]
 \centering
-\includegraphics[width=0.78\linewidth]{fig3_ladder}
+\includegraphics[width=0.7\linewidth]{fig3_ladder}
 \caption{Resolution or width. Mean AUC over \ladNRuns{} runs, same stored features, classifier and splits, as
 the number of heads kept apart increases (grey: individual runs). The two controls at the right hold the
 per-head width but destroy head identity: averaged features padded with noise to the same width, and per-head
