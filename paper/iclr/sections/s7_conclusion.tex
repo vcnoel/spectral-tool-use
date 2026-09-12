@@ -4,11 +4,10 @@
 A hallucinated tool call can be judged from a single forward pass, and this study is about which signal to
 read and when. First establish whether an internal judge is needed at all, because that depends on the model:
 across the families we tested, either confidence is uninformative and a trained probe is the only thing that
-works, or confidence is already as good as anything trained, and the two groups separate without being
-explained by size, attention design, release date or label budget. Where internals are needed, a probe on
-the residual stream at the structural positions of the call is the strongest judge, and attention weights
-alone come within a few points of it, so an operator without activations still has an option. For attention,
-one design choice decides everything: averaging over heads cannot represent the contrast between them and
-can only overstate connectivity, a condition every layer we measured sits far from. Keeping the heads apart
-is what moves the attention family from below a length baseline to within reach of the residual stream, and
-resolution, not the choice of statistic, is what carries the signal.
+works, or confidence is already as good as anything trained, and neither size, attention design, release
+date nor label budget predicts which. Where internals are needed, a probe on the residual stream at the
+structural positions of the call is the strongest judge, and attention weights alone come within a few
+points of it. For attention, one design choice decides everything: averaging over heads cannot represent the
+contrast between them and can only overstate connectivity. Keeping the heads apart moves the attention
+family from below a length baseline to within reach of the residual stream; resolution, not the choice of
+statistic, carries the signal.

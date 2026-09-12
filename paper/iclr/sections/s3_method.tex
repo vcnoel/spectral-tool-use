@@ -59,7 +59,6 @@ never saw its tool, one AUC is pooled over the dataset, and the procedure is rep
 training and validation folds only. (iv) Three deliberately uninformative classifiers, lengths with a
 truncation flag, generation length alone, and the tool identity, are trained under the same protocol. (v)
 Every difference between detectors carries a paired, class-stratified bootstrap interval over items, pooled
-across seeds, with Holm correction inside a contrast family fixed before any result was read
+across seeds, Holm-corrected inside a contrast family fixed before any result was read
 (Appendix~\ref{app:stats}). (vi) A run whose minority class is below \minClassPerSubset{} carries a dagger
-and enters no aggregate. (vii) Labels are recomputed from the stored generations at evaluation time
-(Appendix~\ref{app:validity}).
+and enters no aggregate. (vii) Labels are recomputed from the stored generations at evaluation time.

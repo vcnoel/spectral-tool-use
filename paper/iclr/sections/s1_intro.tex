@@ -2,12 +2,11 @@
 \label{sec:intro}
 
 Language model agents act by calling tools, and a wrong call is rarely obvious when it is made: it parses,
-its arguments have the right types, it satisfies the schema, and the probabilities the model assigned to its
-tokens look ordinary. The runtime has no reason to hesitate, so a transfer is made or a resource is
-provisioned before a person sees it. Whatever catches such an error must act between the model producing the
-call and the system executing it, an interval too short to sample continuations, consult a second model or
-check an external source. The only evidence available in it is the state of the model that produced the
-call.
+its arguments have the right types, and the probabilities the model assigned to its tokens look ordinary, so
+a transfer is made or a resource is provisioned before a person sees it. Whatever catches such an error must
+act between the model producing the call and the system executing it, an interval too short to sample
+continuations or consult a second model, and the only evidence available in it is the state of the model
+that produced the call.
 
 This paper asks how good a judge that state can be, and the question has a practical shape because
 different signals need different access. Serving stacks expose token probabilities almost everywhere,

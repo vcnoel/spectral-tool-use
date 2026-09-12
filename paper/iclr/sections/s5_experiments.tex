@@ -107,11 +107,11 @@ Every attention row of the detector grid reads the same tensors of the same gene
 splits; the blocks differ only in whether heads are averaged before the graph is built. The head-averaged
 reads sit between \aucHeadAveragedLayerLlamaOneBGlaiveSem{} and \aucSymEigProfileLlamaThreeBGlaiveSem{} and on
 several runs do not clear the length floor; the per-head profile reaches \aucPerHeadAllLlamaThreeBGlaiveSem{}
-on Llama-3B. Over the \nRunsBothSpectral{} runs where both exist, keeping heads apart is worth
-\perHeadGainMean{} AUC points, from \perHeadGainMin{} to \perHeadGainMax{}, the one negative entry being the
-underpowered run. Propositions~\ref{prop:annihilation} and~\ref{prop:jensen} predict this but do not
-guarantee that a failure is visible in the between-head contrast; the grid, and the head-by-head view of one
-layer in Appendix~\ref{app:tables} (Figure~\ref{fig:resolution}), establish that it is.
+on Llama-3B, and over the \nRunsBothSpectral{} runs where both exist keeping heads apart is worth
+\perHeadGainMean{} AUC points (\perHeadGainMin{} to \perHeadGainMax{}; the one negative entry is the
+underpowered run). Propositions~\ref{prop:annihilation} and~\ref{prop:jensen} predict this but do not
+guarantee that a failure is visible in the between-head contrast; the grid and the head-by-head view in
+Appendix~\ref{app:tables} (Figure~\ref{fig:resolution}) establish that it is.
 
 \begin{figure}[t]
 \centering
