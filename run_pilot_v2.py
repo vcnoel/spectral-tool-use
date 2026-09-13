@@ -1003,6 +1003,7 @@ def handle_evaluate(args):
     extra_rows = []
     lap_official = None
     sink_official = None
+    per_head_combined = None
     if rich:
         X["Sym-Laplacian eig profile"] = np.array(
             [np.ravel(s["eig_profile"]) for s in samples], dtype=np.float32)
@@ -1012,22 +1013,6 @@ def handle_evaluate(args):
             # (N, L, H, 100) official LapEigvals diagonal profiles
             lap_official = np.array([s["lapeig_diag"] for s in samples],
                                     dtype=np.float32)
-        if samples[0].get("anchored") is not None:
-            # (N, L, H, 6) anchored readout. The paper's question is whether
-            # reading the call's own rows beats summarising the whole matrix,
-            # so the two halves are scored separately as well: the symmetric
-            # pair (entropy, max) carries no key identity, the mass pair does.
-            anch = np.array([s["anchored"] for s in samples], dtype=np.float32)
-            N = len(samples)
-            X["Anchored readout (span rows)"] = anch.reshape(N, -1)
-            X["Anchored, symmetric pair"] = anch[:, :, :, [3, 4]].reshape(N, -1)
-            X["Anchored, mass pair"] = anch[:, :, :, [0, 1, 5]].reshape(N, -1)
-            X["Per-head spectra + symmetric pair"] = np.hstack(
-                [X["Per-head all metrics (span)"],
-                 anch[:, :, :, [3, 4]].reshape(N, -1)])
-            anchored_rows = ["Anchored readout (span rows)", "Anchored, symmetric pair",
-                             "Anchored, mass pair", "Per-head spectra + symmetric pair"]
-            extra_rows += anchored_rows
         if samples[0].get("sink_scores") is not None:
             # (N, L, H, 100) SinkProbe sink-score profiles (= LapEigvals
             # diagonal + self-attention, sorted); dumps written before the
@@ -1066,6 +1051,25 @@ def handle_evaluate(args):
                                for s in samples], dtype=np.float32)
             per_head_rows.append(row)
             per_head_combined = X[row]
+
+        if samples[0].get("anchored") is not None:
+            # (N, L, H, 6) anchored readout, built after the per-head spectra
+            # because the last row below needs them. The question is whether
+            # reading the call's own rows beats summarising the whole matrix,
+            # so the two halves are scored separately too: the symmetric pair
+            # (entropy, maximum) carries no key identity, the masses do.
+            anch = np.array([s["anchored"] for s in samples], dtype=np.float32)
+            N = len(samples)
+            sym = anch[:, :, :, [3, 4]].reshape(N, -1)
+            X["Anchored readout (span rows)"] = anch.reshape(N, -1)
+            X["Anchored, symmetric pair"] = sym
+            X["Anchored, mass triple"] = anch[:, :, :, [0, 1, 5]].reshape(N, -1)
+            extra_rows += ["Anchored readout (span rows)", "Anchored, symmetric pair",
+                           "Anchored, mass triple"]
+            if per_head_combined is not None:
+                X["Per-head spectra + symmetric pair"] = np.hstack(
+                    [per_head_combined, sym])
+                extra_rows.append("Per-head spectra + symmetric pair")
 
         for name, build in (
                 ("Token-level probe (Obeso)", token_probe_matrix),
