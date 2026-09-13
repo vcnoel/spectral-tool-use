@@ -73,6 +73,19 @@ CONTRASTS = [
      "Per-head all metrics (span)", "SinkProbe (Binkowski 2026)"),
     ("SinkProbe vs top sink removed",
      "SinkProbe (Binkowski 2026)", "SinkProbe, top sink removed"),
+    # Does reading the call's own attention rows beat summarising the whole
+    # matrix? The symmetric pair carries no key identity, so the second
+    # contrast separates where a summary is read from what it retains.
+    ("anchored vs per-head",
+     "Anchored readout (span rows)", "Per-head all metrics (span)"),
+    ("anchored symmetric pair vs per-head",
+     "Anchored, symmetric pair", "Per-head all metrics (span)"),
+    ("per-head with the row vs per-head",
+     "Per-head spectra + symmetric pair", "Per-head all metrics (span)"),
+    ("token-role vs anchored",
+     "Hidden token-role [LR]", "Anchored readout (span rows)"),
+    ("anchored vs surface",
+     "Anchored readout (span rows)", "Surface (lengths) [confound]"),
 ]
 
 

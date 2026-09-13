@@ -242,6 +242,50 @@ def sink_scores(attn: torch.Tensor,
     return _topk_desc(s, k_store), top_pos
 
 
+ANCHORED_NAMES = ["prompt_mass", "call_mass", "sink_mass", "row_entropy",
+                  "row_max", "mean_row_prompt_mass"]
+
+
+def anchored_readout(attn: torch.Tensor, prompt_len: int,
+                     seq_len: int) -> list[list[float]]:
+    """
+    Six scalars per head read from the generated call's own attention rows,
+    the tool-call analogue of the anchored readout for deductive validity
+    (a summary computed from a distinguished row rather than from the whole
+    matrix). With `a` the row of the final generated token and `abar` the mean
+    over the generated span's rows, the head's readout is
+
+        (sum_{j<prompt_len} a_j,   mass on the prompt
+         sum_{j>=prompt_len} a_j,  mass on the call itself
+         a_0,                      mass on the sink
+         -sum_j a_j log a_j,       entropy of that row
+         max_j a_j,                its maximum
+         sum_{j<prompt_len} abar_j)
+
+    Unlike a spectral summary, this is not invariant under relabeling the
+    tokens: it depends on which row belongs to the generated call. Entropy and
+    maximum are nonetheless symmetric in the keys, so they carry no key
+    identity, which lets the evaluator separate the two. Attention-only.
+
+    attn: [H, T, T]. Returns [H][6] in ANCHORED_NAMES order.
+    """
+    H, T, _ = attn.shape
+    if seq_len <= prompt_len or prompt_len <= 0 or seq_len > T:
+        return [[0.0] * len(ANCHORED_NAMES) for _ in range(H)]
+    a = attn[:, seq_len - 1, :seq_len].to(torch.float32)          # [H, S]
+    bar = attn[:, prompt_len:seq_len, :seq_len].to(torch.float32).mean(1)
+    p = a.clamp(min=1e-12)
+    out = torch.stack([
+        a[:, :prompt_len].sum(-1),
+        a[:, prompt_len:].sum(-1),
+        a[:, 0],
+        -(p * p.log()).sum(-1),
+        a.max(-1).values,
+        bar[:, :prompt_len].sum(-1),
+    ], dim=-1)
+    return [[float(x) for x in row] for row in out]
+
+
 def gram_spectrum_features(hidden: torch.Tensor, k: int = 8) -> list[float]:
     """
     Spectral features of the RESIDUAL-STREAM vectors themselves (not the

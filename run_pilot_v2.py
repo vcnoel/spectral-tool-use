@@ -72,6 +72,7 @@ from spectral_guardrails.spectral.metrics import (
     METRIC_NAMES, PER_HEAD_METRICS, layer_spectral_metrics,
     laplacian_eig_profile, per_head_metrics, gram_spectrum_features,
     lapeigvals_diag_profile, lookback_ratio, residual_dynamics, sink_scores,
+    anchored_readout,
 )
 from spectral_guardrails.utils.data import load_glaive_data, parse_glaive_chat
 from spectral_guardrails.probes.multiturn import iter_multiturn_examples
@@ -498,6 +499,8 @@ def handle_extract(args):
                 # SinkProbe sink scores: the same reduction plus the
                 # self-attention term, and the position of each head's top sink
                 feat["sink"], feat["sink_pos"] = sink_scores(a)
+                # six scalars per head from the generated call's own rows
+                feat["anch"] = anchored_readout(a, prompt_len, T)
                 feat["lb"] = lookback_ratio(a, prompt_len, T)
                 if full_graph_ok:
                     feat["eig"] = laplacian_eig_profile(a)
@@ -518,6 +521,7 @@ def handle_extract(args):
         lapeig_diag = [f["lap"] for f in per_layer if "lap" in f]
         sink_prof = [f["sink"] for f in per_layer if "sink" in f]
         sink_top = [f["sink_pos"] for f in per_layer if "sink_pos" in f]
+        anch_prof = [f["anch"] for f in per_layer if "anch" in f]
         lookback = [f["lb"] for f in per_layer if "lb" in f]
 
         pos = find_token_positions_v2(tok, gen_ids, prompt_len)
@@ -587,6 +591,8 @@ def handle_extract(args):
             # position of each head's top-ranked sink (0 = first token)
             rec["sink_scores"] = sink_prof
             rec["sink_top_pos"] = sink_top
+            # [L][H][6] anchored readout in ANCHORED_NAMES order
+            rec["anchored"] = anch_prof
             rec["gram_feats"] = gram_feats
             # [L][H][2] Lookback Lens context/generation attention shares
             rec["lookback"] = lookback
@@ -878,8 +884,8 @@ def _compact(rec):
             a = np.nan_to_num(a, nan=0.0, posinf=65504.0, neginf=-65504.0)
         rec["token_pooled"] = np.concatenate([a.mean(0), a.max(0)])
         rec["token_states"] = None
-    for key in ("lapeig_diag", "sink_scores", "head_metrics_span", "eig_profile",
-                "eig_profile_span", "lookback", "res_dynamics"):
+    for key in ("lapeig_diag", "sink_scores", "anchored", "head_metrics_span",
+                "eig_profile", "eig_profile_span", "lookback", "res_dynamics"):
         if rec.get(key) is not None:
             rec[key] = np.asarray(rec[key], dtype=np.float32)
     return rec
@@ -1006,6 +1012,22 @@ def handle_evaluate(args):
             # (N, L, H, 100) official LapEigvals diagonal profiles
             lap_official = np.array([s["lapeig_diag"] for s in samples],
                                     dtype=np.float32)
+        if samples[0].get("anchored") is not None:
+            # (N, L, H, 6) anchored readout. The paper's question is whether
+            # reading the call's own rows beats summarising the whole matrix,
+            # so the two halves are scored separately as well: the symmetric
+            # pair (entropy, max) carries no key identity, the mass pair does.
+            anch = np.array([s["anchored"] for s in samples], dtype=np.float32)
+            N = len(samples)
+            X["Anchored readout (span rows)"] = anch.reshape(N, -1)
+            X["Anchored, symmetric pair"] = anch[:, :, :, [3, 4]].reshape(N, -1)
+            X["Anchored, mass pair"] = anch[:, :, :, [0, 1, 5]].reshape(N, -1)
+            X["Per-head spectra + symmetric pair"] = np.hstack(
+                [X["Per-head all metrics (span)"],
+                 anch[:, :, :, [3, 4]].reshape(N, -1)])
+            anchored_rows = ["Anchored readout (span rows)", "Anchored, symmetric pair",
+                             "Anchored, mass pair", "Per-head spectra + symmetric pair"]
+            extra_rows += anchored_rows
         if samples[0].get("sink_scores") is not None:
             # (N, L, H, 100) SinkProbe sink-score profiles (= LapEigvals
             # diagonal + self-attention, sorted); dumps written before the

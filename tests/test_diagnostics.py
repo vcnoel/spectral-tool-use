@@ -10,9 +10,9 @@ import torch
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from spectral_guardrails.spectral.metrics import (  # noqa: E402
-    METRIC_NAMES, build_normalized_laplacian, lapeigvals_diag_profile,
-    laplacian_eig_profile, layer_spectral_metrics, sink_scores,
-    spectral_metrics_from_laplacian,
+    ANCHORED_NAMES, METRIC_NAMES, anchored_readout, build_normalized_laplacian,
+    lapeigvals_diag_profile, laplacian_eig_profile, layer_spectral_metrics,
+    sink_scores, spectral_metrics_from_laplacian,
 )
 
 
@@ -100,6 +100,47 @@ def test_sink_scores_match_definition_and_lapeigvals_identity():
     # padding when the graph is shorter than k_store
     vals, _ = sink_scores(attn, k_store=20)
     assert len(vals[0]) == 20 and vals[0][-1] == 0.0
+
+
+def test_anchored_readout_matches_its_definition():
+    """Six scalars read from the generated call's own rows: the two masses
+    partition the final row, and the remaining three are that row's sink
+    weight, entropy and maximum."""
+    attn = _causal_attention(H=3, T=24)
+    prompt_len, T = 15, 24
+    out = torch.tensor(anchored_readout(attn, prompt_len, T))
+    assert out.shape == (3, len(ANCHORED_NAMES))
+    a = attn[:, T - 1, :T]
+    assert torch.allclose(out[:, 0] + out[:, 1], torch.ones(3), atol=1e-5)
+    assert torch.allclose(out[:, 2], a[:, 0], atol=1e-5)
+    p = a.clamp(min=1e-12)
+    assert torch.allclose(out[:, 3], -(p * p.log()).sum(-1), atol=1e-5)
+    assert torch.allclose(out[:, 4], a.max(-1).values, atol=1e-5)
+
+
+def test_anchored_symmetric_pair_is_invariant_to_key_relabeling():
+    """Entropy and maximum are symmetric functions of the row, so permuting
+    which key receives a given share leaves them unchanged. This is what lets
+    the evaluator separate where a summary is read from what identity it
+    keeps, so it is pinned rather than assumed."""
+    attn = _causal_attention(H=3, T=24)
+    prompt_len, T = 15, 24
+    out = torch.tensor(anchored_readout(attn, prompt_len, T))
+    g = torch.Generator().manual_seed(1)
+    perm = torch.randperm(prompt_len, generator=g)
+    shuffled = attn.clone()
+    shuffled[:, :, :prompt_len] = attn[:, :, perm]
+    out2 = torch.tensor(anchored_readout(shuffled, prompt_len, T))
+    assert torch.allclose(out[:, [3, 4]], out2[:, [3, 4]], atol=1e-5)
+    # the prompt mass survives a permutation inside the prompt as well
+    assert torch.allclose(out[:, 0], out2[:, 0], atol=1e-5)
+
+
+def test_anchored_readout_degenerate_spans_return_zeros():
+    attn = _causal_attention(H=2, T=12)
+    zero = [[0.0] * len(ANCHORED_NAMES)] * 2
+    assert anchored_readout(attn, 12, 12) == zero      # nothing generated
+    assert anchored_readout(attn, 0, 12) == zero       # no prompt
 
 
 def test_per_head_metrics_via_spectral_trust_if_available():
