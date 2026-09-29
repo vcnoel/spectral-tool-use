@@ -77,9 +77,18 @@ def collect(subset):
                  if x is not None and not np.isnan(x)]
             return float(np.mean(v)) if v else float("nan")
 
-        probe = max(m("Hidden token-role [LR]"), m("Token-level probe (Obeso)"))
+        # Representatives fixed before looking at any result: the token-role
+        # probe of Healy et al. for the residual stream and the mean token
+        # log-probability for the output. Taking the better of two probes per
+        # run on test AUC favoured the probe by up to 0.04.
+        probe = m("Hidden token-role [LR]")
         conf = m("Mean logprob")
         if np.isnan(probe) or np.isnan(conf):
+            continue
+        # runs with fewer than 30 labelled items of either class in the scored
+        # population are too small to enter a comparison
+        nc = r.get("n_class", {}).get(subset)
+        if r.get("underpowered") or (nc and min(nc.values()) < 30):
             continue
         modes = r.get("failure_modes", {})
         pos = r["n"] - modes.get("valid", 0) - modes.get("valid_nocall", 0)
@@ -143,6 +152,10 @@ def main():
         if len(rec_c) > 1 and len(ear_c) > 1:
             u = stats.mannwhitneyu(rec_c, ear_c, alternative="two-sided")
             summary["checkpoint_mannwhitney_p"] = float(u.pvalue)
+            # the smallest p the exact test can return at these group sizes,
+            # attained only under complete separation
+            from math import comb
+            summary["checkpoint_exact_p_floor"] = 2.0 / comb(len(rec_c) + len(ear_c), len(rec_c))
         fam = {}
         for r in ck_rows:
             fam.setdefault(r["family_name"], []).append(r["gap"])

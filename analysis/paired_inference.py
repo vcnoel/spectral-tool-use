@@ -125,9 +125,11 @@ def run_one(npz_path: Path, n_boot: int) -> None:
             sa = z[f"score__{a}__{seed}"]
             sb = z[f"score__{b}__{seed}"]
             ok = smask & np.isfinite(sa) & np.isfinite(sb)
+            # resample tools, not items, when the dump records them
+            grp = z["tool__"][ok] if "tool__" in z.files else None
             r = paired_bootstrap_delta_auc(y[ok], sa[ok], sb[ok],
                                            n_boot=n_boot, seed=1000 + si,
-                                           return_draws=True)
+                                           return_draws=True, groups=grp)
             if np.isfinite(r["delta"]):
                 deltas.append(r["delta"])
                 auc_a.append(r["auc_a"])

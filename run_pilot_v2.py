@@ -82,7 +82,7 @@ FEATURES = OUT_DIR / "features.jsonl"
 SEED = 42
 N_PROBE_LAYERS = 8
 MAX_NEW_TOKENS = int(os.environ.get("MAX_NEW_TOKENS", "256"))
-TOKEN_STATE_CAP = 48   # generated tokens kept for the token-level probe
+TOKEN_STATE_CAP = 128  # generated tokens kept for the token-level probe
 # The attention tensor is quadratic in prompt length and is held for
 # every layer and head, so this cap is a memory bound rather than a
 # modelling choice. Multi-turn prompts need a larger one.
@@ -109,6 +109,58 @@ CONTROL_MARKERS = (
     "<|im_end|>", "<|endoftext|>", "<end_of_turn>", "<|eot_id|>",
     "<|eom_id|>", "<|end|>", "<|end_of_text|>", "</s>", "<|assistant|>",
 )
+
+
+# Markers that open a new chat turn. A generation that runs past its own end of
+# turn (a model whose end-of-turn id was not among the stopping ids) invents a
+# further turn, and any call in it must not be labelled.
+NEXT_TURN_MARKERS = ("<|im_start|>", "<|start_header_id|>", "<start_of_turn>")
+
+# Failure modes that depend on the part of a call a truncation removes.
+TRUNCATION_SENSITIVE = {"unparseable_call", "missing_args", "missing_calls",
+                        "wrong_arg_values", "extra_args"}
+
+
+END_OF_TURN_MARKERS = ("<|im_end|>", "<|eot_id|>", "<|eom_id|>", "<end_of_turn>",
+                       "<|end|>", "<|endoftext|>", "<|end_of_text|>", "<|return|>",
+                       "<|call|>")
+
+
+def stopping_ids(tok, model) -> list[int]:
+    """Every id that ends an assistant turn for this tokenizer and model."""
+    ids = set()
+    for src in (getattr(model, "generation_config", None), model.config, tok):
+        e = getattr(src, "eos_token_id", None)
+        if isinstance(e, int):
+            ids.add(e)
+        elif isinstance(e, (list, tuple)):
+            ids.update(int(x) for x in e)
+    vocab = tok.get_vocab()
+    for m in END_OF_TURN_MARKERS:
+        if m in vocab:
+            ids.add(vocab[m])
+    return sorted(ids)
+
+
+def cut_at_next_turn(text: str) -> str:
+    """Keep the generation up to the first marker that opens another turn."""
+    cut = min((i for i in (text.find(m) for m in NEXT_TURN_MARKERS) if i >= 0),
+              default=-1)
+    return text if cut < 0 else text[:cut]
+
+
+def generation_budget(rec) -> int:
+    """The max_new_tokens the record was generated with.
+
+    Newer dumps store it per record. Older dumps do not: their single-turn
+    runs used 256 and their multi-turn runs 160, so the budget is read from
+    the category rather than from an environment variable that may be unset
+    at evaluation time."""
+    if rec.get("max_new_tokens"):
+        return int(rec["max_new_tokens"])
+    if str(rec.get("category", "")).startswith("mt_"):
+        return 160
+    return 256
 
 
 def strip_control_markers(text: str, tok=None) -> str:
@@ -386,6 +438,11 @@ def handle_extract(args):
         source = _glaive_source()
 
     kept, mode_counts, skipped_prompt = 0, {}, 0
+    stop_ids = stopping_ids(tok, model)
+    print(f"[extract] stopping ids: {stop_ids}")
+    special_ids = set(tok.all_special_ids)
+    for t_ in tok.get_added_vocab().values() if hasattr(tok, "get_added_vocab") else []:
+        special_ids.add(t_)
     pbar = tqdm(source, total=args.n, desc="extract")
     for ex in pbar:
         tools, user = ex["tools"], ex["user"]
@@ -401,7 +458,8 @@ def handle_extract(args):
             kept += 1
             continue
 
-        inputs = tok(prompt_text, return_tensors="pt").to(model.device)
+        inputs = tok(prompt_text, return_tensors="pt",
+                     add_special_tokens=False).to(model.device)
         prompt_len = inputs.input_ids.shape[1]
         if prompt_len > MAX_PROMPT_TOKENS:
             continue
@@ -409,7 +467,7 @@ def handle_extract(args):
         with torch.no_grad():
             out = model.generate(
                 **inputs, max_new_tokens=MAX_NEW_TOKENS, do_sample=False,
-                pad_token_id=tok.eos_token_id,
+                pad_token_id=tok.eos_token_id, eos_token_id=stop_ids,
                 return_dict_in_generate=True, output_scores=True,
             )
         gen_ids = out.sequences[0][prompt_len:].tolist()
@@ -434,10 +492,12 @@ def handle_extract(args):
         # alternatives are recorded too.
         mean_logprob = float("nan")
         conf = {}
+        lp_all = None
         try:
             ts = model.compute_transition_scores(
                 out.sequences, out.scores, normalize_logits=True)
             lp = ts[0].float()
+            lp_all = lp.cpu()
             lp = lp[torch.isfinite(lp)]
             if lp.numel():
                 mean_logprob = float(lp.mean())
@@ -525,6 +585,20 @@ def handle_extract(args):
         lookback = [f["lb"] for f in per_layer if "lb" in f]
 
         pos = find_token_positions_v2(tok, gen_ids, prompt_len)
+        if lp_all is not None and pos.get("found"):
+            a = pos["t_func"] - prompt_len
+            b = pos["t_end"] - prompt_len
+            idx = [i for i in range(a, b + 1)
+                   if 0 <= i < lp_all.numel() and gen_ids[i] not in special_ids]
+            call_lp = lp_all[idx] if idx else lp_all[:0]
+            call_lp = call_lp[torch.isfinite(call_lp)]
+            if call_lp.numel():
+                conf["call_mean_logprob"] = float(call_lp.mean())
+                conf["call_min_logprob"] = float(call_lp.min())
+                k = min(5, call_lp.numel())
+                conf["call_mean_lowest5"] = float(
+                    call_lp.topk(k, largest=False).values.mean())
+                conf["call_tokens"] = int(call_lp.numel())
         # Per-token residual states over the generated span at one mid-late
         # depth, for the token-level probe baseline (Obeso et al., 2025),
         # capped in length and stored at reduced precision to keep the dump
@@ -564,6 +638,7 @@ def handle_extract(args):
             "category": ex["category"],
             "tool": ex["tool"],
             "turn_index": ex.get("turn_index"),
+            "conversation_id": ex.get("conversation_id"),
             "n_turns": ex.get("n_turns"),
             "corrupted": ex.get("corrupted"),
             "mean_logprob": mean_logprob,
@@ -572,6 +647,10 @@ def handle_extract(args):
             "gen_tokens": len(gen_ids),
             "seq_len": int(T),
             "truncated": bool(truncated),
+            "max_new_tokens": MAX_NEW_TOKENS,
+            "positions_found": bool(pos.get("found", False)),
+            "positions": {"t_func": int(pos["t_func"]), "t_end": int(pos["t_end"]),
+                          "n_args": len(pos["t_args"])},
             "layer_diagnostics": layer_diagnostics or layer_diagnostics_span,
             "full_graph_features": bool(full_graph_ok),
             "layer_diagnostics_span": layer_diagnostics_span,
@@ -638,6 +717,37 @@ def group_split(samples, seed, train_ratio=0.7, val_ratio=0.15,
     va = [i for p in pids[a:b] for i in groups[p]]
     te = [i for p in pids[b:] for i in groups[p]]
     return np.array(tr), np.array(va), np.array(te)
+
+
+def linked_groups(samples, keys=("tool", "conversation_id")) -> None:
+    """Write a "group" field that joins items sharing any of the given keys.
+
+    Turns of one conversation share its history, and calls to one tool share
+    its schema, so neither may be split across folds. Union-find over both
+    keys gives the connected components; items missing a key are linked only
+    through the keys they have."""
+    parent = list(range(len(samples)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    for k in keys:
+        first = {}
+        for i, s in enumerate(samples):
+            v = s.get(k)
+            if v in (None, ""):
+                continue
+            if v in first:
+                a, b = find(i), find(first[v])
+                if a != b:
+                    parent[a] = b
+            else:
+                first[v] = i
+    for i, s in enumerate(samples):
+        s["group"] = f"g{find(i)}"
 
 
 def grouped_kfold(samples, seed, key="tool", n_folds=5):
@@ -924,9 +1034,9 @@ def load_and_relabel(features_path):
     for s in samples:
         old = s["label"]
         # Repair dumps written before the marker and truncation fixes.
-        s["prediction"] = strip_control_markers(s["prediction"])
+        s["prediction"] = strip_control_markers(cut_at_next_turn(s["prediction"]))
         if s.get("gen_tokens") is not None:
-            s["truncated"] = bool(s["gen_tokens"] >= MAX_NEW_TOKENS)
+            s["truncated"] = bool(s["gen_tokens"] >= generation_budget(s))
         try:
             if s.get("gt_anyof") is not None or s.get("expect_call") is False:
                 s["label"], s["failure_mode"] = classify_failure_anyof(
@@ -938,7 +1048,10 @@ def load_and_relabel(features_path):
             # A call that does not parse because our generation budget cut it
             # off is an artefact of the measurement, not a model failure, so
             # it gets its own mode and is excluded from the semantic subset.
-            if s["failure_mode"] == "unparseable_call" and s.get("truncated"):
+            # A truncated generation that started a call but did not finish
+            # it cannot be judged on its arguments either, so every mode that
+            # depends on the rest of the call becomes truncated_call too.
+            if s.get("truncated") and s["failure_mode"] in TRUNCATION_SENSITIVE:
                 s["failure_mode"] = "truncated_call"
         except ValueError:
             pass
@@ -972,6 +1085,18 @@ def handle_evaluate(args):
             expect_call_mask = None
     else:
         expect_call_mask = None
+
+    # The population every detector is trained on, and every untrained score's
+    # direction fixed on. Training on all items while scoring a subset taught
+    # probes the format failures (no call, unparseable) that the subset
+    # excludes, and on BFCL the same behaviour, answering without a call, is a
+    # positive on call-expected items and a negative on irrelevance items; it
+    # also fixed the sign of confidence on items it is never scored on.
+    train_pop = semantic & expect_call_mask if expect_call_mask is not None else semantic
+    if getattr(args, "train_on", "scored") == "all":
+        train_pop = np.ones(len(samples), dtype=bool)
+    print(f"[evaluate] training population: {getattr(args, 'train_on', 'scored')} "
+          f"({int(train_pop.sum())} of {len(samples)} items)")
 
     print(f"\nN={len(samples)}  hallucination rate={y.mean():.3f}"
           f"  (relabeling changed {relabel_changes} labels)")
@@ -1157,6 +1282,7 @@ def handle_evaluate(args):
         fold_id = np.full(len(samples), -1, dtype=int)
         fold_signs = {}
         for fi, (tr, va, te) in enumerate(grouped_kfold(samples, seed, key="tool")):
+            tr, va = tr[train_pop[tr]], va[train_pop[va]]
             if len(np.unique(y[tr])) < 2 or len(np.unique(y[va])) < 2:
                 continue
             fold_id[te] = fi
@@ -1212,6 +1338,8 @@ def handle_evaluate(args):
             fold_offset.setdefault(name, []).append(
                 fold_offset_auc(y[ok], scores[ok], fold_id[ok]))
         score_store[f"fold__{seed}"] = fold_id
+        score_store["tool__"] = np.array([s_["tool"] for s_ in samples])
+        score_store["train_pop__"] = train_pop
         for name, sg in fold_signs.items():
             sign_flips.setdefault(name, []).append(
                 int(sum(1 for s_ in sg if s_ != sg[0])))
@@ -1274,6 +1402,7 @@ def handle_evaluate(args):
         "eval_subset": eval_subset,
         "min_class_per_subset": MIN_CLASS_PER_SUBSET,
         "underpowered": bool(flagged),
+        "train_on": getattr(args, "train_on", "scored"),
         # pooled cross-fit AUC per seed (the historical quantity)
         "results": _ser(results),
         # mean of within-fold AUCs per seed: free of fold-composition offsets
@@ -1404,6 +1533,10 @@ def main():
                    help="output subdir tag (default: derived from model id)")
     v = sub.add_parser("evaluate")
     v.add_argument("--tag", default="qwen35_2b")
+    v.add_argument("--train-on", choices=["scored", "all"], default="scored",
+                   help="population detectors are trained and signs fixed on: "
+                        "the scored population (call-expected where the benchmark "
+                        "has an irrelevance category, else semantic) or all items")
     t = sub.add_parser("transfer")
     t.add_argument("--train-tag", required=True)
     t.add_argument("--test-tag", required=True)

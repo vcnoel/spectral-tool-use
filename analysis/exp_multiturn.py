@@ -31,7 +31,7 @@ from scipy import stats
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from run_pilot_v2 import (  # noqa: E402
-    grouped_kfold, fit_lr, auc_safe, load_and_relabel, hidden_matrix,
+    grouped_kfold, linked_groups, fit_lr, auc_safe, load_and_relabel, hidden_matrix,
     surface_matrix, lapeig_official_scores, SEMANTIC_MODES,
 )
 
@@ -56,7 +56,7 @@ def cross_fit(samples, y, X, lap, logprob, seed, train_mask=None):
     N = len(y)
     pooled = {k: np.full(N, np.nan) for k in
               list(X) + ["LapEigvals", "mean log-probability"]}
-    for tr, va, te in grouped_kfold(samples, seed, key="tool"):
+    for tr, va, te in grouped_kfold(samples, seed, key="group"):
         tr, va, te = (np.asarray(a, dtype=int) for a in (tr, va, te))
         if train_mask is not None:
             tr = tr[train_mask[tr]]
@@ -94,6 +94,7 @@ def main():
             continue
         samples, _ = load_and_relabel(f)
         samples = [s for s in samples if s.get("head_metrics_span") is not None]
+        linked_groups(samples)
         y = np.array([s["label"] for s in samples])
         modes = np.array([s["failure_mode"] for s in samples])
         semantic = np.isin(modes, SEMANTIC_MODES)

@@ -221,6 +221,7 @@ def iter_multiturn_examples(limit: int, corrupt_fraction: float = 0.0,
                 "category": f"mt_{category}",
                 "tool": gt_calls[0]["name"],
                 "turn_index": t,
+                "conversation_id": str(q.get("id", "")),
                 "n_turns": len(gt),
                 "corrupted": bool(corrupted),
             }

@@ -123,12 +123,15 @@ def find_token_positions_v2(tokenizer, generated_ids: list[int],
     last = len(generated_ids) - 1
     fallback = {"t_func": gen_offset + last,
                 "t_args": [gen_offset + last],
-                "t_end": gen_offset + last}
+                "t_end": gen_offset + last,
+                "found": False}
 
     # JSON-style call:  {"name": "fn", "arguments": {...}}
     name_m = re.search(r'"name"\s*:\s*"([^"]+)"', gen_text)
     # XML-style call:   <function=fn> <parameter=k> v </parameter> ...
     xml_m = re.search(r"<function\s*=\s*([\w.\-]+)\s*>", gen_text)
+    # MiniCPM dialect:  <function name="fn"> <param name="k"> v </param> ...
+    attr_m = re.search(r"<function\s+name\s*=\s*[\"']([\w.\-]+)[\"']\s*>", gen_text)
 
     if name_m is not None:
         t_func = tok_at(name_m.start(1), last)
@@ -152,6 +155,18 @@ def find_token_positions_v2(tokenizer, generated_ids: list[int],
             a_start, a_end = xml_m.start(1), xml_m.end(1)
         close_m = re.search(r"</function>|</tool_call>", gen_text)
         t_end = tok_at(close_m.start(), last) if close_m else last
+    elif attr_m is not None:
+        t_func = tok_at(attr_m.start(1), last)
+        params = list(re.finditer(
+            r"<param\s+name\s*=\s*[\"'][\w.\-]+[\"']\s*>\s*(.*?)\s*</param>",
+            gen_text, re.DOTALL))
+        if params:
+            a_start = params[0].start(1)
+            a_end = params[-1].end(1)
+        else:
+            a_start, a_end = attr_m.start(1), attr_m.end(1)
+        close_m = re.search(r"</function>", gen_text)
+        t_end = tok_at(close_m.start(), last) if close_m else last
     else:
         return fallback
 
@@ -161,7 +176,8 @@ def find_token_positions_v2(tokenizer, generated_ids: list[int],
 
     return {"t_func": gen_offset + t_func,
             "t_args": [gen_offset + i for i in t_args],
-            "t_end": gen_offset + t_end}
+            "t_end": gen_offset + t_end,
+            "found": True}
 
 
 def extract_probe_features(hidden_states: torch.Tensor,

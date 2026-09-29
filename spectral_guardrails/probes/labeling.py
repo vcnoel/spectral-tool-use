@@ -41,13 +41,13 @@ def _normalise_call(call: dict):
                 if ak in call and isinstance(call[ak], dict):
                     args = call[ak]
                     break
-            return name, {k: _unwrap(v) for k, v in args.items()}
+            return name, dict(args)
     non_meta = {k: v for k, v in call.items()
                 if k not in _EXPLICIT_NAME_KEYS and k not in _EXPLICIT_ARG_KEYS}
     if len(non_meta) == 1:
         name = next(iter(non_meta))
         if isinstance(non_meta[name], dict):
-            return name, {k: _unwrap(v) for k, v in non_meta[name].items()}
+            return name, dict(non_meta[name])
     return "", {}
 
 
@@ -82,11 +82,32 @@ def _canon_value(v) -> str:
     return _VALUE_ALIASES.get(s, s)
 
 
+def _decode_structured(v):
+    """A string that is a JSON list or object is compared as that value."""
+    if isinstance(v, str) and v.strip()[:1] in ("[", "{"):
+        parsed = _try_parse_json(v)
+        if isinstance(parsed, (list, dict)):
+            return parsed
+    return v
+
+
 def _values_match(gt_val, pred_val) -> bool:
-    gt_val, pred_val = _unwrap(gt_val), _unwrap(pred_val)
+    gt_val, pred_val = _decode_structured(gt_val), _decode_structured(pred_val)
     if gt_val is None and pred_val is None:
         return True
     if gt_val is None or pred_val is None:
+        return False
+    if isinstance(gt_val, list) and isinstance(pred_val, list):
+        return (len(gt_val) == len(pred_val)
+                and all(_values_match(g, q) for g, q in zip(gt_val, pred_val)))
+    if isinstance(gt_val, dict) and isinstance(pred_val, dict):
+        return (set(gt_val) == set(pred_val)
+                and all(_values_match(gt_val[k], pred_val[k]) for k in gt_val))
+    if isinstance(pred_val, list):
+        return len(pred_val) == 1 and _values_match(gt_val, pred_val[0])
+    if isinstance(gt_val, list):
+        return len(gt_val) == 1 and _values_match(gt_val[0], pred_val)
+    if isinstance(gt_val, dict) or isinstance(pred_val, dict):
         return False
     try:
         return abs(float(gt_val) - float(pred_val)) < 1e-6
@@ -253,7 +274,8 @@ FAILURE_MODES = [
 ]
 
 _CALL_TAG_RE = _re.compile(
-    r"<(?:functioncall|tool_call|toolcall)>\s*(.*?)\s*(?:</(?:functioncall|tool_call|toolcall)>|$)",
+    r"<(?:functioncall|tool_call|toolcall)>\s*(.*?)\s*"
+    r"(?:</(?:functioncall|tool_call|toolcall)>|(?=<(?:functioncall|tool_call|toolcall)>)|$)",
     _re.DOTALL | _re.IGNORECASE,
 )
 
@@ -275,6 +297,27 @@ def _parse_relaxed_json(text: str):
     return None
 
 
+def _parse_json_sequence(text: str):
+    """Decode consecutive JSON values separated by ';', ',' or whitespace.
+
+    Returns a list of the decoded values, or None when the text is not such a
+    sequence of at least two values."""
+    dec = json.JSONDecoder()
+    i, n, out = 0, len(text), []
+    while i < n:
+        while i < n and text[i] in " \t\r\n;,":
+            i += 1
+        if i >= n:
+            break
+        try:
+            obj, j = dec.raw_decode(text, i)
+        except ValueError:
+            return None
+        out.append(obj)
+        i = j
+    return out if len(out) >= 2 else None
+
+
 def _canonicalize_call(obj) -> list[dict] | None:
     """Normalize a parsed object to [{'name': str, 'arguments': dict}, ...]."""
     if obj is None:
@@ -292,7 +335,7 @@ def _canonicalize_call(obj) -> list[dict] | None:
             if ak in c and isinstance(c[ak], str):
                 inner = _parse_relaxed_json(c[ak])
                 if isinstance(inner, dict):
-                    args = {k: _unwrap(v) for k, v in inner.items()}
+                    args = dict(inner)
                 break
         out.append({"name": str(name).strip(), "arguments": args})
     return out or None
@@ -383,7 +426,13 @@ def extract_calls(text: str) -> tuple[list[dict] | None, bool]:
 
     stripped = text.strip()
     if stripped.startswith(("{", "[")):
-        c = _canonicalize_call(_parse_relaxed_json(stripped))
+        obj = _parse_relaxed_json(stripped)
+        if obj is None:
+            seq = _parse_json_sequence(stripped)
+            if seq is not None:
+                flat = [x for v in seq for x in (v if isinstance(v, list) else [v])]
+                obj = flat
+        c = _canonicalize_call(obj)
         return c, True
 
     # JSON object embedded in prose that mentions a "name" key
@@ -455,21 +504,7 @@ def _anyof_value_match(candidates, pred_val) -> bool:
     """BFCL ground truth lists ACCEPTABLE values per argument; '' marks the
     argument as optional (handled by caller). A candidate may be a list
     (array-typed argument): compare element-wise."""
-    for cand in candidates:
-        if cand == "":
-            continue
-        if isinstance(cand, list):
-            if (isinstance(pred_val, list) and len(cand) == len(pred_val)
-                    and all(_values_match(c, p) for c, p in zip(cand, pred_val))):
-                return True
-        elif isinstance(cand, dict):
-            if (isinstance(pred_val, dict)
-                    and set(cand.keys()) == set(pred_val.keys())
-                    and all(_values_match(v, pred_val[k]) for k, v in cand.items())):
-                return True
-        elif _values_match(cand, pred_val):
-            return True
-    return False
+    return any(_values_match(cand, pred_val) for cand in candidates if cand != "")
 
 
 def classify_failure_anyof(predicted_text: str, gt_anyof: list[dict],

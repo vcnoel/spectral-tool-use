@@ -61,7 +61,8 @@ def underpowered(n_pos: int, n_neg: int,
 
 
 def paired_bootstrap_delta_auc(y, s_a, s_b, n_boot: int = 2000,
-                               seed: int = 0, return_draws: bool = False) -> dict:
+                               seed: int = 0, return_draws: bool = False,
+                               groups=None) -> dict:
     """
     Paired, class-stratified bootstrap of AUC(a) - AUC(b) over items.
 
@@ -69,6 +70,11 @@ def paired_bootstrap_delta_auc(y, s_a, s_b, n_boot: int = 2000,
     scored on the same support. Each resample draws positives and negatives
     with replacement separately (so every draw has both classes) and scores
     both detectors on the identical index set.
+
+    With ``groups`` (one label per item, here the ground-truth tool), whole
+    groups are resampled with replacement instead of items. Items that share a
+    tool are correlated, so resampling items alone understates the variance;
+    a draw that happens to contain one class only is redrawn.
 
     Returns auc_a, auc_b, delta (= a - b on the full support), a percentile
     95% CI, a two-sided bootstrap p-value for delta = 0, and the support size.
@@ -78,9 +84,12 @@ def paired_bootstrap_delta_auc(y, s_a, s_b, n_boot: int = 2000,
     b = np.asarray(s_b, dtype=float)
     ok = np.isfinite(a) & np.isfinite(b)
     y, a, b = y[ok], a[ok], b[ok]
+    g = None if groups is None else np.asarray(groups)[ok]
     pos = np.where(y == 1)[0]
     neg = np.where(y == 0)[0]
-    out = {"n_pos": int(len(pos)), "n_neg": int(len(neg)), "n_boot": int(n_boot)}
+    out = {"n_pos": int(len(pos)), "n_neg": int(len(neg)), "n_boot": int(n_boot),
+           "resampling": "items" if g is None else "groups",
+           "n_groups": None if g is None else int(len(np.unique(g)))}
     if len(pos) < 2 or len(neg) < 2:
         out.update(auc_a=float("nan"), auc_b=float("nan"), delta=float("nan"),
                    ci_lo=float("nan"), ci_hi=float("nan"), p_value=float("nan"))
@@ -94,11 +103,22 @@ def paired_bootstrap_delta_auc(y, s_a, s_b, n_boot: int = 2000,
 
     rng = np.random.default_rng(seed)
     draws = np.empty(n_boot)
-    for i in range(n_boot):
-        idx = np.concatenate([rng.choice(pos, len(pos), replace=True),
-                              rng.choice(neg, len(neg), replace=True)])
+    if g is not None:
+        uniq = np.unique(g)
+        members = {u: np.where(g == u)[0] for u in uniq}
+    i = 0
+    while i < n_boot:
+        if g is None:
+            idx = np.concatenate([rng.choice(pos, len(pos), replace=True),
+                                  rng.choice(neg, len(neg), replace=True)])
+        else:
+            picked = rng.choice(uniq, len(uniq), replace=True)
+            idx = np.concatenate([members[u] for u in picked])
         yy = y[idx]
+        if yy.min() == yy.max():
+            continue
         draws[i] = roc_auc_score(yy, a[idx]) - roc_auc_score(yy, b[idx])
+        i += 1
     lo, hi = np.percentile(draws, [2.5, 97.5])
     # two-sided bootstrap p: how often the resampled difference falls on the
     # other side of zero from the observed one, with the +1 continuity term
