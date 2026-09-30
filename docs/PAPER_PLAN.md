@@ -128,6 +128,13 @@ the abstract), then the 7 to 12B grid, then gpt-oss-20b and Gemma-4-31B.
 8. Figure 2 plots replicate runs under raw tags; regenerate from the canonical
    run list.
 
+Pod setup: install `flash-linear-attention` and `causal-conv1d` before any
+Qwen3.5 job. Without both, transformers runs a per-token fallback in the
+linear-attention layers; profiled locally, that fallback is 80% of extraction
+time and leaves the GPU at 22% utilisation. `causal-conv1d` has no Windows
+build, so every Qwen3.5 extraction, including the re-extraction of Qwen3.5-4B,
+goes on the pod.
+
 Before the pod: re-extract the small models locally under the current code so
 every run carries SinkProbe and the anchored readout, implement the
 argument-row anchor and the distractor ladder, pilot both on Llama-3.2-1B and
