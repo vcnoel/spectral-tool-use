@@ -71,7 +71,20 @@ Runs sharing a checkpoint treated as independent in a rank test & aggregate & th
 \end{tabular}
 \end{center}
 
-A hand-checked sample of twenty-five items per run before the repairs put the label error at zero to one in five on the JSON formats and at most one in twenty-five on the XML formats. \cref{tab:postaudit} reports a second sample drawn on the repaired labels.
+A hand-checked sample of twenty-five items per run before the repairs put the label error at zero to one in five on the JSON formats and at most one in twenty-five on the XML formats. \cref{tab:postaudit} reports a second sample of thirty items per run drawn on the labels after the first two
+repairs, judged by hand against the benchmark's function documents. Every error found was a correct call scored
+as a failure, \auditPooledErr{} of \auditPooledN{} sampled items, from two causes the benchmark's own checker
+handles: list arguments written as single-quoted Python literals, and mathematical expressions that differ only
+in notation the checker strips. Both are repaired in the released labeller, which applies the checker's string
+normalisation to both sides, and every number in this paper is computed under that third repair.
+
+\begin{table}[h]
+\centering\small
+\caption{Hand audit of the labels after the first two repairs, thirty items per run stratified over failure
+modes, Wilson intervals. All errors are correct calls scored as failures.}
+\label{tab:postaudit}
+\input{table_postaudit}
+\end{table}
 
 \section{Registered predictions and outcomes}
 \label{app:registry}

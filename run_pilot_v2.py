@@ -280,6 +280,14 @@ TOOL_PROMPT_FALLBACK = (
 )
 
 
+# Set by `extract --thinking`: leave the template's reasoning mode on, so the
+# model may think before it calls. Set by `extract --force-json`: render the
+# tool schemas through the JSON system-prompt specification for every model,
+# so a family that natively writes XML calls writes JSON instead.
+THINKING_MODE = False
+FORCE_JSON = False
+
+
 def _apply_template(tok, msgs, tools=None):
     """
     apply_chat_template with chain-of-thought disabled where the template
@@ -299,7 +307,7 @@ def _apply_template(tok, msgs, tools=None):
     if tools is not None:
         kwargs["tools"] = tools
     try:
-        return tok.apply_chat_template(msgs, enable_thinking=False, **kwargs)
+        return tok.apply_chat_template(msgs, enable_thinking=THINKING_MODE, **kwargs)
     except TypeError:
         return tok.apply_chat_template(msgs, **kwargs)
 
@@ -319,14 +327,16 @@ def render_tool_prompt(tok, tools, user, history=None):
     """
     names = [t.get("name", "") for t in tools if t.get("name")]
     prior = list(history or [])
-    try:
-        text = _apply_template(
-            tok,
-            [{"role": "system", "content": "You are a helpful assistant."}]
-            + prior + [{"role": "user", "content": user}],
-            tools=tools)
-    except Exception:
-        text = None
+    text = None
+    if not FORCE_JSON:
+        try:
+            text = _apply_template(
+                tok,
+                [{"role": "system", "content": "You are a helpful assistant."}]
+                + prior + [{"role": "user", "content": user}],
+                tools=tools)
+        except Exception:
+            text = None
     if text is not None and all(n in text for n in names):
         return text
 
@@ -391,6 +401,11 @@ def _write_run_meta(args, model, tok, n_layers, probe_layers):
 
 
 def handle_extract(args):
+    global THINKING_MODE, FORCE_JSON
+    THINKING_MODE = bool(getattr(args, "thinking", False))
+    FORCE_JSON = bool(getattr(args, "force_json", False))
+    if THINKING_MODE or FORCE_JSON:
+        print(f"[extract] thinking={THINKING_MODE} force_json={FORCE_JSON}")
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
     torch.manual_seed(SEED)
@@ -1529,6 +1544,10 @@ def main():
                    help="also dump eigenvalue profiles, per-head Fiedler, "
                         "hidden-state Gram spectra")
     e.add_argument("--no-rich", dest="rich", action="store_false")
+    e.add_argument("--thinking", action="store_true",
+                   help="leave the chat template's reasoning mode on")
+    e.add_argument("--force-json", dest="force_json", action="store_true",
+                   help="render tools through the JSON system-prompt spec for every model")
     e.add_argument("--tag", default=None,
                    help="output subdir tag (default: derived from model id)")
     v = sub.add_parser("evaluate")

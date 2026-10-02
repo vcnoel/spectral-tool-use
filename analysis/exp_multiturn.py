@@ -35,7 +35,7 @@ from run_pilot_v2 import (  # noqa: E402
     surface_matrix, lapeig_official_scores, SEMANTIC_MODES,
 )
 
-TAGS = ["mt_llama1b", "mt_minicpm"]
+TAGS = ["mt_llama1b", "mt_minicpm", "v3_mt_minicpm"]
 SEEDS = [42, 43, 44]
 OUT = Path("data/theory/multiturn.json")
 
