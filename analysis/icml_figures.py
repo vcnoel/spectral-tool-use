@@ -162,9 +162,10 @@ def fig3():
     ax.set_xlabel("AUC")
     ax.set_xlim(0.45, 1.0)
     top = y[0] + 0.9
-    for x, txt, c in ((0.5, "floor", GREY), (0.6, "head-averaged", GREY), (0.74, "per-head", AQUA), (0.86, "LapEigvals", ORANGE), (0.96, "probe", BLUE)):
-        ax.text(x, top, txt, color=c, fontsize=6.2, ha="center", va="bottom")
-    ax.set_ylim(-0.8, top + 1.0)
+    for x, txt, c in ((0.46, "floor", GREY), (0.56, "head-averaged", GREY), (0.70, "per-head", AQUA), (0.83, "LapEigvals", ORANGE), (0.96, "probe", BLUE)):
+        ax.text(x, top + 0.2, txt, color=c, fontsize=6.0, ha="left" if x < 0.5 else "center", va="bottom")
+    ax.set_ylim(-0.8, top + 1.6)
+    ax.set_xlim(0.45, 1.02)
     fig.tight_layout()
     fig.savefig(FIG / "fig3_attention.pdf")
     plt.close(fig)

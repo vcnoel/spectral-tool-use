@@ -18,7 +18,7 @@ Fix one layer with $H$ heads and $T$ positions. Head $h$ produces a row-stochast
 Any map of the form $\{W_h\} \mapsto \Phi(\bar W)$ is constant on every set of head configurations sharing the same mean, and for every $H \ge 2$ and $T \ge 3$ there exist admissible configurations with the same mean whose per-head connectivities differ by a constant independent of $T$.
 \end{proposition}
 \begin{proof}
-The first claim holds because $\Phi$ factors through $\bar W$. For the second let $P$ be the path on $T$ nodes with weights $\tfrac12$ and $K$ the complete graph with weights $1/(T-1)$; both have row sums at most one and so arise from row-stochastic attention under the construction above, as does their mean. Put $W_1 = P$, $W_2 = K$ and $W_1' = W_2' = \tfrac12(P + K)$, repeating the pattern for $H > 2$. The two configurations share the mean $\tfrac12(P+K)$, while $\lambda_2(L_P) = 1 - \cos(\pi/T)$ and $\lambda_2(L_K) = T/(T-1) > 1$.
+The first claim holds because $\Phi$ factors through $\bar W$. For the second let $P$ be the path on $T$ nodes with weights $\tfrac12$ and $K$ the complete graph with weights $1/(T-1)$. both have row sums at most one and so arise from row-stochastic attention under the construction above, as does their mean. Put $W_1 = P$, $W_2 = K$ and $W_1' = W_2' = \tfrac12(P + K)$, repeating the pattern for $H > 2$. The two configurations share the mean $\tfrac12(P+K)$, while $\lambda_2(L_P) = 1 - \cos(\pi/T)$ and $\lambda_2(L_K) = T/(T-1) > 1$.
 \end{proof}
 
 \begin{proposition}[head averaging overstates connectivity]
@@ -26,10 +26,10 @@ The first claim holds because $\Phi$ factors through $\bar W$. For the second le
 For any heads $W_1, \dots, W_H$, $\lambda_2(\bar L) \ge \frac1H \sum_h \lambda_2(L_h)$, with equality if and only if the heads admit a common Fiedler vector.
 \end{proposition}
 \begin{proof}
-The Laplacian is linear in the adjacency, so $\bar L = \frac1H \sum_h L_h$. By Courant--Fischer, $\lambda_2(L) = \min_{x \perp \mathbf 1, \|x\|=1} x^\top L x$ is a pointwise minimum of linear functionals of $L$ and hence concave on the cone of graph Laplacians; Jensen's inequality gives the bound. If $x^\star$ attains the minimum for $\bar L$ then $\lambda_2(\bar L) = \frac1H \sum_h x^{\star\top} L_h x^\star \ge \frac1H \sum_h \lambda_2(L_h)$, with equality exactly when $x^\star$ is a Fiedler vector of every head \citep{chung1997spectral}.
+The Laplacian is linear in the adjacency, so $\bar L = \frac1H \sum_h L_h$. By Courant--Fischer, $\lambda_2(L) = \min_{x \perp \mathbf 1, \|x\|=1} x^\top L x$ is a pointwise minimum of linear functionals of $L$ and hence concave on the cone of graph Laplacians. Jensen's inequality gives the bound. If $x^\star$ attains the minimum for $\bar L$ then $\lambda_2(\bar L) = \frac1H \sum_h x^{\star\top} L_h x^\star \ge \frac1H \sum_h \lambda_2(L_h)$, with equality exactly when $x^\star$ is a Fiedler vector of every head \citep{chung1997spectral}.
 \end{proof}
 
-On \ensuremath{210} layers from three models and three inputs the combinatorial inequality holds with no violation and a gap bounded away from zero; for the normalised Laplacian the detectors use, where the Rayleigh quotient is not linear in $W$ and the inequality is not a theorem, it holds on all but three layers, and the averaged graph reports connectivity a median fourteen percent above the mean over heads. The mean pairwise alignment of per-head Fiedler vectors is \ensuremath{0.45}, far from the value one that equality needs.
+Both statements appear in concurrent anonymous work and are restated here because \cref{sec:attention} relies on them. On \jensenLayers{} layers from three models and three inputs the combinatorial inequality holds with \jensenCombViolations{} violations. For the normalised Laplacian the detectors use, where the Rayleigh quotient is not linear in $W$ and the inequality is not a theorem, it fails on \jensenNormViolations{} layers, and the averaged graph reports connectivity a median \jensenRatioMedianPct{}\% above the mean over heads.
 
 \begin{remark}[LapEigvals reads degrees]
 \label{rem:lapeig}
@@ -41,11 +41,11 @@ On \ensuremath{210} layers from three models and three inputs the combinatorial 
 
 \paragraph{Generation.} Greedy decoding in bfloat16 with deterministic kernels, a budget of 256 new tokens (160 on multi-turn prompts), tool schemas passed through the model's chat template with its reasoning mode disabled, and every end-of-turn id of the template among the stopping ids. The rendered text is tokenised without a second beginning-of-sequence token. Each record stores its budget, library versions and commit.
 
-\paragraph{Features.} Per-head spectra, LapEigvals, SinkProbe, Lookback and anchored features are reduced inside a forward hook on each attention module, so a layer's probabilities are released before the next layer computes; the eigendecompositions are taken on the subgraph induced on the generated call. Residual states are read at eight depths spaced by \texttt{linspace} over the layer count at the function-name token, the mean over argument-value tokens and the closing delimiter, located by alignment of the parsed call to the token offsets in each dialect; each record stores whether a call was located, and the probe is scored on every item regardless. Per-token states for the token-level probe cover 128 generated tokens.
+\paragraph{Features.} Per-head spectra, LapEigvals, SinkProbe, Lookback and anchored features are reduced inside a forward hook on each attention module, so a layer's probabilities are released before the next layer computes. The eigendecompositions are taken on the subgraph induced on the generated call. Residual states are read at eight depths spaced by \texttt{linspace} over the layer count at the function-name token, the mean over argument-value tokens and the closing delimiter, located by alignment of the parsed call to the token offsets in each dialect. Each record stores whether a call was located, and the probe is scored on every item regardless. Per-token states for the token-level probe cover 128 generated tokens.
 
-\paragraph{Classifiers.} Logistic regression with $\ell_2$ penalty, standardised features, class balancing and $C \in \{0.01, 0.1, 1, 10\}$ chosen on the validation carve-out; LapEigvals and SinkProbe widths $k \in \{5, 10, 25, 50, 100\}$ chosen the same way; gradient-boosted trees with a logistic fallback for the head-averaged per-layer sets.
+\paragraph{Classifiers.} Logistic regression with $\ell_2$ penalty, standardised features, class balancing and $C \in \{0.01, 0.1, 1, 10\}$ chosen on the validation carve-out. LapEigvals and SinkProbe widths $k \in \{5, 10, 25, 50, 100\}$ chosen the same way. Gradient-boosted trees with a logistic fallback for the head-averaged per-layer sets.
 
-\paragraph{Scoring.} Five tool-grouped folds with a one-fifth validation carve-out of training tools, training restricted to the scored population, one pooled AUC per seed over five seeds, mean reported. Differences are paired bootstraps over items that resample whole tools, 2000 draws, percentile intervals, Holm-adjusted within each run's family of contrasts for the appendix table.
+\paragraph{Scoring.} Five tool-grouped folds with a one-fifth validation carve-out of training tools, training restricted to the scored population, one pooled AUC per seed over five seeds, mean reported. Differences are paired bootstraps that resample whole tools, 2000 draws, percentile intervals.
 
 \section{Labelling and extraction defects found by the audit}
 \label{app:audit}
@@ -57,21 +57,21 @@ Each defect was present in a working pipeline, produced a plausible number and w
 \toprule
 Defect & Where it fell & Favoured \\
 \midrule
-A predicted list argument was collapsed to its first element by the unwrapping meant for ground truth, so correct list-valued calls were scored wrong & JSON dialects (Llama-3.2, Qwen3); \labelPosBeforeQwenThreeBfcl{}\,$\to$\,\labelPosAfterQwenThreeBfcl{} failures on Qwen3-1.7B & probes, through a surface feature \\
-Semicolon-separated parallel calls did not parse and were scored unparseable & Llama-3.2-3B, \labelPosBeforeLlamaThreeBBfcl{}\,$\to$\,\labelPosAfterLlamaThreeBBfcl{} failures & probes \\
+A predicted list argument was collapsed to its first element by the unwrapping meant for ground truth, so correct list-valued calls were scored wrong & JSON formats (Llama-3.2, Qwen3). \repPosBeforeQwenThreeBfcl{}\,$\to$\,\repPosAfterQwenThreeBfcl{} failures on Qwen3-1.7B, scored population & probes, through a surface feature \\
+Semicolon-separated parallel calls did not parse and were scored unparseable & Llama-3.2-3B, \repParallelLlamaThreeBBfcl{} calls returned to the scored population & probes \\
 A list sent as a string was compared inconsistently with a list & Llama-3.2 & probes \\
 A truncated call reached the scored population through modes other than unparseable & all, few items & neither \\
-Probe positions never located in the MiniCPM5 dialect, so the probe read the end-of-sequence state for every role & MiniCPM5 & confidence, by \ensuremath{0.02} \\
+Probe positions never located in the MiniCPM5 dialect, so the probe read the end-of-sequence state for every role & MiniCPM5 & confidence, by two points \\
 Generation stopped only on end-of-text, so Qwen3.5 ran past its end of turn and every span feature carried extra tokens & Qwen3.5 & unclear, small \\
 A second beginning-of-sequence token & Llama-3.2, MiniCPM5 & neither \\
 Probes trained on every item and scored on a subset learned format failures the subset excludes & population including abstentions & probes on the models that make format failures \\
-The sign of the log-probability fixed on items it is never scored on & Llama-3.2 on two runs & probes, by up to \ensuremath{0.24} \\
+The sign of the log-probability fixed on items it is never scored on & Llama-3.2 on two runs & probes, by up to a quarter of the scale \\
 Runs sharing a checkpoint treated as independent in a rank test & aggregate & the apparent significance \\
 \bottomrule
 \end{tabular}
 \end{center}
 
-A hand-checked sample of twenty-five items per run before the repairs put the label error at zero to one in five on the JSON dialects and at most one in twenty-five on the XML dialects; the measured error on the repaired labels is reported in the released audit file.
+A hand-checked sample of twenty-five items per run before the repairs put the label error at zero to one in five on the JSON formats and at most one in twenty-five on the XML formats. \cref{tab:postaudit} reports a second sample drawn on the repaired labels.
 
 \section{Registered predictions and outcomes}
 \label{app:registry}
@@ -82,9 +82,12 @@ A hand-checked sample of twenty-five items per run before the repairs put the la
 Id & Prediction, committed before the data that test it & Outcome \\
 \midrule
 R1 & The internal advantage separates the families by release period: MiniCPM5 and Qwen3.5 below Llama-3.2, Gemma-3 and Qwen3 at every checkpoint. & Failed. Qwen3-1.7B moved to the confidence side once the list-argument defect was repaired (\cref{tab:main}). The division that holds was found afterwards and is descriptive. \\
-C1 & The per-head spectral score and LapEigvals are not interchangeable, each keeps signal when the other is conditioned on, and their union exceeds both. & Two held, the third failed (union gain within noise on eleven runs). \\
-H1 & Models whose post-training included a reasoning mode have an internal advantage lower by at least 0.05 than a matched model without it, same base. & Registered; needs matched pairs above the size of this study. \\
-H2 & Within one model the advantage is within 0.05 of its full value under a tenfold cut of labels and under added distractor tools. & The label half holds (\cref{fig:controls}b); the distractor half is not yet run. \\
+R1b & The tool-tuned Llama-xLAM-2-8b has a smaller internal advantage than Llama-3.1-8B-Instruct, with an interval excluding zero. & Not run. \\
+R2 & On a distractor-tool dose ladder the internal advantage rises with the number of distractors on at least one model from each side. & Not run. \\
+R3 & Under forced JSON output the families where confidence suffices keep an advantage at or below zero. & Not run. \\
+C1 & The per-head spectral score and LapEigvals are not interchangeable, each keeps signal when the other is conditioned on, and their union exceeds both. & Two held, the third failed (union gain within noise on eleven runs), measured on the labels before the audit. \\
+H1 & Models whose post-training included a reasoning mode have an internal advantage lower by at least 0.05 than a matched model without it, same base. & Registered. Needs matched pairs above the size of this study. \\
+H2 & Within one model the advantage is within 0.05 of its full value when its labelled failures are cut to what the other families supply and when distractor tools are added. & The label half holds (\cref{fig:controls}b). The distractor half is not run. \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -99,12 +102,12 @@ H2 & Within one model the advantage is within 0.05 of its full value under a ten
 \section{Confidence summaries}
 \label{app:confidence}
 
-On the re-extracted runs eleven length-invariant summaries of the token log-probabilities are stored per call: the mean, the minimum, the mean of the five least likely tokens, the perplexity, the fraction of tokens below one half, the mean, maximum and final predictive entropy, and the mean, minimum and mean-of-five over the call's own tokens with special tokens removed. For each cross-fit fold the summary with the highest AUC on the items of the other folds is applied to the fold's items; the pooled score is one detector chosen fold by fold on data it is not scored on. On Llama-3.2-1B on BFCL the chosen summary reaches \aucBestConfLlamaOneBBfcl{} against \aucConfLlamaOneBBfcl{} for the mean, and the advantage becomes \gapBestLlamaOneBBfcl{} [\gapBestLoLlamaOneBBfcl{}, \gapBestHiLlamaOneBBfcl{}]. On Qwen3.5-0.8B the chosen summary reaches \aucBestConfQwenThreeFiveBfcl{} and the advantage \gapBestQwenThreeFiveBfcl{} [\gapBestLoQwenThreeFiveBfcl{}, \gapBestHiQwenThreeFiveBfcl{}]. Two summaries that grow with the call's length, its token count and its total log-probability, are excluded; on Gemma-3-1B on BFCL the token count alone reaches \ensuremath{0.87}, which is the length floor of that run and not a confidence.
+On the re-extracted runs eleven length-invariant summaries of the token log-probabilities are stored per call: the mean, the minimum, the mean of the five least likely tokens, the perplexity, the fraction of tokens below one half, the mean, maximum and final predictive entropy, and the mean, minimum and mean-of-five over the call's own tokens with special tokens removed. For each cross-fit fold the summary with the highest AUC on the items of the other folds is applied to the fold's items. The pooled score is one detector chosen fold by fold on data it is not scored on. On Llama-3.2-1B on BFCL the chosen summary reaches \aucBestConfLlamaOneBBfcl{} against \aucConfLlamaOneBBfcl{} for the mean, and the advantage becomes \gapBestLlamaOneBBfcl{} [\gapBestLoLlamaOneBBfcl{}, \gapBestHiLlamaOneBBfcl{}]. On Gemma-3-1B on BFCL the chosen summary pools to \aucBestConfGemmaBfcl{}, below the mean's \aucConfGemmaBfcl{}, because the summary that leads on four folds' items trails on the fifth. On Qwen3.5-0.8B the chosen summary reaches \aucBestConfQwenThreeFiveBfcl{} and the advantage \gapBestQwenThreeFiveBfcl{} [\gapBestLoQwenThreeFiveBfcl{}, \gapBestHiQwenThreeFiveBfcl{}]. An oracle that takes the best single summary on the test items gives \aucOracleConfLlamaOneBBfcl{} on Llama-3.2-1B and \aucOracleConfQwenThreeFiveBfcl{} on Qwen3.5-0.8B. Two summaries that grow with the call's length, its token count and its total log-probability, are excluded: on Gemma-3-1B on BFCL the token count alone reaches the length floor of that run, \aucFloorGemmaBfcl{}, and is a length and not a confidence.
 
 \section{Head resolution controls}
 \label{app:ladder}
 
-On the stored per-head features of \ladNRuns{} runs, under the same classifier and splits: the head-averaged graph's five metrics score \ladGraphAvg{}, the same five metrics computed per head and then averaged \ladMetricAvg{}, all heads kept \ladPerHead{}, the averaged features padded with Gaussian noise to the per-head width \ladNoisePadded{}, and the per-head features with the head axis permuted independently per item \ladHeadShuffled{}. The gain of keeping heads apart over averaging the metrics is \ladGainPerHead{} and positive on \ladGainPerHeadPos{} runs; destroying head identity costs \ladGainVsShuffle{}; width without information changes the averaged read by \ladNoiseEffect{}.
+On the stored per-head features of \ladNRuns{} runs, under the same classifier and splits: the head-averaged graph's five metrics score \ladGraphAvg{}, the same five metrics computed per head and then averaged \ladMetricAvg{}, all heads kept \ladPerHead{}, the averaged features padded with Gaussian noise to the per-head width \ladNoisePadded{}, and the per-head features with the head axis permuted independently per item \ladHeadShuffled{}. The gain of keeping heads apart over averaging the metrics is \ladGainPerHead{} and positive on \ladGainPerHeadPos{} runs. Destroying head identity costs \ladGainVsShuffle{}. Width without information changes the averaged read by \ladNoiseEffect{}.
 
 \section{Multi-turn protocol}
 \label{app:multiturn}

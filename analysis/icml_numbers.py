@@ -323,6 +323,65 @@ def main():
               "mtAucProbeCleanOnCorrupt", "mtAucProbeCleanOnClean"):
         macros.setdefault(m, f"\\pending{{{m}}}")
 
+    # ── quantities asked for by the review (analysis/icml_extra.py) ──────────
+    ex = DATA / "theory" / "icml_extra.json"
+    if ex.exists():
+        E = json.loads(ex.read_text(encoding="utf-8"))
+        side_of = {r["key"]: r["side"] for r in rows}
+        under_of = {r["key"]: r["under"] for r in rows}
+        for key, q in E["runs"].items():
+            define("tokGap" + key, fmt(q["tokenlevel_gap"], signed=True), f"icml_extra.json:{key}.tokenlevel_gap")
+            define("havgFloor" + key, fmt(q["headavg_minus_floor"], signed=True), f"icml_extra.json:{key}")
+            define("phHavg" + key, fmt(q["perhead_minus_headavg"], signed=True), f"icml_extra.json:{key}")
+            for k2, name in (("probe_within", "probeWithin"), ("conf_within", "confWithin"),
+                             ("gap_within", "gapWithin"), ("oracle_conf", "aucOracleConf"),
+                             ("gap_vs_oracle", "gapOracle")):
+                v = q.get(k2)
+                if v is None or (isinstance(v, float) and np.isnan(v)):
+                    macros[name + key] = "--"
+                else:
+                    define(name + key, fmt(v, signed=name.startswith("gap")), f"icml_extra.json:{key}.{k2}")
+        pw = [(k, q) for k, q in E["runs"].items() if not under_of.get(k, True)]
+        for side, nm in (("internals", "Internals"), ("confidence", "Confidence")):
+            sel = [q for k, q in pw if side_of.get(k) == side]
+            if not sel:
+                continue
+            define("tokGapMin" + nm, fmt(min(q["tokenlevel_gap"] for q in sel), signed=True), "icml_extra.json")
+            define("tokGapMax" + nm, fmt(max(q["tokenlevel_gap"] for q in sel), signed=True), "icml_extra.json")
+            define("havgFloorMin" + nm, fmt(min(q["headavg_minus_floor"] for q in sel), signed=True), "icml_extra.json")
+            define("havgFloorMax" + nm, fmt(max(q["headavg_minus_floor"] for q in sel), signed=True), "icml_extra.json")
+            define("phHavgMin" + nm, fmt(min(q["perhead_minus_headavg"] for q in sel), signed=True), "icml_extra.json")
+            define("phHavgMax" + nm, fmt(max(q["perhead_minus_headavg"] for q in sel), signed=True), "icml_extra.json")
+            gw = [q["gap_within"] for q in sel if not np.isnan(q["gap_within"])]
+            define("gapWithinMin" + nm, fmt(min(gw), signed=True), "icml_extra.json")
+            define("gapWithinMax" + nm, fmt(max(gw), signed=True), "icml_extra.json")
+            go = [q["gap_vs_oracle"] for q in sel if not np.isnan(q["gap_vs_oracle"])]
+            define("gapOracleMin" + nm, fmt(min(go), signed=True), "icml_extra.json")
+            define("gapOracleMax" + nm, fmt(max(go), signed=True), "icml_extra.json")
+        define("havgAboveFloorRuns", sum(1 for k, q in pw if side_of.get(k) == "internals" and q["headavg_minus_floor"] > 0), "icml_extra.json")
+        pooldiff = [q["gap_within"] - (q["probe_pooled"] - q["conf_pooled"]) for k, q in pw if not np.isnan(q["gap_within"])]
+        define("poolShiftMean", fmt(float(np.mean(pooldiff)), signed=True), "icml_extra.json: within minus pooled gap")
+        define("poolShiftMax", fmt(max(pooldiff), signed=True), "icml_extra.json")
+        for key, q in E.get("located", {}).items():
+            define("located" + key, f"{100 * q['rate']:.0f}", f"icml_extra.json:located.{key}")
+        if E.get("located"):
+            define("locatedMin", f"{100 * min(q['rate'] for q in E['located'].values()):.0f}", "icml_extra.json")
+        for key, q in E.get("label_repair", {}).items():
+            define("repScoredBefore" + key, q["scored_before"], f"icml_extra.json:label_repair.{key}")
+            define("repScoredAfter" + key, q["scored_after"], f"icml_extra.json:label_repair.{key}")
+            define("repPosBefore" + key, q["pos_before"], f"icml_extra.json:label_repair.{key}")
+            define("repPosAfter" + key, q["pos_after"], f"icml_extra.json:label_repair.{key}")
+            define("repListFlips" + key, q["list_argument_flips"], f"icml_extra.json:label_repair.{key}")
+            define("repParallel" + key, q["parallel_call_recoveries"], f"icml_extra.json:label_repair.{key}")
+        if "jensen" in E:
+            J = E["jensen"]
+            define("jensenLayers", J["n_layers_measured"], "jensen_gap.json")
+            define("jensenCombViolations", J["comb_gap_violations"], "jensen_gap.json")
+            define("jensenNormViolations", J["norm_gap_violations"], "jensen_gap.json")
+            define("jensenRatioMedianPct", f"{100 * (J['norm_ratio_median'] - 1):.0f}", "jensen_gap.json")
+        if "qwen3_gap_before_audit" in E:
+            define("gapQwenThreeBeforeAudit", fmt(E["qwen3_gap_before_audit"], signed=True), "family_split.json (pre-audit)")
+
     # ── write macros ─────────────────────────────────────────────────────────
     lines = ["% generated by analysis/icml_numbers.py; do not edit",
              "\\providecommand{\\pending}[1]{\\textbf{[PENDING: #1]}}"]
@@ -346,7 +405,7 @@ def main():
         att = max(v for v in (r["PerHead"], r["LapEig"]) if not np.isnan(v)) if not np.isnan(r["PerHead"]) else float("nan")
         gap = r["Gap"]
         gapcell = "--" if gap is None else f"${gap[0]:+.3f}$ [{gap[1]:+.2f}, {gap[2]:+.2f}]"
-        dag = r"$^\dagger$" if r["under"] else ""
+        dag = (r"$^\dagger$" if r["under"] else "") + (r"$^{*}$" if r["tag"].startswith("v3_") else "")
         t.append(f"{r['model']}{dag} & {r['bench']} & {r['n_pos']} & {r['n_neg']} & {cell(r['Probe'])} & "
                  f"{cell(att)} & {cell(r['Conf'])} & {cell(r['Floor'])} & {gapcell} \\\\")
     t += [r"\bottomrule", r"\end{tabular}"]

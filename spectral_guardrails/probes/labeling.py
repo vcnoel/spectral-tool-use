@@ -1,12 +1,16 @@
 import json
+import re as _re_std
 import torch
 from pathlib import Path
 from tqdm import tqdm
 
 # ── JSON-aware label helpers (schema-agnostic bridge) ─────────────────────────
 
-_EXPLICIT_NAME_KEYS = {"name", "tool_name", "function", "tool"}
-_EXPLICIT_ARG_KEYS = {"arguments", "parameters", "args", "input"}
+# Ordered: a call that carries both "arguments" (the values) and "parameters"
+# (an echoed schema) must be read the same way in every process, and the
+# values come first.
+_EXPLICIT_NAME_KEYS = ("name", "tool_name", "function", "tool")
+_EXPLICIT_ARG_KEYS = ("arguments", "parameters", "args", "input")
 
 
 def _try_parse_json(text: str):
@@ -77,15 +81,32 @@ UNGROUNDED_ARGS = {"current_date", "current_year", "current_time",
                    "current_datetime", "today", "todays_date", "date_today"}
 
 
+# BFCL's AST checker compares strings after removing spaces, commas, periods,
+# slashes, hyphens, underscores, asterisks and carets, lowercasing, and
+# turning single quotes into double quotes (its standardize_string), so that
+# "x^2", "x**2" and "x ** 2" or "April 1, 2024" and "April 1 2024" agree.
+# The same rule is applied here to both sides.
+_STANDARDIZE_RE = _re_std.compile(r"[ ,./\-_*^]")
+
+
 def _canon_value(v) -> str:
     s = str(v).strip().lower()
-    return _VALUE_ALIASES.get(s, s)
+    s = _VALUE_ALIASES.get(s, s)
+    return _STANDARDIZE_RE.sub("", s).replace("'", '"')
 
 
 def _decode_structured(v):
-    """A string that is a JSON list or object is compared as that value."""
+    """A string that is a JSON or Python list or object is compared as that
+    value. Llama writes list arguments as single-quoted Python literals."""
     if isinstance(v, str) and v.strip()[:1] in ("[", "{"):
         parsed = _try_parse_json(v)
+        if isinstance(parsed, (list, dict)):
+            return parsed
+        try:
+            import ast
+            parsed = ast.literal_eval(v.strip())
+        except (ValueError, SyntaxError, MemoryError, RecursionError):
+            return v
         if isinstance(parsed, (list, dict)):
             return parsed
     return v

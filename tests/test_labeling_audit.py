@@ -74,3 +74,25 @@ def test_minicpm_and_qwen_xml_unchanged():
     qwen = '<tool_call><function=f><parameter=xs>[1, 2]</parameter></function></tool_call>'
     assert classify_failure_anyof(mini, gt, True) == (0, "valid")
     assert classify_failure_anyof(qwen, gt, True) == (0, "valid")
+
+
+def test_python_literal_list_matches():
+    pred = '{"name": "f", "parameters": {"genres": "[\'War\', \'Drama\']"}}'
+    gt = [{"f": {"genres": [["War", "Drama"]]}}]
+    assert classify_failure_anyof(pred, gt, True) == (0, "valid")
+
+
+def test_bfcl_string_normalisation():
+    gt = [{"f": {"expr": ["x**2 + 3x"], "date": ["April 1, 2024"]}}]
+    pred = '{"name": "f", "parameters": {"expr": "x^2 + 3*x", "date": "April 1 2024"}}'
+    assert classify_failure_anyof(pred, gt, True) == (0, "valid")
+    wrong = '{"name": "f", "parameters": {"expr": "x^3 + 3*x", "date": "April 1 2024"}}'
+    assert classify_failure_anyof(wrong, gt, True)[0] == 1
+
+
+def test_values_read_before_echoed_schema():
+    pred = ('{"name": "f", "arguments": {"radius": 10}, '
+            '"parameters": {"type": "object", "properties": {"radius": {"type": "integer"}}}}')
+    gt = [{"f": {"radius": [10]}}]
+    for _ in range(3):
+        assert classify_failure_anyof(pred, gt, True) == (0, "valid")
