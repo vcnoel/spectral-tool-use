@@ -1,0 +1,19 @@
+\section{The internal advantage depends on the model}
+\label{sec:result}
+
+
+\begin{table*}[t]
+\centering
+\small
+\caption{Every run under the corrected protocol. $n_+$ and $n_-$ are the labelled failures and correct calls in the scored population, \emph{attention} the better of the per-head profile and LapEigvals, and the last column the internal advantage with its 95\% tool-resampled interval. $^\dagger$ fewer than thirty items of one class.}
+\label{tab:main}
+\input{table_main}
+\end{table*}
+
+\cref{tab:main} and \cref{fig:gap} hold the paper's measurement. The \nRunsPowered{} powered runs fall into two groups that do not overlap. On the seven runs of Llama-3.2 and Gemma-3 the internal advantage runs from \gapInternalsMin{} to \gapInternalsMax{}, and its interval excludes zero on \nInternalsCiExcludesZero{} of them, the exception being Llama-3.2-1B on the live categories, where it touches zero. On the four powered runs of Qwen3, MiniCPM5 and Qwen3.5 it runs from \gapConfidenceMin{} to \gapConfidenceMax{}, its interval is above zero on none and below zero on \nConfidenceCiBelowZero{}. In practice, an operator of a Llama-3.2 or Gemma-3 agent who reads only the model's confidence passes most of the wrong calls that a probe would have stopped, and an operator of a Qwen3, Qwen3.5 or MiniCPM5 agent who builds a probe gets nothing their confidence did not already give them.
+
+Runs that share a checkpoint are not independent, so the unit for any test is the checkpoint, of which there are \nCkptInternals{} on each side. Their mean advantages separate completely, Llama-3.2-1B at \ckptGapLlamaOneB{}, Llama-3.2-3B at \ckptGapLlamaThreeB{}, Gemma-3-1B at \ckptGapGemma{} against Qwen3-1.7B at \ckptGapQwenThree{}, MiniCPM5-2B at \ckptGapMiniCpm{} and Qwen3.5-0.8B at \ckptGapQwenThreeFive{}. Three against three is the smallest attainable two-sided rank-test value, $p=\ckptExactFloor{}$, so the separation is reported as a description of these six checkpoints and not as a test, and \cref{sec:discussion} says what would test it.
+
+The split is not a size effect. Both sides contain models of about one and about two billion parameters, the largest model in the study sits on the side where internals are needed, and \citet{yeats2026calls} find probe accuracy rising with size on the same benchmark, which the probes here also do within Llama-3.2 without the advantage changing sign. Nor is it an attention-design effect: MiniCPM5 is a dense stack like Llama, and Gemma-3 attends locally in all but four layers yet behaves like Llama.
+
+\paragraph{Replication.} Llama-3.2-1B on BFCL was extracted twice, once before and once after the extraction repairs of \cref{sec:setup}, with the same generations relabelled under the same code. The internal advantage reads \replGapStale{} on the earlier extraction and \replGapClean{} on the later one, a drift of \replGapDelta{} that is inside the interval of either, and no difference smaller than it is claimed anywhere in this paper.

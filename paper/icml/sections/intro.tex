@@ -1,0 +1,26 @@
+\section{Introduction}
+\label{sec:intro}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{fig1_gap}
+\caption{(a) The internal advantage of every run, the token-role probe's AUC minus the mean log-probability's AUC on held-out tools, with its tool-resampled 95\% interval. Blue: Llama-3.2 and Gemma-3. Orange: Qwen3, Qwen3.5 and MiniCPM5. Faded: runs with fewer than thirty labelled items of one class. (b) One representative per access tier on the same runs: the length floor, the mean log-probability, the better of the two attention readouts and the probe.}
+\label{fig:gap}
+\end{figure*}
+
+
+A language model agent acts by calling tools. When it calls the wrong one, or the right one with the wrong arguments, the call is usually well formed, so the runtime executes it and something happens in the world before anyone reads the transcript. A guardrail therefore has to judge the call in the interval between its generation and its execution, from what the model exposes in that single forward pass. Two kinds of evidence are available in that interval. The model's output distribution gives the probability it assigned to each token of the call, which every serving stack returns. The model's hidden states give a probe something to read, which only a stack that runs the model's own code can expose.
+
+Detectors of the second kind work. A probe on the residual stream at the structural positions of a call, its function name, its argument values and its closing delimiter, separates wrong calls from right ones with high accuracy \citep{healy2026internal}, and linear probes on hidden states do so across many models \citep{yeats2026calls}. Diagnostics of the attention graph reach similar accuracy on related tasks \citep{binkowski2025lapeigvals,chuang2024lookback}. What none of these studies measures is the alternative the operator already has. The question this paper answers is whether reading the model's internals catches wrong tool calls that the model's own output confidence misses, and on which models.
+
+We answer it with one quantity, the \emph{internal advantage}: the area under the curve of the residual-stream probe minus that of the mean token log-probability of the call, both scored on tools that never appeared in training and both reported beside a floor that reads only the length of the call. The comparison is run on small open-weight checkpoints from five model families, on three tool-calling benchmarks, under a protocol whose labelling and extraction code was audited and repaired before any number in this paper was computed, because the first version of that code scored correct list-valued calls as wrong on exactly the models where confidence then appeared useless.
+
+The result can be stated in one sentence: on some models the output confidence already knows when a tool call is wrong, and on others only the hidden states do. On Llama-3.2 and Gemma-3 the probe leads confidence on every run, by a margin whose interval excludes zero in six runs of seven. On Qwen3, Qwen3.5 and MiniCPM5 the confidence matches the probe or beats it, and on no run does the probe lead by an interval that excludes zero. The two groups do not overlap at the level of the checkpoint. The split does not follow model size, which runs from 0.8 to 3 billion parameters on both sides, and it survives every alternative explanation we could test on the stored data: the difficulty of the items each model fails on, the number of labelled failures a probe is trained on, the choice of confidence summary, the benchmark, and the training population of the probe.
+
+\paragraph{Contributions.}
+\begin{enumerate}[topsep=1pt,itemsep=1pt,leftmargin=1.3em]
+\item A controlled measurement of the internal advantage on \nRunsPowered{} powered runs from \nCkpt{} checkpoints in five families, with tools held out at test, a length floor in every table and a paired interval on every difference (\cref{sec:result}). \citet{healy2026internal} and \citet{yeats2026calls} establish that probes work; neither scores the model's own confidence beside them, and \citet{yeats2026calls} splits by item rather than by tool.
+\item The finding that whether a probe adds anything is a property of the model rather than of its size, with the controls that rule out item difficulty, label budget, the confidence summary, the benchmark and the probe's training population as explanations (\cref{sec:controls}).
+\item A measurement of what the attention tier recovers where internals are needed: readouts that keep attention heads apart come within a few points of the probe, head-averaged readouts do not clear the length floor, and the elementary reason is stated with its proof (\cref{sec:attention}).
+\item The audit of the measurement chain itself, which found a labelling defect that had manufactured a family effect, with the record of every registered prediction and its outcome (\cref{app:audit,app:registry}).
+\end{enumerate}

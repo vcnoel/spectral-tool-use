@@ -1,0 +1,25 @@
+\section{Deployment}
+\label{sec:deployment}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\columnwidth]{fig4_cost}
+\caption{Cost per call of each path on Llama-3.2-1B, median over \latNPrompts{} BFCL prompts on one consumer GPU, with a line to the 90th percentile. Every internal judge needs the forward pass; the per-head spectra add eigendecompositions on the call span.}
+\label{fig:cost}
+\end{figure}
+
+\paragraph{Cost.}
+Reading confidence costs nothing beyond generation. Every internal judge needs one teacher-forced pass over prompt and call, \latPass{}\,ms against \latGen{}\,ms of generation on the hardware of \cref{fig:cost}, and a stack that keeps the generation pass's states can skip it for the residual tier but not for attention, whose probabilities a fused kernel never materialises. On top of that pass the token-role features cost \latTokenRole{}\,ms, LapEigvals \latLapEig{}\,ms and the per-head spectra \latPerHead{}\,ms at the median, \latPerHeadPct{}\% of generation, with a 90th percentile of \latPerHeadNinety{}\,ms when the call is long.
+
+\paragraph{Calls with a history.}
+An agent's calls are made with a conversation behind them. On the multi-turn categories of BFCL-v4, replayed with the ground-truth calls of the two preceding turns in the prompt, and in half the records with one of those turns replaced by a wrong call reported as successful, MiniCPM5-2B's failure rate moves from \mtFailClean{}\% after a clean history to \mtFailCorrupt{}\% after a corrupted one (Fisher $p=\mtFisherP{}$), the probe reads \mtAucProbe{} against \mtAucConf{} for confidence, and a probe trained on clean histories only scores corrupted items at \mtAucProbeCleanOnCorrupt{} against \mtAucProbeCleanOnClean{} on clean ones. The side of the split and the usefulness of a judge trained without failed trajectories both carry over to a call made with a history (\cref{app:multiturn}).
+
+\begin{tcolorbox}[colback=white,colframe=black!60,boxrule=0.5pt,arc=1pt,left=4pt,right=4pt,top=3pt,bottom=3pt,title=\small Before building an internal judge for a tool-calling model]
+\small
+\begin{enumerate}[topsep=0pt,itemsep=1pt,leftmargin=1.2em]
+\item Score the mean token log-probability on a few hundred labelled calls from the model to be deployed, on tools absent from the labelled set. If it already separates wrong calls well, no probe we trained improved on it (\cref{tab:main}, lower block). Cost of skipping: a probe, its labels and a forward pass per call for a gain of at most \gapConfidenceMax{} AUC.
+\item If it does not, train the token-role probe on the residual stream; fifty labelled failures suffice (\cref{fig:controls}b). Cost of skipping: \gapInternalsMin{} to \gapInternalsMax{} AUC against confidence.
+\item Where only attention is exposed, read it per head. Cost of averaging heads first: up to \GapPerHeadAvgLlamaOneBBfcl{} AUC on one run.
+\item Split the labelled set by tool, and keep a length floor beside every number. Cost of skipping: a tool-identity classifier alone looks like a detector.
+\end{enumerate}
+\end{tcolorbox}

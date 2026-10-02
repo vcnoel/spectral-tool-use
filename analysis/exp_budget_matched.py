@@ -25,7 +25,7 @@ from run_pilot_v2 import (  # noqa: E402
     grouped_kfold, fit_lr, auc_safe, load_and_relabel, hidden_matrix, SEMANTIC_MODES,
 )
 
-RUNS = ["base_llama1b_bfcl", "base_llama3b_bfcl"]
+RUNS = ["v3_llama1b_bfcl", "base_llama3b_bfcl"]
 TARGETS = [51, 67, 91]          # positives supplied by Qwen3, MiniCPM5, Qwen3.5
 SEEDS = [42, 43, 44]
 OUT = ROOT / "data" / "theory" / "budget_matched.json"

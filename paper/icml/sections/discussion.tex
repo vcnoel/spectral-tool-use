@@ -1,0 +1,14 @@
+\section{Discussion}
+\label{sec:discussion}
+
+\paragraph{What the split could be.}
+With five families the data say which models fall on which side and not why. One reading is suggested by \cref{tab:models} and recorded as a hypothesis before any new model was extracted (\cref{app:registry}): the three families on which confidence suffices all ship a chat template with a reasoning mode and were post-trained with it, and the two on which internals are needed do not. Post-training that rewards a model for working through a call before writing it may also leave its token probabilities tracking its own errors. \citet{yeats2026calls} find tool-specific fine-tuning the second strongest predictor of probe accuracy after size, which is the same factor seen from the probe's side. The test is a matched pair that differs only in that post-training, on one base model, and it needs models above the size this study reaches. A second reading, that a model which has seen the benchmark in training fails less and knows when it fails, is weakened by the live categories, contributed by users after the curated set, on which MiniCPM5 behaves as it does on the curated one, but it is not excluded.
+
+\paragraph{For operators.}
+The decision that changes is whether to build an internal judge at all. If the deployed model's log-probability already ranks its wrong calls, as it does on Qwen3, Qwen3.5 and MiniCPM5 here, the probe adds at most \gapConfidenceMax{} AUC and costs a forward pass per call; if it does not, as on Llama-3.2 and Gemma-3, the probe adds \gapInternalsMin{} to \gapInternalsMax{} and fifty labelled failures are enough to fit it. Both are answered by scoring confidence on a few hundred labelled calls from that model, which is cheaper than either mistake.
+
+\paragraph{For model builders.}
+A model whose confidence tracks its tool-calling errors ships its own guardrail. If the post-training reading above holds, that property is a choice made in training and can be measured as part of a release, by the same protocol: the internal advantage on held-out tools against a length floor.
+
+\paragraph{For detector research.}
+Reporting a probe's accuracy without the model's own confidence beside it, on items rather than tools, can show a strong detector on a model that did not need one. The two findings that survive every control here, that the need for a judge is a property of the model and that attention must be read per head where a judge is needed, both appear only under that comparison.

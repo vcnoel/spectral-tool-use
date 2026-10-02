@@ -44,8 +44,9 @@ from run_pilot_v2 import (  # noqa: E402
 )
 
 TAGS = ["base_llama1b_glaive", "base_llama3b_glaive", "base_gemma3_glaive",
-        "base_llama1b_bfcl", "base_llama3b_bfcl", "base_qwen3_17b_bfcl",
-        "minicpm5_2b_bfcl", "qwen35_08b_bfcl", "llama1b_live"]
+        "v3_llama1b_bfcl", "base_llama3b_bfcl", "base_qwen3_17b_bfcl",
+        "v3_gemma3_1b_bfcl", "v3_minicpm5_2b_bfcl", "v3_qwen35_08b_bfcl",
+        "llama1b_live", "v3_minicpm5_2b_live"]
 SEEDS = [42, 43, 44]
 OUT = Path("data/theory/resolution_ladder.json")
 

@@ -1,0 +1,69 @@
+\documentclass{article}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{icml2026}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[capitalize,noabbrev]{cleveref}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+\hypersetup{colorlinks=true,linkcolor=[RGB]{24,64,140},citecolor=[RGB]{24,64,140},urlcolor=[RGB]{24,64,140}}
+\graphicspath{{figures/}}
+
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\theoremstyle{definition}
+\newtheorem{observation}{Observation}
+
+\input{numbers}
+
+\icmltitlerunning{Some Language Models Know When Their Tool Calls Are Wrong}
+
+\begin{document}
+
+\twocolumn[
+\icmltitle{Some Language Models Know When Their Tool Calls Are Wrong}
+\icmlsetsymbol{equal}{*}
+\begin{icmlauthorlist}
+\icmlauthor{Anonymous Authors}{anon}
+\end{icmlauthorlist}
+\icmlaffiliation{anon}{Anonymous Institution}
+\icmlcorrespondingauthor{Anonymous}{anon@example.invalid}
+\icmlkeywords{tool calling, hallucination detection, probing, attention, agents}
+\vskip 0.3in
+]
+\printAffiliationsAndNotice{}
+\addtocontents{toc}{\protect\setcounter{tocdepth}{-10}}
+
+\begin{abstract}
+Teams that deploy tool-calling agents want to stop a wrong call before it executes, and detectors that read a model's hidden states in the same forward pass have been proposed for the purpose. Those detectors have not been compared against the model's own output confidence under one protocol, on tools absent from training, above a floor that reads only the length of the call. We measure that comparison as a single quantity, the internal advantage: the area under the curve of a probe on the residual stream minus that of the mean token log-probability, on held-out tools, across small open-weight checkpoints from five model families and three tool-calling benchmarks, after auditing and repairing the labelling and extraction code the comparison runs on. Whether an internal judge adds anything depends on the model and not on its size. On Llama-3.2 and Gemma-3 the probe leads output confidence by 0.12 to 0.38 in area under the curve on every run, while on Qwen3, Qwen3.5 and MiniCPM5 the model's own confidence ranks its wrong calls as well as the probe does or better. The split holds when item difficulty is held fixed, when the probe's labels are cut to what the other families supply, when the confidence summary is chosen fairly and when the benchmark changes, and the one family that changed sides did so because a labelling defect had scored correct list-valued calls as wrong. The practical consequence is a measurement rather than a method: score output confidence on a few hundred labelled calls from the model to be deployed, and build an internal judge only where it is poor, where attention weights alone recover most of the probe once heads are read separately.
+\end{abstract}
+
+\input{sections/intro}
+\input{sections/related}
+\input{sections/setup}
+\input{sections/result}
+\input{sections/controls}
+\input{sections/attention}
+\input{sections/deployment}
+\input{sections/discussion}
+\input{sections/limitations}
+
+\section*{Impact statement}
+This work measures open-weight language models on public tool-calling benchmarks, trains no model and involves no human subjects. Its aim is defensive: to tell an operator when a wrong tool call can be caught from the model's own state before it executes, and when the model's output confidence already does so. The same detectors could in principle guide the construction of calls that evade them, which is why we report operating points and the models on which each detector weakens rather than one headline number.
+
+\section*{Reproducibility statement}
+Every number in this paper expands from a macro that a released script builds from the result files, and each macro records the file, field and run it reads. Labels are recomputed from the stored generations at evaluation time, so the labelling rule in force is the one in the released code. Splits are grouped by ground-truth tool, every intervals resamples tools, and the registered predictions of \cref{app:registry} were committed before the data that test them. Models and benchmarks are public and the released repository regenerates every table and figure from the stored extractions.
+
+\bibliography{references}
+\bibliographystyle{icml2026}
+
+\appendix
+\onecolumn
+\input{sections/appendix}
+
+\end{document}

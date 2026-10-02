@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 RUNS = {
-    "Llama-3.2-1B": "base_llama1b_bfcl",
+    "Llama-3.2-1B": "v3_llama1b_bfcl",
     "Llama-3.2-3B": "base_llama3b_bfcl",
     "Qwen3-1.7B": "base_qwen3_17b_bfcl",
     "Qwen3.5-0.8B": "v3_qwen35_08b_bfcl",
