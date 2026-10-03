@@ -1,12 +1,9 @@
-# Message to the OpenAI and Amazon co-authors (draft, 2 October 2026)
+# Message to the OpenAI and Amazon co-authors (3 October 2026)
 
 Written for: Kait, Bharathi and the OpenAI collaborators, who know the
 token-role probe and the workshop paper but not the last three weeks of
-work. Numbers below are from the second label pass; a third pass that
-applies BFCL's own string normalisation is re-scoring every run tonight and
-is expected to move the Llama gaps down by a few hundredths and nothing
-else by more than noise. The PDF link and the final numbers follow when it
-finishes.
+work. Numbers below are final under the third label pass, which applies
+BFCL's own string normalisation; attach paper/icml/main.pdf.
 
 ---
 
@@ -27,10 +24,10 @@ from five families and three benchmarks (Glaive, BFCL, BFCL-live).
 **The result.** It depends on the model, cleanly.
 
 - Llama-3.2 (1B, 3B) and Gemma-3 (1B): the probe leads confidence by 0.12
-  to 0.38 AUC on all seven runs, interval excluding zero on six.
-- Qwen3 (1.7B), Qwen3.5 (0.8B) and MiniCPM5 (2B): the probe's lead is
-  within noise of zero on all four powered runs (−0.10 to +0.05), and below
-  zero with an interval excluding it on Qwen3.5.
+  to 0.39 AUC on all seven runs, interval excluding zero on six.
+- Qwen3 (1.7B), Qwen3.5 (0.8B) and MiniCPM5 (2B): confidence leads the
+  probe on all four powered runs (−0.11 to −0.05), within noise on three and
+  with an interval excluding zero on Qwen3.5.
 
 So on some models the confidence already knows when a tool call is wrong,
 and on others only the hidden states do. The consequence for an operator is
@@ -53,13 +50,14 @@ too.** A code audit found that the first version of the labeller unwrapped
 list-valued arguments on the model's prediction the way it unwraps BFCL's
 ground truth, so correct calls with a list argument were scored wrong, only
 in the JSON formats. On Qwen3 that had manufactured a +0.39 "probe wins"
-result that is +0.05 after repair. The probe also never found MiniCPM5's
+result that is −0.05 after repair. The probe also never found MiniCPM5's
 call positions and read the end-of-sequence state three times. We fixed
-both, re-extracted, and hand-audited the repaired labels; a residual 7%
-error (correct calls scored wrong, two notation causes BFCL's own checker
-normalises) is being repaired tonight. Every one of these errors favoured
-the probe. If your pipeline shares the BFCL unwrapping, it is worth a
-check.
+both, re-extracted, and hand-audited the repaired labels, which found a
+further 7.5% of correct calls scored wrong from two notation causes BFCL's
+own checker normalises (single-quoted Python lists, x^2 against x**2); those
+are repaired too. Every one of these errors favoured the probe. If your
+pipeline shares the BFCL unwrapping or compares strings without BFCL's
+standardize_string, it is worth a check.
 
 **What we do not know.** With five families we can say which models fall on
 which side and not why. Two readings fit all six checkpoints equally well:
@@ -68,11 +66,12 @@ and post-training recipe (the three confidence-side families ship a
 reasoning mode and were trained with it). Yeats et al. (Aug 2026, 18 models
 on BFCL) find tool-specific fine-tuning lowers what a probe reads by about
 five points, which points the same way. We registered the post-training
-hypothesis before extracting anything new, and the first test runs this
-week on our hardware: Qwen3 with its thinking mode on against off. The
-decisive tests need larger matched pairs (Olmo-3-7B Instruct against Think,
-Llama-3.1-8B against xLAM-2-8b) and the current ladders up to 27 to 31B,
-which is the A100 week.
+hypothesis before extracting anything new. Switching Qwen3's thinking mode
+on at generation did not test it: Qwen3 then fails on too few calls to
+score, and it already sits on the confidence side. The test needs a pair
+from one base where one member sits on the internals side (Olmo-3-7B
+Instruct against Think, Llama-3.1-8B against a reasoning distillation), and
+the current ladders up to 27 to 31B, which is the A100 week.
 
 **Where the attention work went.** It is now one section rather than the
 paper. On the models where internals are needed, attention read per head

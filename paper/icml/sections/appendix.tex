@@ -99,7 +99,7 @@ R1b & The tool-tuned Llama-xLAM-2-8b has a smaller internal advantage than Llama
 R2 & On a distractor-tool dose ladder the internal advantage rises with the number of distractors on at least one model from each side. & Not run. \\
 R3 & Under forced JSON output the families where confidence suffices keep an advantage at or below zero. & Not run. \\
 C1 & The per-head spectral score and LapEigvals are not interchangeable, each keeps signal when the other is conditioned on, and their union exceeds both. & Two held, the third failed (union gain within noise on eleven runs), measured on the labels before the audit. \\
-H1 & Models whose post-training included a reasoning mode have an internal advantage lower by at least 0.05 than a matched model without it, same base. & Registered. Needs matched pairs above the size of this study. \\
+H1 & Models whose post-training included a reasoning mode have an internal advantage lower by at least 0.05 than a matched model without it, same base. & Not tested. Qwen3-1.7B with its reasoning mode switched on at generation fails on 21 of 396 scored calls, below the thirty needed to score, and is not a matched pair in the required sense. \\
 H2 & Within one model the advantage is within 0.05 of its full value when its labelled failures are cut to what the other families supply and when distractor tools are added. & The label half holds (\cref{fig:controls}b). The distractor half is not run. \\
 \bottomrule
 \end{tabular}
