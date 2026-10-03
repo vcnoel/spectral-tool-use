@@ -1418,6 +1418,7 @@ def handle_evaluate(args):
         "min_class_per_subset": MIN_CLASS_PER_SUBSET,
         "underpowered": bool(flagged),
         "train_on": getattr(args, "train_on", "scored"),
+        "labeller": "v3",  # the third labelling repair (BFCL string normalisation)
         # pooled cross-fit AUC per seed (the historical quantity)
         "results": _ser(results),
         # mean of within-fold AUCs per seed: free of fold-composition offsets
