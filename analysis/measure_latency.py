@@ -35,7 +35,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: E402
 from run_pilot_v2 import render_tool_prompt, iter_bfcl_examples  # noqa: E402
 
 from spectral_guardrails.spectral.metrics import (  # noqa: E402
-    lapeigvals_diag_profile, per_head_metrics,
+    lapeigvals_diag_profile, per_head_metrics, _per_head_backend,
 )
 from spectral_guardrails.spectral.streaming import StreamingAttentionFeatures  # noqa: E402
 
@@ -101,7 +101,8 @@ def main():
         attn = [a[0] for a in mo_a.attentions]
         t4 = sync()
         for a in attn:
-            per_head_metrics(a, span=span)
+            st_ph, cfg = _per_head_backend()
+            st_ph(a, config=cfg, token_span=span).values   # numpy array on the CPU
         t5 = sync()
         for a in attn:
             # the tensor work of the LapEigvals features only; the stored
@@ -110,7 +111,7 @@ def main():
             denom = torch.arange(1, Tn + 1, device=a.device,
                                  dtype=torch.float32).flip(0)
             lap_diag = a.sum(dim=1, dtype=torch.float32) / denom                 - torch.diagonal(a, dim1=1, dim2=2).to(torch.float32)
-            lap_diag.sort(dim=-1, descending=True).values[:, :100]
+            lap_diag.sort(dim=-1, descending=True).values[:, :100].cpu().numpy()  # same end point
         t6 = sync()
         hs = mo_a.hidden_states
         _ = torch.cat([torch.cat([hs[l][0, P], hs[l][0, P:T].mean(0), hs[l][0, T - 1]])
