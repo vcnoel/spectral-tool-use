@@ -3,8 +3,8 @@
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=\textwidth]{fig2_controls}
-\caption{Three alternative explanations, each held fixed. (a) The internal advantage on the BFCL checkpoints, raw and recomputed within strata of item difficulty, where difficulty is the share of the other checkpoints that fail the same item. (b) The token-role probe's AUC on the two Llama-3.2 runs as its training failures are thinned to the counts the other families supply, with the mean log-probability dashed. (c) The advantage against the mean log-probability and against the confidence summary chosen on training folds, one point per run with stored summaries.}
+\includegraphics{fig2_controls}
+\caption{(a) Internal advantage per BFCL checkpoint over all items and within strata of item difficulty, where difficulty is the share of the other checkpoints that fail the item. (b) Token-role probe AUC (solid) and mean log-probability AUC (dashed) against the labelled failures available for training on Llama-3.2-1B and 3B, log scale. (c) Internal advantage against the mean log-probability and against the confidence summary chosen on training folds, one point per run that stores several summaries, identity line grey.}
 \label{fig:controls}
 \end{figure*}
 

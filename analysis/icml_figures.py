@@ -1,199 +1,292 @@
 """
-Figures for the ICML draft, from the result files. Writes PDFs into
-paper/icml/figures/. ICML column width is 3.25 in and text width 6.75 in;
-figures are drawn at those widths and inserted unscaled.
+Figures for the ICML draft, from the result files, in the house figure
+grammar: built at the document's measured widths (text 487.8225pt, column
+234.8775pt) and inserted unscaled, typeset by LaTeX in the document's font,
+colourblind-safe palette, series labelled at their ends, no legend on data.
+Every figure is checked afterwards by the layout gate:
 
-  fig1_gap        (a) probe minus confidence per run with tool-resampled
-                  intervals; (b) the four tier representatives per run
-  fig2_controls   (a) the gap within difficulty strata against the raw gap;
-                  (b) the probe's AUC against training failures on Llama,
-                  with the other families' gaps as reference lines;
-                  (c) gap against the mean log-probability and against the
-                  summary chosen on training folds
-  fig3_attention  head-averaged, per-head and LapEigvals against the probe
-  fig4_cost       per-call cost of each path
+    FIGDIR=paper/icml/figures TEXTWIDTH_PT=487.8225 \
+        python ~/.claude/skills/research-writing/scripts/check_figures.py
+
+  fig1_gap        (a) the internal advantage per run with its interval
+                  (b) one representative per access tier per run
+  fig2_controls   (a) advantage raw and within difficulty strata
+                  (b) probe and confidence AUC as training failures shrink
+                  (c) advantage against two choices of confidence summary
+  fig3_attention  head-averaged, per-head, LapEigvals and probe per run
+  fig4_cost       per-call cost of each path, median and 90th percentile
 """
 import json
 from pathlib import Path
 
 import matplotlib
-matplotlib.use("Agg")
+matplotlib.use("pgf")
 import matplotlib.pyplot as plt  # noqa: E402
+import matplotlib.ticker  # noqa: E402
 import numpy as np  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 THEORY = ROOT / "data" / "theory"
 FIG = ROOT / "paper" / "icml" / "figures"
 FIG.mkdir(parents=True, exist_ok=True)
-COL, TEXT = 3.25, 6.75
-INK, GREY, LIGHT = "#2b2b2b", "#8a8a8a", "#cfcfcf"
-BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
-plt.rcParams.update({"font.size": 7.5, "axes.titlesize": 7.5, "axes.labelsize": 7.5,
-                     "xtick.labelsize": 6.8, "ytick.labelsize": 6.8, "legend.fontsize": 6.8,
-                     "pdf.fonttype": 42, "axes.spines.top": False, "axes.spines.right": False,
-                     "axes.edgecolor": GREY, "xtick.color": INK, "ytick.color": INK})
+
+TEXT = 487.8225 / 72.27          # inches, measured from the compiled document
+COL = 234.8775 / 72.27
+
+INK, MID, FAINT = "#1A1A1A", "#7A7A7A", "0.86"
+BLUE, ORANGE, GREEN = "#0072B2", "#D55E00", "#009E73"
+
+plt.rcParams.update({
+    "pgf.texsystem": "pdflatex", "pgf.rcfonts": False, "text.usetex": True,
+    "pgf.preamble": r"\usepackage{times}\usepackage{amsmath}",
+    "font.family": "serif", "font.size": 8.5, "axes.titlesize": 8.5, "axes.labelsize": 8.5,
+    "xtick.labelsize": 7.5, "ytick.labelsize": 7.5, "legend.fontsize": 7.5,
+    "axes.linewidth": 0.5, "xtick.major.width": 0.5, "ytick.major.width": 0.5,
+    "xtick.major.size": 2.5, "ytick.major.size": 2.5,
+    "axes.spines.top": False, "axes.spines.right": False,
+    "axes.edgecolor": INK, "xtick.color": INK, "ytick.color": INK,
+    "savefig.bbox": "tight", "savefig.pad_inches": 0.02, "pdf.fonttype": 42,
+})
+ANNOT = 6.8
 
 
 def rows():
     return json.loads((THEORY / "icml_rows.json").read_text(encoding="utf-8"))
 
 
-def label(r):
-    return f"{r['model']}, {r['bench']}" + (" †" if r["under"] else "")
+def short(model):
+    return (model.replace("Llama-3.2-", "Llama ").replace("Gemma-3-", "Gemma ")
+            .replace("Qwen3.5-", "Qwen3.5 ").replace("Qwen3-", "Qwen3 ").replace("MiniCPM5-", "MiniCPM5 "))
 
 
+def run_label(r):
+    return f"{short(r['model'])}, {r['bench']}" + (r"$^\dagger$" if r["under"] else "")
+
+
+def side_colour(r):
+    return BLUE if r["side"] == "internals" else ORANGE
+
+
+def spread(ys, gap, lo=None, hi=None):
+    """Move label positions apart until neighbours are at least `gap` apart,
+    keeping their order and staying as close as possible to the targets."""
+    order = np.argsort(ys)
+    pos = np.array(ys, dtype=float)[order]
+    for _ in range(200):
+        moved = False
+        for i in range(1, len(pos)):
+            if pos[i] - pos[i - 1] < gap:
+                mid = 0.5 * (pos[i] + pos[i - 1])
+                pos[i - 1], pos[i] = mid - gap / 2, mid + gap / 2
+                moved = True
+        if lo is not None and pos[0] < lo:
+            pos += lo - pos[0]
+        if hi is not None and pos[-1] > hi:
+            pos -= pos[-1] - hi
+        if not moved:
+            break
+    out = np.empty_like(pos)
+    out[order] = pos
+    return out
+
+
+def save_at_width(fig, name, target_in):
+    """Save, measure the emitted width, and resize the figure until the tight
+    output is the target width: labels do not scale with the figure, so a
+    fixed guess drifts."""
+    import pymupdf
+    path = FIG / name
+    for _ in range(6):
+        fig.savefig(path)
+        with pymupdf.open(path) as doc:
+            got = doc[0].rect.width / 72.0
+        goal = target_in - 0.015       # land just inside the text block
+        if goal - 0.01 <= got <= goal:
+            break
+        w, h = fig.get_size_inches()
+        fig.set_size_inches(w + (goal - 0.005 - got), h)
+    plt.close(fig)
+
+
+def ordered(R):
+    return sorted(R, key=lambda r: (r["side"] != "internals", r["under"], -(r["Gap"][0] if r["Gap"] else 0)))
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 def fig1():
-    R = rows()
-    R = sorted(R, key=lambda r: (r["side"] != "internals", -(r["Gap"][0] if r["Gap"] else -9)))
-    fig, (a, b) = plt.subplots(1, 2, figsize=(TEXT, 2.9), gridspec_kw={"width_ratios": [1.15, 1]})
+    R = ordered(rows())
     y = np.arange(len(R))[::-1]
+    fig, (a, b) = plt.subplots(1, 2, figsize=(TEXT * 0.935, 2.75), sharey=True,
+                               gridspec_kw={"width_ratios": [1.05, 1.0], "wspace": 0.06})
     for yi, r in zip(y, R):
-        c = BLUE if r["side"] == "internals" else ORANGE
-        if r["Gap"] is None:
-            continue
         g, lo, hi = r["Gap"]
-        alpha = 0.45 if r["under"] else 1.0
-        a.plot([lo, hi], [yi, yi], color=c, lw=1.4, alpha=alpha, solid_capstyle="butt")
-        a.plot(g, yi, "o", color=c, ms=4.2, alpha=alpha)
-    a.axvline(0, color=INK, lw=0.7)
+        col = MID if r["under"] else side_colour(r)
+        a.plot([lo, hi], [yi, yi], color=col, lw=1.2, solid_capstyle="butt")
+        a.plot(g, yi, "o", color=col, ms=3.6)
+    a.axvline(0, color=INK, lw=0.5)
     a.set_yticks(y)
-    a.set_yticklabels([label(r) for r in R])
-    a.set_xlabel("probe AUC minus confidence AUC, held-out tools")
-    a.set_title("(a) the internal advantage", loc="left")
-    a.text(0.98, 0.04, "† fewer than 30 failures", transform=a.transAxes, ha="right", fontsize=6.3, color=GREY)
-    # (b) tiers
+    a.set_yticklabels([run_label(r) for r in R])
+    a.set_xlabel("probe AUC minus confidence AUC")
+    a.set_title("(a) internal advantage, held-out tools", loc="left")
+    a.set_ylim(-0.7, len(R) - 0.3)
+
     for yi, r in zip(y, R):
         if r["under"]:
             continue
         att = np.nanmax([r["PerHead"], r["LapEig"]])
-        b.plot(r["Floor"], yi, "|", color=GREY, ms=8, mew=1.3)
-        b.plot(r["Conf"], yi, "s", color=INK, ms=3.6, mfc="white")
-        b.plot(att, yi, "D", color=AQUA, ms=3.4)
-        b.plot(r["Probe"], yi, "o", color=BLUE if r["side"] == "internals" else ORANGE, ms=4)
-    b.set_yticks(y)
-    b.set_yticklabels([])
-    b.set_xlabel("AUC")
+        b.plot([min(r["Conf"], r["Probe"]), max(r["Conf"], r["Probe"])], [yi, yi], color=FAINT, lw=2.4,
+               solid_capstyle="butt", zorder=1)
+        b.plot(r["Floor"], yi, "|", color=MID, ms=7, mew=1.1, zorder=2)
+        b.plot(r["Conf"], yi, "s", color=INK, ms=3.4, mfc="white", mew=0.8, zorder=3)
+        b.plot(att, yi, "D", color=GREEN, ms=3.2, zorder=3)
+        b.plot(r["Probe"], yi, "o", color=side_colour(r), ms=3.6, zorder=4)
     b.set_xlim(0.45, 1.0)
-    b.set_title("(b) one representative per tier", loc="left")
-    top = y[0] + 0.9
-    for x, txt, c in ((0.47, "length floor", GREY), (0.63, "confidence", INK), (0.79, "attention", AQUA), (0.95, "probe", BLUE)):
-        b.text(x, top, txt, color=c, fontsize=6.3, ha="left" if x < 0.5 else "center", va="bottom")
-    b.set_ylim(-0.8, top + 0.9)
-    a.set_ylim(-0.8, top + 0.9)
-    fig.tight_layout(w_pad=0.6)
-    fig.savefig(FIG / "fig1_gap.pdf")
-    plt.close(fig)
+    b.set_xlabel("AUC")
+    b.set_title("(b) one representative per access tier", loc="left")
+    handles = [plt.Line2D([], [], color=MID, marker="|", ls="", ms=7, mew=1.1, label="length floor"),
+               plt.Line2D([], [], color=INK, marker="s", ls="", ms=3.4, mfc="white", mew=0.8, label="log-probability"),
+               plt.Line2D([], [], color=GREEN, marker="D", ls="", ms=3.2, label="attention, per head"),
+               plt.Line2D([], [], color=INK, marker="o", ls="", ms=3.6, label="residual probe")]
+    b.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=4, frameon=False,
+             handletextpad=0.3, columnspacing=0.9)
+    save_at_width(fig, "fig1_gap.pdf", TEXT)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
 def fig2():
     R = rows()
     D = json.loads((THEORY / "difficulty.json").read_text(encoding="utf-8"))
     B = json.loads((THEORY / "budget_matched.json").read_text(encoding="utf-8"))
     C = json.loads((THEORY / "confidence_best.json").read_text(encoding="utf-8"))
-    fig, (a, b, c) = plt.subplots(1, 3, figsize=(TEXT, 2.4))
-    # (a) difficulty
     side = {r["model"]: r["side"] for r in R}
-    for m, d in D.items():
+    fig, (a, b, c) = plt.subplots(1, 3, figsize=(TEXT * 0.965, 2.2),
+                                  gridspec_kw={"wspace": 1.0, "width_ratios": [1, 1, 1]})
+
+    # (a) difficulty held fixed
+    names = list(D)
+    ends = [D[m]["gap_within"] for m in names]
+    lab = spread(ends, 0.034)
+    for m, yl in zip(names, lab):
+        d = D[m]
         col = BLUE if side.get(m) == "internals" else ORANGE
-        a.plot([0, 1], [d["gap"], d["gap_within"]], "-", color=col, lw=1)
-        a.plot([0, 1], [d["gap"], d["gap_within"]], "o", color=col, ms=3.5)
-        a.text(1.05, d["gap_within"], m, color=col, fontsize=6.2, va="center")
-    a.axhline(0, color=INK, lw=0.7)
+        a.plot([0, 1], [d["gap"], d["gap_within"]], "-", color=col, lw=0.9)
+        a.plot([0, 1], [d["gap"], d["gap_within"]], "o", color=col, ms=3)
+        a.plot([1.04, 1.12], [d["gap_within"], yl], color=col, lw=0.4)
+        a.text(1.15, yl, short(m), color=col, fontsize=ANNOT, va="center")
+    a.axhline(0, color=MID, lw=0.5)
     a.set_xticks([0, 1])
-    a.set_xticklabels(["raw", "within\ndifficulty strata"])
-    a.set_xlim(-0.2, 1.9)
+    a.set_xticklabels(["all items", "within\nstrata"])
+    a.set_xlim(-0.15, 1.95)
+    a.spines["bottom"].set_bounds(0, 1)
     a.set_ylabel("probe minus confidence")
-    a.set_title("(a) item difficulty held fixed", loc="left")
-    # (b) budget
+    a.set_title("(a) difficulty held fixed", loc="left")
+
+    # (b) label budget
+    styles = {"1b": INK, "3b": MID}
+    lab_pos, lab_txt, lab_col = [], [], []
+    xe = 1
     for tag, d in B.items():
-        pts = sorted(((int(k), v) for k, v in d["curve"].items()))
+        k = "1b" if "1b" in tag else "3b"
+        pts = sorted((int(p), v) for p, v in d["curve"].items())
         x = [p for p, _ in pts]
-        b.plot(x, [v["probe"] for _, v in pts], "o-", color=BLUE, ms=3.2, lw=1.1)
-        b.plot(x, [v["confidence"] for _, v in pts], "--", color=INK, lw=0.9)
-        name = "Llama-1B" if "1b" in tag else "Llama-3B"
-        b.text(x[0] * 0.98, pts[0][1]["probe"] + (0.02 if "3b" in tag else -0.025), name, color=BLUE, fontsize=6.2, ha="right", va="center")
-        b.text(x[-1] * 1.04, pts[-1][1]["confidence"], name, color=INK, fontsize=6.2, va="center")
+        b.plot(x, [v["probe"] for _, v in pts], "o-", color=styles[k], ms=2.8, lw=0.9)
+        b.plot(x, [v["confidence"] for _, v in pts], "--", color=styles[k], lw=0.9)
+        name = "1B" if k == "1b" else "3B"
+        lab_pos += [pts[-1][1]["probe"], pts[-1][1]["confidence"]]
+        lab_txt += [f"{name} probe", f"{name} log-prob"]
+        lab_col += [styles[k], styles[k]]
+        xe = max(xe, x[-1])
+    yl = spread(lab_pos, 0.03)
+    for p, t, col in zip(yl, lab_txt, lab_col):
+        b.text(xe * 1.12, p, t, color=col, fontsize=ANNOT, va="center")
     b.set_xscale("log")
-    b.set_xlim(38, 330)
-    b.set_xticks([51, 91, 157, 236])
-    b.set_xticklabels(["51", "91", "157", "236"])
+    b.set_xticks([51, 100, 200])
+    b.get_xaxis().set_major_formatter(matplotlib.ticker.ScalarFormatter())
     b.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
-    b.set_xlabel("labelled failures used for training")
-    b.set_ylabel("AUC")
+    b.set_xlim(42, xe * 1.08)
     b.set_ylim(0.55, 0.95)
-    b.text(0.03, 0.93, "probe (solid), confidence (dashed)", transform=b.transAxes, fontsize=6.2, color=INK)
-    b.set_title("(b) labels thinned on Llama", loc="left")
-    # (c) summary choice
-    for r in R:
-        if r["under"] or r["tag"] not in C or C[r["tag"]]["n_summaries"] < 2:
-            continue
-        col = BLUE if r["side"] == "internals" else ORANGE
-        c.plot(r["Gap"][0], C[r["tag"]]["gap_vs_chosen"], "o", color=col, ms=4)
-        c.text(r["Gap"][0] + 0.012, C[r["tag"]]["gap_vs_chosen"], r["model"].replace("-3.2", "").replace("5-2B", "5"),
-               fontsize=6.0, color=col, va="center")
+    b.set_xlabel("labelled failures in training")
+    b.set_ylabel("AUC")
+    b.set_title("(b) failures thinned on Llama", loc="left")
+
+    # (c) choice of confidence summary
+    pts = [(r, C[r["tag"]]) for r in R
+           if not r["under"] and r["tag"] in C and C[r["tag"]]["n_summaries"] > 1]
+    xs = [r["Gap"][0] for r, _ in pts]
+    ys = [cc["gap_vs_chosen"] for _, cc in pts]
     lim = [-0.2, 0.42]
-    c.plot(lim, lim, color=LIGHT, lw=0.8)
-    c.axhline(0, color=INK, lw=0.6)
-    c.axvline(0, color=INK, lw=0.6)
+    c.plot(lim, lim, color=FAINT, lw=0.8, zorder=0)
+    c.axhline(0, color=MID, lw=0.5)
+    c.axvline(0, color=MID, lw=0.5)
+    for (r, _), xv, yv in zip(pts, xs, ys):
+        c.plot(xv, yv, "o", color=side_colour(r), ms=3.4)
+    lab = spread(ys, 0.055, lo=lim[0] + 0.02, hi=lim[1] - 0.02)
+    for (r, _), xv, yv, yl in zip(pts, xs, ys, lab):
+        tx = 0.47
+        c.plot([xv + 0.012, tx - 0.01], [yv, yl], color=side_colour(r), lw=0.4)
+        c.text(tx, yl, f"{short(r['model'])}, {r['bench']}", color=side_colour(r), fontsize=ANNOT, va="center")
     c.set_xlim(lim)
     c.set_ylim(lim)
-    c.set_xlabel("gap, mean log-probability")
-    c.set_ylabel("gap, summary chosen on training folds")
+    c.set_xticks([-0.2, 0, 0.2, 0.4])
+    c.set_yticks([-0.2, 0, 0.2, 0.4])
+    c.set_xlabel("against mean log-probability")
+    c.set_ylabel("against fold-chosen summary")
     c.set_title("(c) confidence summary", loc="left")
-    fig.tight_layout(w_pad=0.8)
-    fig.savefig(FIG / "fig2_controls.pdf")
-    plt.close(fig)
+    save_at_width(fig, "fig2_controls.pdf", TEXT)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
 def fig3():
-    R = [r for r in rows() if not r["under"]]
-    R = sorted(R, key=lambda r: (r["side"] != "internals", -r["Probe"]))
-    fig, ax = plt.subplots(figsize=(COL, 2.6))
+    R = [r for r in ordered(rows()) if not r["under"]]
     y = np.arange(len(R))[::-1]
+    fig, ax = plt.subplots(figsize=(COL, 2.75))
     for yi, r in zip(y, R):
-        ax.plot([r["HeadAvg"], r["Probe"]], [yi, yi], color=LIGHT, lw=0.9)
-        ax.plot(r["Floor"], yi, "|", color=GREY, ms=8, mew=1.2)
-        ax.plot(r["HeadAvg"], yi, "x", color=GREY, ms=4.5, mew=1.2)
-        ax.plot(r["PerHead"], yi, "D", color=AQUA, ms=3.4)
-        ax.plot(r["LapEig"], yi, "^", color=ORANGE, ms=3.6)
-        ax.plot(r["Probe"], yi, "o", color=BLUE, ms=3.8)
+        ax.plot([r["HeadAvg"], r["PerHead"]], [yi, yi], color=FAINT, lw=2.2, solid_capstyle="butt", zorder=1)
+        ax.plot(r["Floor"], yi, "|", color=MID, ms=7, mew=1.1, zorder=2)
+        ax.plot(r["HeadAvg"], yi, "x", color=INK, ms=3.6, mew=0.9, zorder=3)
+        ax.plot(r["PerHead"], yi, "D", color=GREEN, ms=3.0, zorder=3)
+        ax.plot(r["LapEig"], yi, "^", color=ORANGE, ms=3.4, zorder=3)
+        ax.plot(r["Probe"], yi, "o", color=BLUE, ms=3.4, zorder=4)
     ax.set_yticks(y)
-    ax.set_yticklabels([label(r) for r in R], fontsize=6.3)
-    ax.set_xlabel("AUC")
+    ax.set_yticklabels([run_label(r) for r in R], fontsize=7)
     ax.set_xlim(0.45, 1.0)
-    top = y[0] + 0.9
-    for x, txt, c in ((0.46, "floor", GREY), (0.56, "head-averaged", GREY), (0.70, "per-head", AQUA), (0.83, "LapEigvals", ORANGE), (0.96, "probe", BLUE)):
-        ax.text(x, top + 0.2, txt, color=c, fontsize=6.0, ha="left" if x < 0.5 else "center", va="bottom")
-    ax.set_ylim(-0.8, top + 1.6)
-    ax.set_xlim(0.45, 1.02)
-    fig.tight_layout()
-    fig.savefig(FIG / "fig3_attention.pdf")
-    plt.close(fig)
+    ax.set_xlabel("AUC")
+    ax.set_ylim(-0.7, len(R) - 0.3)
+    handles = [plt.Line2D([], [], color=MID, marker="|", ls="", ms=7, mew=1.1, label="length floor"),
+               plt.Line2D([], [], color=INK, marker="x", ls="", ms=3.6, mew=0.9, label="head-averaged"),
+               plt.Line2D([], [], color=GREEN, marker="D", ls="", ms=3.0, label="per-head"),
+               plt.Line2D([], [], color=ORANGE, marker="^", ls="", ms=3.4, label="LapEigvals"),
+               plt.Line2D([], [], color=BLUE, marker="o", ls="", ms=3.4, label="residual probe")]
+    ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.32, -0.2), ncol=3, frameon=False,
+              handletextpad=0.3, columnspacing=0.8, fontsize=7)
+    save_at_width(fig, "fig3_attention.pdf", COL)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
 def fig4():
     T = json.loads((THEORY / "latency.json").read_text(encoding="utf-8"))
-    stages = [("generation", "generate the call", GREY), ("teacher_forced_pass_only", "one forward pass", GREY),
-              ("token_role_gather", "token-role gather", BLUE), ("lapeig_features_alone", "LapEigvals", ORANGE),
-              ("perhead_features_alone", "per-head spectra", AQUA)]
-    fig, ax = plt.subplots(figsize=(COL, 1.6))
+    stages = [("generation", "generate the call", MID),
+              ("teacher_forced_pass_only", "forward pass", MID),
+              ("token_role_gather", "token-role gather", BLUE),
+              ("lapeig_features_alone", "LapEigvals", ORANGE),
+              ("perhead_features_alone", "per-head spectra", GREEN)]
+    stages = [s for s in stages if s[0] in T]
+    fig, ax = plt.subplots(figsize=(COL, 1.55))
     ys = np.arange(len(stages))[::-1]
-    vals = [T[k]["median_ms"] for k, _, _ in stages]
-    p90 = [T[k]["p90_ms"] for k, _, _ in stages]
-    ax.barh(ys, vals, color=[c for _, _, c in stages], height=0.6)
-    for yi, v, q in zip(ys, vals, p90):
-        ax.plot([v, q], [yi, yi], color=INK, lw=0.8)
-        ax.text(max(v, q) * 1.15, yi, f"{v:.1f} ms" if v < 10 else f"{v:.0f} ms", va="center", fontsize=6.4)
+    for yi, (k, _, col) in zip(ys, stages):
+        med, p90 = T[k]["median_ms"], T[k]["p90_ms"]
+        ax.barh(yi, med, color=col, height=0.55)
+        ax.plot([med, p90], [yi, yi], color=INK, lw=0.6)
+        ax.plot([p90], [yi], "|", color=INK, ms=4, mew=0.6)
+        ax.text(p90 * 1.35, yi, f"{med:.1f}" if med < 10 else f"{med:.0f}", va="center", fontsize=ANNOT)
     ax.set_yticks(ys)
-    ax.set_yticklabels([s for _, s, _ in stages])
-    ax.set_xscale("log")
-    ax.set_xlim(0.2, 6000)
-    ax.set_xlabel("median per call, bar; line to the 90th percentile")
-    ax.spines["left"].set_visible(False)
+    ax.set_yticklabels([s[1] for s in stages], fontsize=7)
     ax.tick_params(axis="y", length=0)
-    fig.tight_layout()
-    fig.savefig(FIG / "fig4_cost.pdf")
-    plt.close(fig)
+    ax.set_xscale("log")
+    ax.set_xlim(0.2, 1e4)
+    ax.set_xlabel("milliseconds per call")
+    ax.spines["left"].set_visible(False)
+    save_at_width(fig, "fig4_cost.pdf", COL)
 
 
 if __name__ == "__main__":
@@ -201,5 +294,5 @@ if __name__ == "__main__":
         try:
             f()
             print(f.__name__, "ok")
-        except Exception as e:
+        except Exception as e:  # one broken input must not take the others down
             print(f.__name__, "FAILED", type(e).__name__, e)
