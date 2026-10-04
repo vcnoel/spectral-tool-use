@@ -425,7 +425,9 @@ def handle_extract(args):
 
     tok = AutoTokenizer.from_pretrained(args.model)
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, dtype=torch.bfloat16, device_map="cuda",
+        args.model, dtype=torch.bfloat16,
+        # EXTRACT_DEVICE=cpu only for smoke tests; every reported run uses cuda
+        device_map=os.environ.get("EXTRACT_DEVICE", "cuda"),
         attn_implementation="eager",
     )
     model.eval()
