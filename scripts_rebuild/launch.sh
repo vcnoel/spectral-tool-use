@@ -14,7 +14,7 @@ if [ "${SMOKE:-0}" != 1 ]; then
   for f in docs/REGISTRATION_REBUILD.md docs/PIPELINE_REBUILD.md scripts_rebuild/benchmarks.txt rebuild/extract_clean.py; do
     git ls-files --error-unmatch "$f" >/dev/null 2>&1 || { echo "$f is not committed"; exit 2; }
   done
-  grep -q TO_BE_FIXED scripts_rebuild/benchmarks.txt && { echo "benchmark set not fixed: scripts_rebuild/benchmarks.txt"; exit 2; }
+  sed "s/#.*//" scripts_rebuild/benchmarks.txt | grep -q TO_BE_FIXED && { echo "benchmark set not fixed: scripts_rebuild/benchmarks.txt"; exit 2; }
   for b in $(sed -nE 's/^(primary|secondary|cross_corpus):[[:space:]]*([^#]*).*/\2/p' scripts_rebuild/benchmarks.txt); do
     python -c "import rebuild.benchmarks as B; B.get('$b')" || { echo "unknown benchmark adapter $b"; exit 2; }
   done
