@@ -1,0 +1,22 @@
+{
+ "key": "LlamaOneBLive",
+ "tag": "llama1b_live",
+ "side": "internals",
+ "reader": "Qwen/Qwen3.5-0.8B",
+ "dim": 16384,
+ "n_pos": 208,
+ "n_neg": 157,
+ "reader_auc": 0.7946472317491425,
+ "probe_auc": 0.7822605340519354,
+ "conf_auc": 0.6634615384615384,
+ "probe_minus_reader": {
+  "delta": -0.012386697697207193,
+  "ci_lo": -0.08542023022053763,
+  "ci_hi": 0.05685710202085658
+ },
+ "reader_minus_conf": {
+  "delta": 0.13118569328760413,
+  "ci_lo": 0.03352364502219516,
+  "ci_hi": 0.23177730181668035
+ }
+}
