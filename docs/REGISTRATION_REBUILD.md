@@ -378,3 +378,13 @@ tool definition natively, so it reads the same request, tools and call text the 
 Qwen3.5-0.8B is excluded because it is an evaluated checkpoint. If SmolLM3-3B cannot run a benchmark's
 prompts within the 2048-token cap, the fallback is `allenai/OLMo-2-0425-1B-Instruct`, recorded as a
 further amendment before that benchmark is scored.
+
+## Amendment 2 (5 October 2026, 01:55, before any clean data were analysed): item cap removed
+
+The first launch (pin cfcd6e0, run r1_llama1b_bfcl_sota) was stopped after 45 of 850 items when the
+coordinator found that the queue passed the extractor's legacy default cap of 850 items, which would have
+truncated `bfcl_sota` (1,740 items) to its first categories. The partial run was deleted and nothing from
+it was read. The cap default is now 0 (every item of the adapter) in `rebuild/extract_clean.py` and
+`scripts_rebuild/run_queue.sh`, and `rebuild/loader.py` refuses any non-smoke run whose `n_requested` is
+positive. The queue is relaunched from a new pin; the registered hypotheses, rules and item sets are
+unchanged.

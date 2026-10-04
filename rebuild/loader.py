@@ -37,6 +37,8 @@ class CleanRun:
         self.problems = []
         if not self.meta.get("complete"):
             self.problems.append("run not complete")
+        if not self.meta.get("smoke") and int(self.meta.get("n_requested") or 0) > 0:
+            self.problems.append("item cap set (n_requested > 0): not the registered full item set")
         if self.meta.get("git_dirty") is not False:
             self.problems.append(f"git_dirty={self.meta.get('git_dirty')}")
         if self.meta.get("smoke"):

@@ -295,7 +295,7 @@ def main():
     ap.add_argument("--model", required=True)
     ap.add_argument("--benchmark", required=True, choices=benchmarks.names())
     ap.add_argument("--tag", required=True)
-    ap.add_argument("--n", type=int, default=850)
+    ap.add_argument("--n", type=int, default=0, help="item cap; 0 (the registered default) = every item of the adapter")
     ap.add_argument("--route", choices=["auto", "native", "fallback_list"], default="auto")
     ap.add_argument("--pin", default=os.environ.get("REBUILD_PIN"))
     ap.add_argument("--allow-dirty", action="store_true", help="smoke test only")
@@ -319,7 +319,7 @@ def main():
     det = determinism.enable_deterministic_torch(warn_only=True)
 
     adapter = benchmarks.get(a.benchmark)
-    items = adapter.load(a.n)
+    items = adapter.load(a.n if a.n > 0 else 10**9)   # 0 = the full registered item set
     print(f"[extract] {a.benchmark}: {len(items)} items")
     from transformers import AutoTokenizer, AutoModelForCausalLM
     tok = AutoTokenizer.from_pretrained(a.model)

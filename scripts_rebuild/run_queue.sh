@@ -34,7 +34,7 @@ else
   LOGD=data/rebuild_logs; LOCK="${GPU_LOCK:-$(cd "$(dirname "$0")/../.." && pwd)/GPU.lock}"; POLL=300; TURN=150
   EXTRA_FLAGS=""
 fi
-MIN_DISK=${MIN_DISK:-15}; MIN_RAM_MB=${MIN_RAM_MB:-7000}; THREADS=6; N_ITEMS=${N_ITEMS:-850}
+MIN_DISK=${MIN_DISK:-15}; MIN_RAM_MB=${MIN_RAM_MB:-7000}; THREADS=6; N_ITEMS=${N_ITEMS:-0}
 MK=$LOGD/markers; mkdir -p "$MK"
 LOG=$LOGD/${LANE}_queue.log
 PIN=$(cat "$LOGD/PIN" 2>/dev/null) || { echo "no $LOGD/PIN; use scripts_rebuild/launch.sh"; exit 2; }
