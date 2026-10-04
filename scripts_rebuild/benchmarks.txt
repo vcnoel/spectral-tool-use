@@ -1,0 +1,16 @@
+# Benchmark set of the clean rebuild, confirmed by the author on 5 Oct 2026 after the literature
+# review (docs/SOTA_REVIEW_2026.md section 3.1). Values are adapter names registered in
+# rebuild/benchmarks/__init__.py. The queue (scripts_rebuild/launch.sh) refuses TO_BE_FIXED.
+#
+# primary:      decides H1-H6 and the scope condition: BFCL v4 single-turn AST categories (simple,
+#               multiple, parallel, parallel_multiple, live_multiple, irrelevance, live_irrelevance),
+#               AST-checker labels, held-out tools by function name. Data on disk.
+# secondary:    xlam60k = the validity corpus (rollout vs verified reference, API-disjoint folds);
+#               when2call = the should-not-call trap set. NOT cached: the queue runs them only after
+#               the author creates data/rebuild_logs/APPROVE_DATASETS (public datasets, one download each).
+# cross_corpus: glaive (deduplicated), ToolACE (no adapter yet): checks only, run last if time allows.
+# a100:         tau2 (stub) reserved for the pod.
+primary: bfcl_sota
+secondary: xlam60k when2call
+cross_corpus: glaive
+a100: tau2

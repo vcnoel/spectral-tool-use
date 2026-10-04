@@ -53,3 +53,6 @@ results/budget_oct2026/
 results/swap_oct2026/bfcl_*
 results/swap_oct2026/glaive_*
 results/v2_oct2026/reader_types/*
+
+# Clean rebuild (Oct 2026): validation outputs written while the queue runs; force-added when frozen
+results/rebuild/
