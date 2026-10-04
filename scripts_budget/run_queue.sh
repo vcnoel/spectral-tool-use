@@ -79,7 +79,7 @@ release() {
 trap 'release' EXIT
 trap 'release; stamp "lane $LANE stopped by signal"; exit 130' INT TERM
 
-done_any() { ls "$MK/$1".DONE "$MK/$1".FAILED* >/dev/null 2>&1; }
+done_any() { [ -f "$MK/$1.DONE" ] || is_failed "$1"; }
 is_done() { [ -f "$MK/$1.DONE" ]; }
 is_failed() { ls "$MK/$1".FAILED* >/dev/null 2>&1; }
 RES_RE='out of memory|OutOfMemoryError|paging file|DefaultCPUAllocator|MemoryError|not enough memory|Unable to allocate|os error 1455|Segmentation fault'
@@ -251,6 +251,7 @@ assert r.get("tools_aligned") and r.get("label_mismatch_vs_scores") == 0, r
 EOF
 }
 all_resolved() { local t; for t in "$@"; do is_done "$t.eval" || is_failed "$t" || is_failed "$t.eval" || return 1; done; }
+B4_KEYS="LlamaThreeBBfcl GemmaGlaive GemmaBfcl QwenThreeBfcl MiniCpmBfcl MiniCpmLive QwenThreeFiveBfcl"
 B1_TAGS="b1_llama1b_bfcl b1_llama1b_glaive b1_llama1b_live b1_llama3b_bfcl b1_llama3b_glaive b1_gemma3_1b_bfcl b1_gemma3_1b_glaive b1_qwen3_17b_bfcl b1_qwen3_17b_glaive b1_minicpm5_bfcl b1_minicpm5_live b1_minicpm5_glaive b1_qwen35_08b_bfcl b1_minicpm5_bfcl_json b1_qwen35_08b_bfcl_json b1_llama3b_bfcl_fblist"
 
 cpu_lane() {
@@ -259,10 +260,6 @@ cpu_lane() {
   while :; do
     local did=0 t
     alias_choice_markers
-    if [ "${SMOKE:-0}" != 1 ] && ! done_any B4; then
-      cpu_task B4 "true" python analysis/v2_reader_types.py --threads $THREADS
-      is_done B4 && python analysis/budget_b4.py >> "$LOGD/B4.log" 2>&1; did=1
-    fi
     for t in $(extraction_tags); do
       if is_done "$t" && ! done_any "$t.eval"; then
         cpu_task "$t.eval" "true" evaluate_tag "$t"; did=1; break
@@ -303,6 +300,17 @@ cpu_lane() {
       if ! done_any B5 && done_any b5_probe_llama1b && done_any b5_conf_qwen3_17b; then
         cpu_task B5 "[ -f results/budget_oct2026/B5.json ]" python analysis/budget_b5_mechanism.py decide; continue
       fi
+    fi
+    # B4 (stored runs), one run per pass so that evaluations of new extractions go first
+    if [ "${SMOKE:-0}" != 1 ] && ! done_any B4; then
+      local k pend=""
+      for k in $B4_KEYS; do done_any "B4_$k" || { pend=$k; break; }; done
+      if [ -n "$pend" ]; then
+        cpu_task "B4_$pend" "[ -f results/v2_oct2026/reader_types/$pend.json ]"           python analysis/v2_reader_types.py --threads $THREADS --only "$pend"
+      else
+        cpu_task B4 "[ -f results/budget_oct2026/B4.json ]" python analysis/budget_b4.py
+      fi
+      continue
     fi
     if [ -f "$LOGD/GPU_LANE_FINISHED" ]; then
       local pending=0
