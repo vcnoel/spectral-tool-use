@@ -62,7 +62,14 @@ wait_tree() {
 }
 HAVE_LOCK=0
 acquire() {
-  local n=0
+  local n=0 op
+  # a lock left by this queue after a crash or reboot (owner pid gone) is ours to clear
+  if grep -q "budget-queue" "$LOCK/owner.txt" 2>/dev/null; then
+    op=$(sed -nE 's/.*pid ([0-9]+).*//p' "$LOCK/owner.txt" | head -1)
+    if [ -n "$op" ] && [ "$op" != "$$" ] && ! kill -0 "$op" 2>/dev/null; then
+      stamp "clearing stale lock of a dead budget-queue (pid $op)"; rm -rf "$LOCK"
+    fi
+  fi
   until mkdir "$LOCK" 2>/dev/null; do
     [ $((n % 5)) -eq 0 ] && stamp "lock busy ($(head -1 "$LOCK/owner.txt" 2>/dev/null)); retry every 60 s"
     n=$((n + 1)); sleep 60
