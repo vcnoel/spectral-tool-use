@@ -1,0 +1,10 @@
+\section{Limitations}
+\label{sec:limitations}
+
+The first limitation is the instrument. Labels come from comparing a call with a benchmark's ground truth, which is a proxy for whether the action would have been harmful, and \cref{app:audit} shows that a parser can manufacture a family effect. The hand audit after the second repair found \auditPooledErr{} errors in \auditPooledN{} items, all correct calls scored as failures, and the residual after the third repair is unmeasured. Errors of that kind favour probes, which can learn the surface form of a mislabelled call, so residual label error would move runs toward the probe side.
+
+The second is the comparator. The protocol repairs of \cref{sec:controls} moved numbers toward confidence, and comparing a trained probe with an untrained confidence score moves them toward the probe: against the output-only judge the probe's lead falls to \ojGapMinInternals{} to \ojGapMaxInternals{}, with an interval excluding zero on \nOjGapCiExcl{} of \nInternalsRuns{} probe-side runs. The reader sees no tool schemas, so it understates what the text reveals. The output-only judge is weak on the confidence-side runs, where few failures and many n-gram features let it overfit, so it does not bound confidence there.
+
+The third is scale and breadth. Every checkpoint has at most three billion parameters and the two sides hold \nCkptInternals{} checkpoints each, so the split is a description of these checkpoints and no checkpoint-level test can separate it. Release date and a reasoning mode in post-training fit the division equally well, and \citet{yeats2026calls} find probe accuracy rising with size, so the side a family falls on above this range is open.
+
+The fourth is realism. Calls are single-step on three benchmarks of English requests. The multi-turn replay on one model did not reproduce that model's single-turn side and rests on \mtGroupsAll{} linked groups. The forced-JSON MiniCPM5 run covers part of BFCL and was extracted from a tree with uncommitted changes. Cost is measured on one consumer GPU, and the attention baselines are our reimplementations.

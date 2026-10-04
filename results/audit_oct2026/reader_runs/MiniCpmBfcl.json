@@ -1,0 +1,22 @@
+{
+ "key": "MiniCpmBfcl",
+ "tag": "v3_minicpm5_2b_bfcl",
+ "side": "confidence",
+ "reader": "Qwen/Qwen3.5-0.8B",
+ "dim": 16384,
+ "n_pos": 54,
+ "n_neg": 640,
+ "reader_auc": 0.6768460648148148,
+ "probe_auc": 0.7751967592592592,
+ "conf_auc": 0.822945601851852,
+ "probe_minus_reader": {
+  "delta": 0.09835069444444448,
+  "ci_lo": -0.004518024025428821,
+  "ci_hi": 0.20821899149774395
+ },
+ "reader_minus_conf": {
+  "delta": -0.14609953703703712,
+  "ci_lo": -0.2599274592058693,
+  "ci_hi": -0.04675701462722614
+ }
+}

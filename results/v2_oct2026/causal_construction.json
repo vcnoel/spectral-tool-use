@@ -1,0 +1,82 @@
+{
+ "5": {
+  "combinatorial": {
+   "prev_head": 0.1909830056250526,
+   "sink_head": 0.5,
+   "averaged_head": 0.4614483731599841,
+   "config_one_mean_over_heads": 0.3454915028125263,
+   "config_one_max_minus_min": 0.3090169943749474,
+   "config_two_max_minus_min": 0.0,
+   "averaged_minus_config_one_mean": 0.11595687034745783
+  },
+  "normalised": {
+   "prev_head": 0.29289321881345254,
+   "sink_head": 1.0,
+   "averaged_head": 0.7365051765520249,
+   "config_one_mean_over_heads": 0.6464466094067263,
+   "config_one_max_minus_min": 0.7071067811865475,
+   "config_two_max_minus_min": 0.0,
+   "averaged_minus_config_one_mean": 0.09005856714529858
+  }
+ },
+ "10": {
+  "combinatorial": {
+   "prev_head": 0.04894348370484638,
+   "sink_head": 0.4999999999999993,
+   "averaged_head": 0.30379873632549087,
+   "config_one_mean_over_heads": 0.27447174185242285,
+   "config_one_max_minus_min": 0.4510565162951529,
+   "config_two_max_minus_min": 0.0,
+   "averaged_minus_config_one_mean": 0.029326994473068024
+  },
+  "normalised": {
+   "prev_head": 0.06030737921409173,
+   "sink_head": 0.9999999999999983,
+   "averaged_head": 0.4392006956762692,
+   "config_one_mean_over_heads": 0.530153689607045,
+   "config_one_max_minus_min": 0.9396926207859067,
+   "config_two_max_minus_min": 0.0,
+   "averaged_minus_config_one_mean": -0.09095299393077583
+  }
+ },
+ "50": {
+  "combinatorial": {
+   "prev_head": 0.001973271571728001,
+   "sink_head": 0.4999999999999982,
+   "averaged_head": 0.2520571014103294,
+   "config_one_mean_over_heads": 0.2509866357858631,
+   "config_one_max_minus_min": 0.4980267284282702,
+   "config_two_max_minus_min": 0.0,
+   "averaged_minus_config_one_mean": 0.001070465624466277
+  },
+  "normalised": {
+   "prev_head": 0.0020546072496636474,
+   "sink_head": 0.9999999999999964,
+   "averaged_head": 0.33821384223294093,
+   "config_one_mean_over_heads": 0.5010273036248301,
+   "config_one_max_minus_min": 0.9979453927503328,
+   "config_two_max_minus_min": 0.0,
+   "averaged_minus_config_one_mean": -0.16281346139188912
+  }
+ },
+ "200": {
+  "combinatorial": {
+   "prev_head": 0.00012336751833977452,
+   "sink_head": 0.4999999999999982,
+   "averaged_head": 0.25012681416968213,
+   "config_one_mean_over_heads": 0.250061683759169,
+   "config_one_max_minus_min": 0.4998766324816584,
+   "config_two_max_minus_min": 0.0,
+   "averaged_minus_config_one_mean": 6.513041051314783e-05
+  },
+  "normalised": {
+   "prev_head": 0.00012461048234332786,
+   "sink_head": 0.9999999999999962,
+   "averaged_head": 0.3336558361587406,
+   "config_one_mean_over_heads": 0.5000623052411698,
+   "config_one_max_minus_min": 0.9998753895176529,
+   "config_two_max_minus_min": 0.0,
+   "averaged_minus_config_one_mean": -0.16640646908242918
+  }
+ }
+}

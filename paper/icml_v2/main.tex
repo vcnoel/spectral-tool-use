@@ -1,0 +1,82 @@
+\documentclass{article}
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{icml2026}
+\usepackage{amsmath,amssymb,amsthm}
+\usepackage[capitalize,noabbrev]{cleveref}
+\usepackage{enumitem}
+\usepackage{tcolorbox}
+\hypersetup{colorlinks=true,linkcolor=[RGB]{24,64,140},citecolor=[RGB]{24,64,140},urlcolor=[RGB]{24,64,140},pdfauthor={},pdftitle={}}
+\graphicspath{{figures/}}
+
+\theoremstyle{plain}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\theoremstyle{remark}
+\newtheorem{remark}{Remark}
+\theoremstyle{definition}
+\newtheorem{observation}{Observation}
+
+% One switch for the self-citation of the authors' ICML 2026 workshop paper (research-writing section 19).
+% Submission: \anonsubmissiontrue cites it as Anonymous with the title suppressed.
+% Camera-ready: \anonsubmissionfalse cites it in full.
+\newif\ifanonsubmission
+\anonsubmissiontrue
+\newcommand{\wscitet}{\ifanonsubmission\citet{anon2026workshop}\else\citet{noel2026workshop}\fi}
+\newcommand{\wscitep}{\ifanonsubmission\citep{anon2026workshop}\else\citep{noel2026workshop}\fi}
+
+\input{numbers}
+
+\icmltitlerunning{Token Probabilities and Wrong Tool Calls}
+
+\begin{document}
+
+\twocolumn[
+\icmltitle{Whether Token Probabilities Catch a Wrong Tool Call Depends on the Model and the Kind of Error}
+\icmlsetsymbol{equal}{*}
+\begin{icmlauthorlist}
+\icmlauthor{Anonymous Authors}{anon}
+\end{icmlauthorlist}
+\icmlaffiliation{anon}{Anonymous Institution}
+\icmlcorrespondingauthor{Anonymous}{anon@example.invalid}
+\icmlkeywords{tool calling, hallucination detection, probing, calibration, agents}
+\vskip 0.3in
+]
+\printAffiliationsAndNotice{}
+\addtocontents{toc}{\protect\setcounter{tocdepth}{-10}}
+
+\begin{abstract}
+Teams that deploy tool-calling language models want to stop a wrong call before it executes, using the token probabilities every serving stack returns or a probe on the model's hidden states. Earlier comparisons of the two held out items rather than tools and pooled every kind of error, so they cannot say which errors the cheaper signal misses. We compare them on held-out tools, on six open-weight checkpoints of up to three billion parameters from five families and on three benchmarks, separately for each kind of error, beside a length floor and two judges that read only the output. On wrong argument values the probe beats the mean token log-probability on Llama-3.2 and Gemma-3 by up to \wavInternalsMax{} in area under the curve, and confidence beats the probe on every Qwen3, Qwen3.5 and MiniCPM5 run, even when these models are forced to write JSON. On dropped parallel calls the probe leads confidence on every run with enough of them. Much of the probe's lead is visible in the text of the call, since a second small model reading the call comes within noise of the probe on most runs where the probe leads. Before building an internal judge, an operator should score the model's confidence per kind of error and train a judge on the output text first.
+\end{abstract}
+
+\input{sections/intro}
+\input{sections/related}
+\input{sections/setup}
+\input{sections/result}
+\input{sections/judges}
+\input{sections/controls}
+\input{sections/attention}
+\input{sections/discussion}
+\input{sections/conclusion}
+\input{sections/limitations}
+
+\section*{Impact statement}
+This work measures open-weight language models on public tool-calling benchmarks, trains no language model and involves no human subjects. Its aim is defensive: to tell an operator which wrong tool calls a model's own confidence already flags and which ones need another judge before the call executes. The same detectors could guide the construction of calls that evade them, which is why we report every kind of error and every run on which a detector weakens rather than one headline number.
+
+\section*{Reproducibility statement}
+Every number in this paper expands from a macro that a released script builds from the result files, and a provenance file records the file, field and run each macro reads. Labels are recomputed from the stored generations at evaluation time, so the labelling rule in force is the one in the released code, and relabelling the stored generations of \nRelabelRuns{} runs under it reproduces every stored label. Splits are grouped by ground-truth tool and every interval resamples tools. \cref{app:registry} dates each registered prediction against the labelling repairs that produced the data testing it, and R1 was written when the split under the unrepaired labels was already known. Models and benchmarks are public, and the stored extractions the tables are computed from are released with the code.
+
+\bibliography{references}
+\bibliographystyle{icml2026}
+
+\appendix
+\onecolumn
+% the ICML style file deletes addcontentsline. The appendix list needs it back
+\makeatletter
+\def\addcontentsline#1#2#3{\addtocontents{#1}{\protect\contentsline{#2}{#3}{\thepage}{}}}
+\makeatother
+\input{sections/appendix}
+
+\end{document}

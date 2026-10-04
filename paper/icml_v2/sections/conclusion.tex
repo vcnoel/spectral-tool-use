@@ -1,0 +1,4 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+Whether a tool-calling model's token probabilities catch its wrong calls depends on the model and on the kind of error. On wrong argument values the probe leads confidence on Llama-3.2 and Gemma-3 and trails it on Qwen3, Qwen3.5 and MiniCPM5, whatever format the latter are made to write. On dropped parallel calls the probe leads wherever there are enough of them. Much of the probe's lead is visible in the text of the call to a judge that never reads the model's internals. Three recommendations follow, in order of cost: score the model's confidence per kind of error on held-out tools before building any judge, train a judge on the output text before a probe where confidence misses value errors, and check dropped parallel calls separately.

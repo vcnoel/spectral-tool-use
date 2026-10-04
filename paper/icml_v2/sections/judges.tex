@@ -1,0 +1,20 @@
+\section{What the probe adds over the output text}
+\label{sec:judges}
+
+\begin{figure*}[t]
+\centering
+\includegraphics{fig2_judges}
+\caption{(a) AUC per powered run of the length floor, the mean log-probability, the output-only judge, the \readerName{} reader and the token-role probe, with the span from confidence to probe shaded. (b) Probe AUC minus output-only judge AUC (triangles) and minus reader AUC (diamonds), with 95\% tool-resampled intervals. Reader points appear on the runs where the reader was fitted.}
+\label{fig:judges}
+\end{figure*}
+
+The internal advantage sets a trained probe against an untrained summary of the output, so part of the probe's lead could come from training on labels rather than from the hidden states. The comparators of this section are trained on the same labels, folds and training population as the probe and read only what is visible outside the deployed model.
+
+\paragraph{The output-only judge.}
+On the confidence side the output-only judge scores \ojMinConfidence{} to \ojMaxConfidence{}, below confidence itself, because a few dozen failures cannot fit its n-gram features. On the probe side it is strong (\cref{fig:judges}a). It recovers \ojShareMajorityMin{} to \ojShareMajorityMax{}\% of the probe's lead over confidence on \nOjShareMajority{} of the \nInternalsRuns{} runs, all of them Llama-3.2-1B or Gemma-3 runs. Probe minus output-only judge is \ojGapMinInternals{} to \ojGapMaxInternals{} and excludes zero on \nOjGapCiExcl{} runs, against \nGapCiExcl{} for probe minus confidence. On Gemma-3 on BFCL the judge reaches \aucOutJudgeGemmaBfcl{} against the probe's \aucProbeGemmaBfcl{}, and a structural floor that counts schema keywords already reaches \aucStructGemmaBfcl{}. On Llama-3.2-3B the judge trails the probe by \GapOutJudgeLlamaThreeBGlaive{} on Glaive and \GapOutJudgeLlamaThreeBBfcl{} on BFCL.
+
+\paragraph{A second model reading the call.}
+A reader that is a different language model, given the request and the generated call as plain text, is a stronger output-side judge than n-grams. On the \nReaderInternals{} probe-side runs, probe minus reader ranges from \readerGapMinInternals{} to \readerGapMaxInternals{}, and its interval contains zero on \nReaderTiesInternals{} of them (\cref{fig:judges}b). On all three Llama-3.2-1B runs and on Llama-3.2-3B on Glaive the reader is within two points of the model's own probe (\cref{tab:main}). The one run where the probe beats every output-side judge is Llama-3.2-3B on BFCL, by \GapReaderLlamaThreeBBfcl{} [\GapReaderLoLlamaThreeBBfcl{}, \GapReaderHiLlamaThreeBBfcl{}] over the reader. On the other probe-side runs the probe shows that the error is visible in the call. The claim that the model's states hold what its confidence lacks, beyond what its text shows, rests on that one run. On the confidence side the reader scores \readerMinConfidence{} to \readerMaxConfidence{}, below the model's own confidence with an interval excluding zero on \nReaderBelowConf{} of the \nConfidenceRuns{} runs.
+
+\paragraph{What the probe adds.}
+Fusing the probe with the output-only judge by an equal-weight rank average, with no fitted weight, gains \fusOutMinInternals{} to \fusOutMaxInternals{} over the judge alone on the probe side, with an interval excluding zero on \nFusOutCiExclInternals{} of \nInternalsRuns{} runs. The value-error split itself does not depend on any of these comparators, because it compares the probe with the model's own confidence on one kind of error.

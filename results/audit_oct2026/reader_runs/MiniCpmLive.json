@@ -1,0 +1,22 @@
+{
+ "key": "MiniCpmLive",
+ "tag": "v3_minicpm5_2b_live",
+ "side": "confidence",
+ "reader": "Qwen/Qwen3.5-0.8B",
+ "dim": 16384,
+ "n_pos": 120,
+ "n_neg": 475,
+ "reader_auc": 0.6545438596491229,
+ "probe_auc": 0.7443421052631579,
+ "conf_auc": 0.7970000000000002,
+ "probe_minus_reader": {
+  "delta": 0.08979824561403504,
+  "ci_lo": -0.013239810125599832,
+  "ci_hi": 0.2091491761347029
+ },
+ "reader_minus_conf": {
+  "delta": -0.1424561403508773,
+  "ci_lo": -0.25056155500695787,
+  "ci_hi": -0.043000865082139815
+ }
+}

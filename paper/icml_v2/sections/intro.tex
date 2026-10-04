@@ -1,0 +1,27 @@
+\section{Introduction}
+\label{sec:intro}
+
+\begin{figure*}[t]
+\centering
+\includegraphics{fig1_types}
+\caption{Token-role probe AUC minus mean log-probability AUC on held-out tools, per run, dot at the mean over five split seeds, bar the 95\% interval from resampling tools. (a) Every failure against valid calls. (b) Wrong argument values against valid calls. (c) Dropped parallel calls against valid calls, coloured, and within the parallel categories only, grey. Blue Llama-3.2 and Gemma-3, orange Qwen3, Qwen3.5 and MiniCPM5, open markers the forced-JSON runs. A run appears in (b) and (c) when it has at least twenty failures of that kind.}
+\label{fig:types}
+\end{figure*}
+
+A language model agent acts by calling tools. When it calls the wrong tool, or the right one with wrong arguments, the call is usually well formed, so the runtime executes it before anyone reads the transcript. A guardrail therefore has to judge the call between its generation and its execution, from what the model exposes in that forward pass. Two signals are available there. The output distribution gives the probability of each generated token, which every serving stack returns. The hidden states give a probe something to read, which only a stack that runs the model's own code can expose.
+
+Probes on the residual stream separate wrong calls from right ones with high accuracy \citep{healy2026internal,yeats2026calls}, and a few neurons suffice to detect invalid arguments, unneeded calls and missing calls \citep{ke2026neurons}. An earlier comparison by \wscitet{} put token probabilities beside these probes on Glaive and found the probabilities near chance and head-averaged attention spectra strong. That comparison split the data by prompt rather than by tool and pooled every kind of error. The question this paper answers is which wrong tool calls a model's own token probabilities miss, on which models, and whether a judge trained on the output text alone would catch what they miss.
+
+We answer it with one quantity, the internal advantage: the area under the curve (AUC) of a probe on the residual stream minus that of the mean token log-probability of the call, on tools never seen in training, beside a floor that reads only lengths. We compute it on every failure and on two kinds of error, and we set the probe against two trained comparators that need no internals: an output-only judge fitted on the same labels and a second language model that reads the request and the call.
+
+The result fits in one sentence: whether token probabilities catch a wrong tool call depends on the model and on the kind of error (\cref{fig:types}). On wrong argument values the probe leads confidence by \wavInternalsMin{} to \wavInternalsMax{} on \nWavInternalsPos{} of the \nInternalsRuns{} Llama-3.2 and Gemma-3 runs, and confidence leads the probe on all \nWavConfidenceRuns{} Qwen3, Qwen3.5 and MiniCPM5 runs, native or forced into JSON. We call this the value-error split. On dropped parallel calls the probe leads confidence on all \nMcRuns{} runs that have at least twenty of them. Forcing JSON makes Qwen3.5 and MiniCPM5 drop such calls, which is why our registered prediction about forced JSON failed. Much of what the probe reads is in the output text: an output-only judge recovers most of the probe's lead on \nOjShareMajority{} of the \nInternalsRuns{} probe-side runs, and a \readerName{} reader of the call is within noise of the probe on \nReaderTiesInternals{} of the \nReaderInternals{} probe-side runs where it was fitted.
+
+What follows in practice is an order of operations (\cref{sec:discussion}): score confidence per kind of error on held-out tools first, train a judge on the output text before reading internals where confidence misses value errors, and check dropped parallel calls separately.
+
+\paragraph{Contributions.}
+\begin{enumerate}[topsep=1pt,itemsep=1pt,leftmargin=1.3em]
+\item The value-error split, measured on \nRunsPowered{} powered runs from \nCkpt{} checkpoints in five families on held-out tools, with a length floor and a paired interval on every difference (\cref{sec:result}). \citet{healy2026internal}, \citet{yeats2026calls} and \citet{ke2026neurons} establish that internal detectors work. This paper adds the decomposition by kind of error against the model's own confidence, on unseen tools.
+\item A correction of \wscitet{}: on held-out tools and repaired labels confidence reaches \confMinPowered{} to \confMaxPowered{} AUC, head-averaged attention readouts sit near the length floor, and size does not separate the sides (\cref{sec:result,sec:attention}).
+\item The comparators that bound the claim: an output-only judge and a reader model under the same protocol, which show where the probe's lead is readable from the text (\cref{sec:judges}).
+\item On the theory side, a causal two-head construction showing that no readout of the head-averaged attention graph can separate head configurations whose per-head connectivity differs by a length-independent margin, and that under the normalised Laplacian the gap between the two changes sign with length (\cref{sec:attention}, \cref{app:proofs}).
+\end{enumerate}
