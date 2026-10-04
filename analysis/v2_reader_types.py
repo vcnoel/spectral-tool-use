@@ -18,7 +18,7 @@ import os
 import sys
 from pathlib import Path
 
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # "" does not hide the GPU on this machine
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
