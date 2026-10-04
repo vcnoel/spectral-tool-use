@@ -329,6 +329,76 @@ def main():
         d("confMin" + nm, f3(min(r["Conf"] for r in sel)), f"icml_rows.json: Mean logprob over powered {sd} runs")
         d("confMax" + nm, f3(max(r["Conf"] for r in sel)), f"icml_rows.json: Mean logprob over powered {sd} runs")
 
+    # ── red-team checks (analysis/v2_redteam_checks.py) ─────────────────────
+    rp_ = V2 / "redteam_checks.json"
+    RT = need(rp_)
+    src = rel(rp_)
+    jw = RT["judge_wav"]
+    elig = [k for k in INTERNALS if k in jw and jw[k]["share_recovered"] is not None]
+    for k, v in jw.items():
+        d("jwAuc" + k, f3(v["judge"]), f"{src}:judge_wav.{k}.judge")
+        gap_macros("jwGap", k, v["probe_minus_judge"], f"{src}:judge_wav.{k}.probe_minus_judge")
+        if v["share_recovered"] is not None:
+            d("jwShare" + k, pct(v["share_recovered"]), f"{src}:judge_wav.{k}.share_recovered")
+    d("nJwEligible", word(len(elig)), f"{src}: probe-side runs where probe > confidence on value errors")
+    d("nJwShareMajority", word(sum(jw[k]["share_recovered"] >= 0.5 for k in elig)), f"{src}: of those, share >= 50%")
+    d("nJwCiExcl", word(sum(jw[k]["probe_minus_judge"]["ci_lo"] > 0 for k in INTERNALS if k in jw)),
+      f"{src}: probe-side runs, probe - judge on value errors, lower end > 0")
+    cat = RT["category"]
+    for k, v in cat.items():
+        d("catAuc" + k, f3(v["indicator_auc"]), f"{src}:category.{k}.indicator_auc")
+        d("catProbe" + k, f3(v["probe_auc"]), f"{src}:category.{k}.probe_auc")
+        d("catConf" + k, f3(v["conf_auc"]), f"{src}:category.{k}.conf_auc")
+    d("catAucMin", f3(min(v["indicator_auc"] for v in cat.values())), f"{src}: category, min indicator_auc")
+    d("catAucMax", f3(max(v["indicator_auc"] for v in cat.values())), f"{src}: category, max indicator_auc")
+    gd = RT["glaive_dedup"]
+    for k, v in gd.items():
+        for f_ in ("n_scored", "n_unique_prompts", "n_pos", "n_pos_unique"):
+            d("gd" + "".join(w.title() for w in f_.split("_")) + k, v[f_], f"{src}:glaive_dedup.{k}.{f_}")
+        if "gap_dedup" in v:
+            gap_macros("gdGap", k, v["gap_dedup"], f"{src}:glaive_dedup.{k}.gap_dedup")
+        if "wav_dedup" in v:
+            gap_macros("gdWav", k, v["wav_dedup"], f"{src}:glaive_dedup.{k}.wav_dedup")
+    pv = RT["provenance"]
+    d("nFirstExtractInternals", word(sum(not pv[k]["run_meta"] for k in INTERNALS)), f"{src}: probe-side runs without run_meta (first extractor)")
+    d("nFirstExtractConfidence", word(sum(not pv[k]["run_meta"] for k in CONFIDENCE)), f"{src}: confidence-side runs without run_meta")
+    d("nDirtyRuns", word(sum(1 for v in pv.values() if v["dirty"])), f"{src}: runs with git_dirty true")
+    d("nNoMetaRuns", word(sum(1 for v in pv.values() if not v["run_meta"])), f"{src}: runs without run_meta")
+    d("nProvRuns", word(len(pv)), f"{src}: runs in the provenance table")
+    rt_ = RT["prompt_route"]
+    d("nFallbackModels", word(sum(v.get("fallback_used", False) for v in rt_.values())), f"{src}: models whose template drops the tools")
+    write_provenance(pv)
+    from math import cos, pi
+    d("propBound", f"{cos(pi / 4) - 0.5:.2f}", "closed form cos(pi/4) - 1/2 (Remark 1)")
+    multi = [k for k in INTERNALS if int(M.get("nSummaries" + k, "1")) > 1]
+    d("nMultiSummaryInternals", word(len(multi)), "confidence_best.json: probe-side runs storing several summaries")
+
+    # ── reader on value errors (analysis/v2_reader_types.py) ────────────────
+    rtd = V2 / "reader_types"
+    # the per-run reader files that exist; runs without one are reported as not computed
+    RTy = {k: need(rtd / f"{k}.json") for k in AUDITED if (rtd / f"{k}.json").exists()}
+    d("nRwRuns", word(len(RTy)), f"{rel(rtd)}: runs scored on value errors")
+    for k, v in RTy.items():
+        w = v.get("wrong_arg_values")
+        if w:
+            gap_macros("rwGap", k, w["probe_minus_reader"], f"{rel(rtd)}/{k}.json:wrong_arg_values.probe_minus_reader")
+            gap_macros("rwConf", k, w["reader_minus_conf"], f"{rel(rtd)}/{k}.json:wrong_arg_values.reader_minus_conf")
+            d("rwAuc" + k, f3(w["probe_minus_reader"]["auc_b"]), f"{rel(rtd)}/{k}.json:wrong_arg_values.probe_minus_reader.auc_b")
+    rin_w = [k for k in INTERNALS if k in RTy and "wrong_arg_values" in RTy[k]]
+    rco_w = [k for k in CONFIDENCE if k in RTy and "wrong_arg_values" in RTy[k]]
+    pr = lambda k: RTy[k]["wrong_arg_values"]["probe_minus_reader"]
+    rc = lambda k: RTy[k]["wrong_arg_values"]["reader_minus_conf"]
+    d("nRwInternals", word(len(rin_w)), f"{rel(rtd)}: probe-side runs with value errors")
+    d("nRwTies", word(sum(pr(k)["ci_lo"] <= 0 <= pr(k)["ci_hi"] for k in rin_w)), f"{rel(rtd)}: probe - reader interval contains zero")
+    d("nRwProbeAbove", word(sum(pr(k)["ci_lo"] > 0 for k in rin_w)), f"{rel(rtd)}: probe - reader lower end > 0")
+    d("rwGapMinInternals", f3(min(pr(k)["delta"] for k in rin_w), True), f"{rel(rtd)}: probe side")
+    d("rwGapMaxInternals", f3(max(pr(k)["delta"] for k in rin_w), True), f"{rel(rtd)}: probe side")
+    d("nRwReaderAboveConfInternals", word(sum(rc(k)["ci_lo"] > 0 for k in rin_w)), f"{rel(rtd)}: probe side, reader - conf lower end > 0")
+    d("nRwConfidence", word(len(rco_w)), f"{rel(rtd)}: confidence-side runs with value errors")
+    if rco_w:
+        d("nRwReaderBelowConf", word(sum(rc(k)["ci_hi"] < 0 for k in rco_w)), f"{rel(rtd)}: confidence side, reader - conf upper end < 0")
+    write_types_reader(RTy, jw)
+
     # ── every macro value free of dashes ────────────────────────────────────
     import re as _re
     count_names = _re.compile(r"^(n[A-Z]\w*|ladGainPerHeadPos|ladGainVsShufflePos|ladNoiseEffectPos|jensenNormViolations|"
@@ -352,7 +422,9 @@ def main():
 
     # ── tables ──────────────────────────────────────────────────────────────
     rows = json.loads((ROOT / "data" / "theory" / "icml_rows.json").read_text(encoding="utf-8"))
-    write_main(rows, F, T, reader, J)
+    write_main(rows, F, T, reader, J, PW)
+    tm = OUT / "table_models.tex"
+    tm.write_text(tm.read_text(encoding="utf-8").replace("Thinking mode", "Reasoning mode"), encoding="utf-8")
     write_judges(F, reader)
     write_types(T, PW)
     write_detectors(rows)
@@ -362,6 +434,43 @@ def main():
     n_pending = sum(1 for v in M.values() if "pending" in v)
     assert n_pending == 0, "a macro is pending"
     print(f"v2: {len(M)} macros, {len(P)} with provenance -> {OUT}")
+
+
+def write_provenance(pv):
+    BS = chr(92)
+    t = [BS + "begin{tabular}{@{}lllll@{}}", BS + "toprule",
+         "Run & Stored extraction & Extractor & Commit & Uncommitted changes " + BS + BS, BS + "midrule"]
+    names = dict(NAME)
+    names.update({"MiniCpmBfclJson": ("MiniCPM5-2B", "BFCL, forced JSON"), "QwenThreeFiveBfclJson": ("Qwen3.5-0.8B", "BFCL, forced JSON"),
+                  "MiniCpmMultiTurn": ("MiniCPM5-2B", "BFCL multi-turn"), "QwenThreeThink": ("Qwen3-1.7B", "BFCL, reasoning mode on")})
+    for k, v in pv.items():
+        m, b = names[k]
+        tag = v["tag"].replace("_", BS + "_")
+        if v["run_meta"]:
+            t.append(f"{m}, {b} & " + BS + f"texttt{{{tag}}} & corrected & recorded & " + f"{'yes' if v['dirty'] else 'no'} " + BS + BS)
+        else:
+            t.append(f"{m}, {b} & " + BS + f"texttt{{{tag}}} & first & not recorded & not recorded " + BS + BS)
+    t += [BS + "bottomrule", BS + "end{tabular}"]
+    (OUT / "table_provenance.tex").write_text(chr(10).join(t) + chr(10), encoding="utf-8")
+
+
+def write_types_reader(RTy, jw):
+    BS = chr(92)
+    t = [BS + "begin{tabular}{@{}lccccc@{}}", BS + "toprule",
+         "Run & probe $-$ conf. & probe $-$ judge & judge share & probe $-$ reader & reader $-$ conf. " + BS + BS, BS + "midrule"]
+    for k in AUDITED:
+        w = RTy.get(k, {}).get("wrong_arg_values")
+        j = jw.get(k)
+        if not j:
+            continue
+        m, b = NAME[k]
+        share = NC if not j or j["share_recovered"] is None else f"{100 * j['share_recovered']:.0f}" + BS + "%"
+        pc = {"delta": j["probe"] - j["conf"]} if j else None
+        t.append(f"{m}, {b} & {('$' + format(pc['delta'], '+.3f') + '$') if pc else NC} & "
+                 f"{gcell_s(j['probe_minus_judge']) if j else NC} & {share} & {gcell_s(w['probe_minus_reader']) if w else NC} & "
+                 f"{gcell_s(w['reader_minus_conf']) if w else NC} " + BS + BS)
+    t += [BS + "bottomrule", BS + "end{tabular}"]
+    (OUT / "table_wav_judges.tex").write_text(chr(10).join(t) + chr(10), encoding="utf-8")
 
 
 def cell(v, nd=3):
@@ -383,10 +492,12 @@ def pcell(g):
     return "$" + f"{g['delta']:+.3f}" + mark + "$"
 
 
-def write_main(rows, F, T, reader, J=None):
+def write_main(rows, F, T, reader, J=None, PW=None):
+    PW = PW or {}
+    pwg = lambda k: PW.get(k, {}).get("within_parallel") if PW.get(k, {}).get("testable") else None
     BS = chr(92)
     t = [BS + "begin{tabular}{@{}llrrccccccccc@{}}", BS + "toprule",
-         "Model & Data & $n_+$ & $n_-$ & floor & conf. & judge & reader & probe & probe $-$ conf. & probe $-$ judge & value err. & dropped " + BS + BS,
+         "Model & Data & $n_+$ & $n_-$ & floor & conf. & judge & reader & probe & probe $-$ conf. & probe $-$ judge & values & dropped " + BS + BS,
          BS + "midrule"]
     last = None
     for r in rows:
@@ -403,7 +514,7 @@ def write_main(rows, F, T, reader, J=None):
                  f"{cell(r['Conf'])} & {cell(oj['pooled_auc'] if oj else None)} & "
                  f"{cell(rd['reader_auc'] if rd else None)} & {cell(r['Probe'])} & {gcell_s(gap)} & "
                  f"{pcell(oj['probe_minus'] if oj else None)} & {pcell(tt.get('wrong_arg_values'))} & "
-                 f"{pcell(tt.get('missing_calls'))} " + BS + BS)
+                 f"{pcell(pwg(k))} " + BS + BS)
     if J is not None:
         t.append(BS + "midrule")
         for model, key in (("MiniCPM5-2B", "MiniCpmBfclJson"), ("Qwen3.5-0.8B", "QwenThreeFiveBfclJson")):
@@ -411,7 +522,7 @@ def write_main(rows, F, T, reader, J=None):
             tt = T.get(key, {})
             t.append(f"{model}$^{{*}}$ & BFCL, JSON & {sc['n_pos']} & {sc['n_neg']} & {NC} & {cell(sc['conf'])} & {NC} & {NC} & "
                      f"{cell(sc['probe'])} & {gcell_s(sc)} & {NC} & {pcell(tt.get('wrong_arg_values'))} & "
-                     f"{pcell(tt.get('missing_calls'))} " + BS + BS)
+                     f"{pcell(pwg(key))} " + BS + BS)
     t += [BS + "bottomrule", BS + "end{tabular}"]
     (OUT / "table_main.tex").write_text(chr(10).join(t) + chr(10), encoding="utf-8")
 

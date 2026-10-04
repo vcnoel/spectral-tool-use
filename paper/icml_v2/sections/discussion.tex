@@ -2,20 +2,19 @@
 \label{sec:discussion}
 
 \paragraph{Readings of the split.}
-Two properties of the model set fit all six checkpoints (\cref{tab:models}). One is release date, with a cutoff between March and April 2025. The other, registered as hypothesis H1 before any new model was extracted (\cref{app:registry}), is the post-training recipe: the three confidence-side families ship a chat template with a reasoning mode and were post-trained with it, and the two probe-side families do not. We read the split as possibly a post-training effect: training that rewards a model for working through a call before writing it may also leave its token probabilities tracking its own value errors. The reading is untested here. Switching the reasoning mode on at generation within Qwen3-1.7B yields \thinkPos{} failures in \thinkScored{} scored calls, too few to score, and Qwen3 is already on the confidence side with the mode off.
+Three properties of the model set fit all six checkpoints (\cref{tab:models}), and the data do not separate them. The first is release date, with a cutoff between March and April 2025. The second is a reasoning mode in post-training: the three confidence-side families ship a chat template with a reasoning mode, and the two probe-side families do not. Post-training that rewards a model for working through a call before writing it may leave its token probabilities tracking its own value errors. This reading was written down as hypothesis H1 after all six checkpoints had been scored (\cref{app:registry}), so it is a prediction for new models and not a test on these. The third is native tool-calling post-training: Gemma-3 ships no tool template and is prompted through the fallback, and \citet{yeats2026calls} find that tool-specific fine-tuning changes what a probe reads, so how much tool-call data a model saw in post-training could move the side as well. Switching the reasoning mode on at generation within Qwen3-1.7B yields \thinkPos{} failures in \thinkScored{} scored calls, too few to score, and Qwen3 is on the confidence side with the mode off.
 % ---------------------------------------------------------------------------------------------
 % WITHIN-MODEL SWAP RESULT GOES HERE (docs/REGISTRATION_SWAP.md, Qwen3.5-4B-Base against Qwen3.5-4B,
 % registered 2026-10-04). Only once both arms have been extracted from a committed tree and evaluated:
 % one sentence with D and D_wav and their joint tool-bootstrap intervals (macros from the swap's result
 % file through analysis/icml_v2_numbers.py), the verdict under the registered rule (PASS, FAIL,
 % INCONCLUSIVE or NOT IDENTIFIED), the side of each arm, and the J qualifier. Then rewrite the sentence
-% "The reading is untested here" to match the verdict, and add the row to the registry in appendix.tex.
-% Nothing about the swap is printed before that result exists.
+% "so it is a prediction for new models and not a test on these" to match the verdict, and add the
+% row to the registry in appendix.tex. Nothing about the swap is printed before that result exists.
 % ---------------------------------------------------------------------------------------------
-A third reading, that a model which has seen the benchmark in training fails less and knows when it fails, is weakened by the live categories, contributed by users after the curated set, on which MiniCPM5 stays on the confidence side.
 
 \paragraph{What confidence misses.}
-On the probe side the mean log-probability ranks wrong values close to chance on BFCL, \aucConfWavLlamaOneBBfcl{} on Llama-3.2-1B and \aucConfWavGemmaBfcl{} on Gemma-3, while the residual stream separates them. We interpret this as an output distribution that does not express what the model's states, and on most runs its own text, carry. \cref{sec:judges} bounds the reading.
+On the probe side the mean log-probability ranks wrong values close to chance on BFCL, \aucConfWavLlamaOneBBfcl{} on Llama-3.2-1B and \aucConfWavGemmaBfcl{} on Gemma-3, while the residual stream separates them and, on most runs, so does a reader of the call. We interpret this as an output distribution that does not express what the model's own text shows. A confidence summary over the value tokens alone was not stored, so part of the miss may belong to averaging over the whole call (\cref{sec:controls}).
 
 \paragraph{For operators.}
 The decision that changes is which judge to build, if any, in order of cost.
@@ -23,14 +22,11 @@ The decision that changes is which judge to build, if any, in order of cost.
 \begin{tcolorbox}[colback=white,colframe=black!60,boxrule=0.5pt,arc=1pt,left=4pt,right=4pt,top=3pt,bottom=3pt,title=\small Before building an internal judge for a tool-calling model]
 \small
 \begin{enumerate}[topsep=0pt,itemsep=1pt,leftmargin=1.2em]
-\item Score the mean token log-probability per kind of error on a few hundred labelled calls from the model to be deployed, on tools absent from the labelled set. Where it already ranks value errors (\cref{tab:main}, confidence side), a probe fused with it gained at most \fusConfMaxConfidence{} AUC over every failure.
-\item Where it misses value errors, train an output-only judge or a small reader model on the same labels before reading internals. The output-only judge recovered \ojShareMajorityMin{} to \ojShareMajorityMax{}\% of the probe's lead on \nOjShareMajority{} of \nInternalsRuns{} probe-side runs and needs no access to the model's states.
-\item Check dropped parallel calls separately, by counting the calls a parallel request needs. On every run with at least twenty of them the probe led confidence by \mcGapMin{} or more.
+\item Score the mean token log-probability on wrong argument values, on a few hundred labelled calls from the model to be deployed, on tools absent from the labelled set. Where it already ranks them (\cref{tab:main}, confidence side), a probe fused with it gained at most \fusConfMaxConfidence{} AUC on every scored failure.
+\item Where it misses them, train an output-only judge or a small reader model on the same labels before reading internals. On value errors the judge recovered at least half of the probe's lead on \nJwShareMajority{} of \nJwEligible{} such runs, and none on Llama-3.2-3B, so check the trained judge against a probe on the deployed model before choosing.
+\item For parallel requests, compare the number of calls written with the number the request asks for. A one-bit category flag already separates dropped calls from valid ones on every run with enough of them, and a probe adds nothing measurable within the parallel categories on the one run prompted through its native template.
 \end{enumerate}
 \end{tcolorbox}
 
-\paragraph{For model builders.}
-If a release reported the internal advantage per kind of error on held-out tools, an operator could see before deployment whether the model's confidence flags its value errors and its dropped calls.
-
 \paragraph{For detector research.}
-Under splits by prompt and pooled labels, \wscitet{} found token probabilities near chance and head-averaged spectra strong. Under splits by tool, with the labels repaired and the errors separated, confidence reaches \confMinPowered{} to \confMaxPowered{} AUC and beats the probe on value errors in \nFamiliesConfidence{} of the five families. A probe's accuracy reported without the model's own confidence, without an output-only judge and without held-out tools can show a strong detector on a model that did not need one.
+A probe's accuracy reported without the model's own confidence, a trained output-only judge and held-out tools can show a strong detector on a model that did not need one: here confidence reaches \confMinPowered{} to \confMaxPowered{} AUC and beats the probe on value errors on every Qwen3, Qwen3.5 and MiniCPM5 run.

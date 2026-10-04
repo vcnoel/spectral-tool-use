@@ -1,343 +1,290 @@
-# Plan to 4/4 on one A100 80 GB (written 4 October 2026, for the ICML 2027 deadline of 22 January 2027)
+# Plan to 4/4 on one A100 80 GB (revised 4 October 2026, after the cold red team of v2)
 
-Scope: the v2 manuscript in `paper/icml_v2/` (title "Whether Token Probabilities Catch a Wrong Tool Call
-Depends on the Model and the Kind of Error"). What it claims today, at the width of its evidence:
+ICML 2027 deadline 22 January 2027. Manuscript: `paper/icml_v2/` ("Whether Token Probabilities Catch a
+Wrong Tool Call Depends on the Model and the Kind of Error"). The red team graded v2 at 2/4 (Soundness 2,
+Presentation 3, Significance 2, Originality 2). Every number reproduced; the problems were qualifiers,
+design and provenance. The revision addressed the text. This plan addresses the design.
 
-- **The value-error split.** On wrong argument values, the token-role probe beats the mean token
-  log-probability on 6 of 7 Llama-3.2/Gemma-3 runs (+0.134 to +0.357) and loses to it on all 6
-  Qwen3/Qwen3.5/MiniCPM5 runs, native and forced JSON (-0.048 to -0.162). Six checkpoints, all at most
-  3B, 3 against 3 (exact floor p = 0.10).
-- **Dropped parallel calls.** The probe leads confidence on all 4 runs with at least 20 of them
-  (+0.158 to +0.342). Within parallel categories it holds on 2 of 3 testable runs (MiniCPM5 and
-  Qwen3.5 under forced JSON) and vanishes on Llama-3.2-3B.
-- **The comparator that hurts.** An output-only judge trained on the same labels recovers 57 to 95%
-  of the probe's lead on 4 of 7 probe-side runs. A Qwen3.5-0.8B reader of the request and call text,
-  without schemas, is within noise of the probe on 6 of the 7 probe-side runs (probe minus reader -0.020
-  to +0.074, `results/audit_oct2026/reader_runs/`). The probe beats every output-side comparator with an
-  interval above zero only on Llama-3.2-3B BFCL (+0.074 [+0.01, +0.14] over the reader). On the evidence
-  today the phenomenon is "some models' confidence misses value errors that are visible in the call
-  text", and "the hidden states know" holds on one run.
-- **R3 (forced JSON) failed; multi-turn did not reproduce the single-turn side; H1 (reasoning
-  post-training) is untested on a matched pair; R1b and R2 are not run.**
+## 0. What v2 claims after the revision, and what it rests on
 
-Honest grade of v2 now: **3/4** (a careful descriptive paper with a narrow, well-controlled phenomenon,
-no manipulated cause, nothing above 3B, mechanism absent). The plan below is ordered by how much each
-experiment moves that grade.
+- **Value-error split (the only headline).** On wrong argument values against valid calls the token-role
+  probe beats the mean log-probability on 6 of 7 Llama-3.2/Gemma-3 runs (+0.134 to +0.357 point
+  estimates, 5 intervals exclude zero) and loses on all 6 Qwen3/Qwen3.5/MiniCPM5 runs including forced JSON
+  (3 intervals exclude zero). Sides are assigned by family (hard-coded `CANON`), after the data were
+  seen; 3 against 3 checkpoints, all at most 3B, exact two-sided floor p = 0.10.
+- **Comparators on value errors.** The output-only judge recovers at least half of the probe's lead on 3 of
+  the 6 probe-side runs where the probe leads, none on Llama-3.2-3B (probe minus judge +0.225 and +0.182).
+  The reader (Qwen3.5-0.8B on request + call, no schemas) was scored on value errors on 4 of 11 runs
+  (the three Llama-3.2-1B runs and Llama-3.2-3B Glaive) and is within noise of the probe on all four
+  (probe minus reader -0.051 to +0.017); on Llama-3.2-3B Glaive it reads 0.951 against the probe's 0.926
+  while the n-gram judge recovers none of the lead. The other 7 runs were stopped by CPU contention
+  (one run took almost 4 h). Resume on CPU with
+  `CUDA_VISIBLE_DEVICES= python analysis/v2_reader_types.py --threads 10` (skips finished runs, writes no
+  feature cache), then regenerate the paper and reread the reader sentences of `sections/judges.tex`,
+  which name the four runs.
+- **Dropped calls: no claim.** A one-bit parallel-category flag scores 0.878 to 0.983 AUC on dropped vs
+  valid. Three of the four runs with enough dropped calls use a fallback prompt that asks for one JSON
+  object (Gemma-3 always, both forced-JSON runs). Within categories the probe leads on the two forced-JSON
+  runs and not on Llama-3.2-3B, the only native-template run.
+- **R3** failed on MiniCPM5 (partial 616/850, dirty tree), undecided on Qwen3.5.
+- **Provenance.** 5 of 7 probe-side runs and 1 of 4 confidence-side runs come from the first extractor
+  (no `run_meta.json`); MiniCPM5 BFCL, MiniCPM5 live and Qwen3.5 BFCL (and the multi-turn and
+  reasoning-toggle runs, and MiniCPM5 forced JSON) were extracted from a dirty tree. Measured re-extraction
+  drift 0.044.
 
-## 0. Assumptions used for every cost
+**Honest grade of v2 now: 2.5/4.** The text no longer overclaims, but the design is what the red team
+graded: a post hoc, family-defined split on 3 against 3 small checkpoints, with extractor generation and
+prompt route both aligned with side. A 3 needs (d) and (c) below to come back clean; a 4 needs the cause,
+the breadth and the mechanism as well.
 
-- **Measured on the laptop GPU (RTX 5080, 16 GB):** one extraction of 850 BFCL items at 0.8 to 2B took
-  0.8 to 2.7 h (rich tier, per-head spectra included). Qwen3-1.7B with its reasoning mode on, 400 items at
-  a 1024-token budget: 4 h 43 min.
-- **A100 speed assumed:** batch-one greedy decoding is memory-bandwidth bound. A100 80 GB (about 2.0 TB/s)
-  against the laptop card (about 0.9 TB/s) gives about **2.2x per byte of weights**. Time per run then
-  scales with weight bytes: a 7 to 8B model (14 to 16 GB in bf16) has 4x the bytes of a 2B model, so an
-  850-item lean run (`--no-rich`) is about 4 / 2.2 = 1.8x the laptop 2B time minus the rich tier, which
-  we take as **2.0 A100-h per 7 to 9B lean run** (range 1.5 to 3), **3.0 A100-h at 12B**, **1.0 A100-h at
-  4B**, **0.5 A100-h at 0.8 to 2B**. Glaive (651 items) is 0.8x of these. A reasoning-mode-on run
-  (thinking enabled, 1024 tokens) is 4x. These are estimates. The first run of each size on the pod is
-  timed and every later line is re-costed from it.
-- **Lean extraction** keeps generations, labels, every confidence summary, the token-role features at 8
-  depths and the head-averaged spectra. It drops the per-head attention tier, LapEigvals, SinkProbe,
-  Lookback and the token-level probe, none of which enters a decision below. About 0.3 to 0.6 GB per 8B
-  run.
-- **CPU after each run** (pod CPU or local): evaluation (`run_pilot_v2.py evaluate`), paired intervals,
-  `audit_floors.py` (output-only judges), `audit_failure_type.py`, `v2_parallel_within.py`, schema echo,
-  and the reader probe (on the A100 the 0.8B reader takes about 2 min per run).
+## 1. Cost assumptions
 
-## 1. Order of work and why
+- Measured on the laptop RTX 5080 (16 GB): one 850-item BFCL extraction at 0.8 to 2B took 0.8 to 2.7 h
+  with the rich attention tier; Qwen3-1.7B with reasoning on at a 1024-token budget took 4 h 43 min for
+  400 items.
+- A100 80 GB assumed **2.2x faster per byte of weights** (batch-one greedy decoding is bandwidth bound:
+  about 2.0 against 0.9 TB/s). Lean extraction (`--no-rich`: generations, labels, every confidence summary,
+  token-role features, head-averaged spectra), per 850-item run: **0.5 A100-h at 0.8 to 3B, 1.0 at 4B,
+  2.0 at 7 to 9B, 3.0 at 12B**; Glaive 0.8x; reasoning on 4x; the rich attention tier 2x. Every figure is
+  re-costed from the first timed run on the pod (E0).
+- Disk: about 0.3 to 0.6 GB per lean run; weights deleted per phase through the hub cache API; a 300 GB
+  pod volume. Nothing large comes back to drive C: (only result JSONs and `scores.npz`, about 10 MB per run).
 
-| # | experiment | A100-h | moves |
+## 2. The experiments, ordered by what decides a 4
+
+| # | experiment | A100-h | decides |
 |---|---|---|---|
-| E0 | Pod setup, hygiene, timing calibration | 1 | nothing, prevents losing everything else |
-| E1 | Qwen3.5-4B Base vs Instruct swap (the registered run that segfaulted locally) | 4 | first manipulated test of H1, at 4B |
-| E2 | **Within-base post-training swaps at 7 to 9B, native and forced JSON** | 30 | the manipulated cause at scale: the single biggest move |
-| E3 | Comparator hardening: P(True), reader with schemas, second reader family | 6 | decides whether "internals" or "the text" is the phenomenon |
-| E4 | **Mechanism: ablation and steering of the probe direction against matched random directions** | 8 | explains why confidence misses value errors on one side |
-| E5 | 7B+ breadth on both sides (Qwen3-8B, Gemma-3-12B, xLAM-2-8b for R1b, gpt-oss-20b if it fits) | 20 | breadth and R1b |
-| E6 | R2 distractor ladder (dose response), or its withdrawal | 12 | the graded experiment the paper lacks |
-| | contingency (re-runs, a failed parse, timing misses), 20% | 16 | |
-| | **total** | **97** | |
+| E0 | pod setup, hygiene, timing calibration | 1 | nothing; protects the rest |
+| E1 = (d)+(c) | uniform clean re-extraction of every paper run with a value-span confidence, and a list-allowing fallback prompt | 10 | whether the split survives provenance and prompt; the basis of a 3 |
+| E2 = (a) | Qwen3.5-4B Base vs Instruct (registered) and Llama-3.1-8B-Instruct vs xLAM-2-8b (R1b), on value errors | 12 | the first manipulated cause |
+| E3 = (b) | new checkpoints on both sides, at least 2 per side at 4B or more, so the totals reach 5 vs 5 or more | 19 | breadth and the first real test of the split |
+| E4 | mechanism: probe-direction ablation and steering against matched random directions | 8 | why confidence misses value errors on one side |
+| E5 | within-base swaps at 7 to 9B, native and forced JSON | 24 | the cause at scale |
+| E6 | P(True) on every run, reader with schemas (CPU), second reader family (CPU) | 4 | the comparator a reviewer will build |
+| | contingency 20% | 16 | |
+| | **total** | **94** | |
+| E7 (optional) | R2 distractor ladder, or its withdrawal | 12 | dose response |
 
-Priority if the budget is cut: E0, E1, E2 (Olmo-3 triple and Qwen3.5-9B pair first), E3, E4, then E5,
-then E6. The minimum set that can produce a 4 is **E0 + E1 + E2 + E3 + E4 = 49 A100-h**.
+**The 4-deciding subset is E0 to E4 plus E6: 54 A100-h, 65 with its share of contingency.** E5 makes the
+cause general; without it a pass of E2 is "at 4B and 8B on two pairs". E7 is withdrawn by default (text
+below) and run only if E0 to E6 finish with budget left.
+
+(e) reader and judge on value errors is CPU work and is done in this revision (results above). Its
+extension to new runs is part of each run's CPU evaluation, not GPU time.
 
 ## E0. Pod setup and hygiene (1 A100-h)
 
-- One A100 80 GB, a **300 GB** persistent volume (peak weights about 70 GB when two 9B arms and a 12B
-  model are cached at once, plus about 25 GB of lean extractions for 40 runs).
-- Environment from `requirements.txt`, pinned `transformers` as in the laptop runs (record the version in
-  every `run_meta.json`), eager attention, bf16, deterministic kernels. `flash-linear-attention` and
-  `causal-conv1d` for the Qwen3.5 hybrid layers so the fast path matches the laptop runs, or record that
-  the torch fallback was used.
-- **Commit before every run.** Every extraction runs from a committed tree (`git_dirty: false`), unlike
-  the forced-JSON MiniCPM5 run.
-- **Mirror every 10 minutes.** A local loop under a lock copies `data/pilot_v2_*/{results.json,
-  paired.json,scores.npz,run_meta.json,report.txt}` and the per-run logs to the local machine (about
-  10 MB per run). Lean feature files stay on the pod volume, because drive C: has no room. `tar` exit 1
-  ("file changed") counts as success.
-- **Checksum before stop.** `sha256sum` of every mirrored file on the pod and locally, compared, before
-  the user is told the pod may be stopped.
-- **No tokens without approval.** Llama-3.1-8B-Instruct and Gemma-3-12B are gated. Copying an HF token
-  to the pod needs the user's explicit approval. The pod that holds it is listed, and the user is reminded
-  to revoke it when the pod stops.
-- Kill jobs by PID, never `pkill -f`. Delete model weights through the hub cache API between phases.
-- **Timing calibration:** the first 50 items of E1 arm B are timed and every A100-h figure below is
-  re-costed from them before E2 starts.
+- One A100 80 GB, 300 GB volume, the pinned environment of the laptop runs (`transformers` 5.2.0, torch
+  2.11), eager attention, bf16, deterministic kernels, `flash-linear-attention` and `causal-conv1d` for
+  the Qwen3.5 hybrid layers (or record the torch fallback in `run_meta.json`).
+- **Every extraction from a clean commit.** The extractor refuses to start when `git status --porcelain`
+  is non-empty (add this guard before the pod starts; it is a one-line change in `run_pilot_v2.py`).
+- **Mirror every 10 minutes** with a locked local loop copying `results.json`, `paired.json`,
+  `scores.npz`, `run_meta.json`, `report.txt` and logs; `tar` exit 1 counts as success.
+- **Checksum before stop**: `sha256sum` on the pod and locally for every mirrored file, compared, before the
+  user is told the pod can be stopped.
+- **No tokens without approval.** Llama-3.1-8B, Gemma-3 and xLAM-2 are gated. Copying an HF token to the
+  pod needs the user's explicit approval; list the pod that holds it and remind the user to revoke it.
+- Kill by PID, never `pkill -f`.
+- Time the first 50 items of the first run and re-cost every line below before continuing.
 
-## E1. Qwen3.5-4B-Base against Qwen3.5-4B (4 A100-h)
+## E1 = (d) + (c). Uniform clean re-extraction (10 A100-h)
 
-Registered on 4 October 2026 in `docs/REGISTRATION_SWAP.md`, unchanged: H1-swap D = G(B) - G(P) >= +0.05
-with a joint tool-bootstrap interval excluding zero; co-primary on wrong argument values; the side rule;
-the J qualifier against the output-only judge. The local run stopped with a segfault at model load and
-produced no data, so the registration stands as written. Runs: BFCL native for both arms (primary), then
-forced JSON (secondary). 2 arms x 2 formats x 1.0 h.
+**Question.** Does the value-error split survive when every run comes from one extractor at one clean
+commit, with a confidence summary over the value tokens, and with a fallback prompt that allows a list of
+calls?
 
-Add, as an amendment committed before the run (an addition only, no rule changes): the reader-model
-qualifier. Reader minus confidence on each arm, so a PASS can be read as "post-training made the model's
-confidence see value errors that a reader of the text sees".
+**Runs.** All 13 paper runs and both forced-JSON runs, lean, plus the rich attention tier on Llama-3.2-1B
+BFCL and Gemma-3 BFCL so Section 7 is regenerated from the same extraction: 15 x 0.5 + 2 x 0.5 = 8.5 h.
+The extractor gains, in the same pass, the mean and minimum log-probability over the argument-value
+tokens (the positions the probe already locates). The fallback prompt becomes "reply with a JSON list of
+one or more objects of the form ..." for Gemma-3 and for forced JSON. Control for the prompt itself:
+Llama-3.2-3B BFCL once more through the new fallback (0.5 h), so native against fallback is measured on
+one model. Glaive extracted once with duplicate requests removed at load time. 1 h margin.
 
-**How it feeds in.**
-- PASS with side flip on value errors: the paper's first manipulated cause. The abstract gains one
-  sentence ("removing post-training from one 4B model moves its value errors out of its confidence's
-  sight"), E2 becomes a replication at scale, and the post-training reading moves from Discussion to
-  Results.
-- PASS on the pooled statistic but not on value errors: the shift is in the failure mix, as with forced
-  JSON. Reported as such. It sharpens the paper's "kind of error" point without supporting H1.
-- FAIL: H1 is refuted on the cleanest available pair. The discussion drops the post-training reading
-  and keeps release date as a description. E2 still runs (an instruct-against-think pair is a different
-  manipulation from base-against-instruct). Without an E2 pass the paper caps at 3.
-- NOT IDENTIFIED (most likely failure mode: a base model that rarely writes a parseable call, or fails
-  on everything): base-against-instruct is not testable through a tool template. E2's Olmo-3
-  Instruct-against-Think pair becomes the primary test of H1.
-- Wherever it lands, the LaTeX comment in `paper/icml_v2/sections/discussion.tex` and the registry row in
-  `appendix.tex` get the verdict under the registered rule, and nothing else changes in the text until
-  E2 reports.
+**Registration** (`docs/REGISTRATION_E1.md`, before the first run):
 
-## E2. Within-base post-training swaps at 7 to 9B (30 A100-h)
+> Prediction U1. On the uniform clean extraction, every run keeps the sign of its value-error advantage
+> G_wav (probe AUC minus mean log-probability AUC, wrong argument values against valid calls, held-out
+> tools, 5 seeds), except runs whose v2 interval contained zero. Prediction U2. With the confidence
+> summary restricted to value tokens (min and mean log-probability over value tokens, the better one
+> chosen on training folds), the probe-side G_wav stays above zero on at least 5 of 7 runs. Prediction U3.
+> Under the list-allowing fallback, the share of dropped parallel calls among failures falls below one
+> third on Gemma-3 BFCL and on both forced-JSON runs, and the forced-JSON pooled advantage of MiniCPM5 and
+> Qwen3.5 is at or below +0.05.
+> Decision: U1 fails if any run with a v2 interval excluding zero changes sign with an interval excluding
+> zero. U2 fails if fewer than 5 of 7 probe-side runs stay above zero. U3 fails if either part fails.
+> Outcomes: U1 and U2 pass: the split survives provenance and the value-span summary; v2's provenance
+> limitation becomes a single sentence and the grade floor is 3. U1 fails: the split was partly an
+> extraction artefact and the paper is rewritten around what survives. U2 fails: the "confidence misses"
+> claim was averaging over the whole call; the paper says so and recommends the value-span summary.
+> U3 decides whether dropped calls are a prompt artefact; either way it is reported, and dropped calls
+> stay out of the headline unless U3 fails on the native-template control too.
 
-**Question.** Within one set of pretrained weights at 7 to 9B, does the post-training recipe move a model
-from "confidence misses its value errors" to "confidence catches them"?
+## E2 = (a). Manipulated cause at 4B and 8B (12 A100-h)
 
-**Pairs** (each shares one base; prompts are rendered from one chat template per pair wherever the
-models allow it, checked on CPU before any GPU run as in `scripts_swap/check_arm_identity.py`):
+**Runs.** The registered Qwen3.5-4B-Base vs Qwen3.5-4B (`docs/REGISTRATION_SWAP.md`, unchanged; it
+segfaulted at model load on the laptop and produced no data), BFCL native and forced JSON: 4 x 1.0 = 4 h.
+Llama-3.1-8B-Instruct vs Llama-xLAM-2-8b-fc-r (registered R1b, same base, tool-tuned), BFCL native and
+BFCL-live: 4 x 2.0 = 8 h.
 
-| pair | arms | base shared | what differs | caveat |
-|---|---|---|---|---|
-| Olmo-3 7B | Olmo-3-7B (base), Olmo-3-7B-Instruct, Olmo-3-7B-Think | yes (released as one family) | none / instruction tuning / reasoning post-training | three arms give a graded design: base, instruct, think |
-| Llama-3.1 8B | Llama-3.1-8B-Instruct, DeepSeek-R1-Distill-Llama-8B | Llama-3.1-8B base | Meta instruct recipe against SFT on R1 reasoning traces | R1-Distill's template has no tool role: prompts rendered with the Llama-3.1 template for both, asserted identical |
-| Qwen3.5 9B | Qwen3.5-9B-Base, Qwen3.5-9B | yes | all post-training | the 9B scale-up of E1, identical template (both are in the local HF cache, about 36 GB to download on the pod) |
+**Registration.** The swap rule stands as committed, with an amendment committed before the pod run (an
+addition, no rule change): the co-primary value-error statistic D_wav is decided with the output-only
+judge and reader qualifiers, and the value-span confidence of E1 is reported beside the mean. R1b as
+registered on 2026-09-29, with this amendment: the decision is taken on value errors
+(D_wav = G_wav(Llama-3.1-8B-Instruct) - G_wav(xLAM-2-8b), PASS if D_wav >= +0.05 with a joint tool-bootstrap
+lower end > 0, FAIL if D_wav <= 0 or the upper end < +0.05, NOT IDENTIFIED with fewer than 20 value
+errors in either arm); the pooled statistic of the original R1b is reported beside it.
 
-**Runs.** BFCL native for every arm (primary), BFCL forced JSON for every arm (secondary), 7 arms x 2
-formats = 14 lean runs x 2.0 h = 28 A100-h, plus 2 h for Glaive on the Olmo-3 Instruct and Think arms.
-Thinking is disabled at generation for every arm, as in every paper run. Disk: 3 x 14.6 + 2 x 16 + 2 x
-18 GB of weights, deleted per pair.
+**Outcomes.** A PASS on value errors in either pair is the paper's first manipulated cause and moves the
+post-training reading from Discussion to Results. FAIL in both: H1 and its tool-tuning variant are
+refuted at 4 to 8B, the split stays descriptive. NOT IDENTIFIED: E5 carries the cause test.
 
-**Claim it changes.** The v2 discussion offers two readings of the split (release date, a reasoning mode
-in post-training) and tests neither. A PASS replaces the description with a manipulated cause at 7B+
-and moves the headline from "on these six checkpoints" to "post-training moves it". A FAIL removes the
-post-training reading from the paper.
+## E3 = (b). Breadth: at least two more checkpoints per side, at least two at 4B or more (19 A100-h)
 
-**Registration text** (commit as `docs/REGISTRATION_E2.md` before any arm is extracted):
+The family assignment is the hypothesis being tested, registered before any new run.
 
-> Hypothesis H1-7B. Within each pair, the arm without reasoning post-training has a larger internal
-> advantage on wrong argument values against valid calls than the reasoning-trained arm.
-> Statistic: D_wav = G_wav(non-reasoning arm) - G_wav(reasoning arm), where G_wav is token-role probe AUC
-> minus mean log-probability AUC on wrong-argument-value failures against valid calls, on the scored
-> population, pooled out-of-fold, mean of 5 split seeds, tool-grouped 5-fold cross-fit. Interval: joint
-> tool bootstrap over the union of tools, 2000 draws per seed pooled over seeds, 2.5 and 97.5
-> percentiles. Pairs: (Olmo-3-7B-Instruct, Olmo-3-7B-Think), (Llama-3.1-8B-Instruct,
-> R1-Distill-Llama-8B), (Qwen3.5-9B-Base, Qwen3.5-9B). Format: BFCL native is primary, forced JSON
-> secondary.
-> Decision rule per pair: PASS if D_wav >= +0.05 and the lower interval end > 0. FAIL if D_wav <= 0 or
-> the upper end < +0.05. INCONCLUSIVE otherwise. NOT IDENTIFIED if either arm has fewer than 20
-> wrong-argument-value failures or fewer than 30 valid calls.
-> Overall: H1-7B holds if at least two of the three pairs PASS and none FAILS. It is refuted if two or
-> more FAIL. Anything else is inconclusive.
-> Qualifiers, reported and not decisive: the pooled D over every failure; D with schema echoes removed;
-> D on items both arms answer; for each arm, reader-model AUC minus confidence AUC on value errors (so a
-> PASS can be read as "the reasoning arm's confidence sees what a reader of the text sees") and probe
-> minus reader (so a lead is attributed to internals only where the probe beats the reader with an
-> interval above zero).
-> Olmo-3 base arm: G_wav(base) - G_wav(Instruct) is reported with the same interval as a dose step, with
-> no decision.
+| checkpoint | predicted side (by family) | runs | A100-h |
+|---|---|---|---|
+| Llama-3.1-8B-Instruct | probe | from E2, plus Glaive | 1.6 |
+| Gemma-3-4B-it | probe | BFCL, BFCL-live (list fallback) | 2 |
+| Gemma-3-12B-it | probe | BFCL, BFCL-live (list fallback) | 6 |
+| Qwen3-8B | confidence | BFCL, BFCL-live | 4 |
+| Qwen3.5-4B (post-trained) | confidence | from E2, plus BFCL-live | 1 |
+| Qwen3.5-9B (post-trained) | confidence | BFCL, BFCL-live | 4 |
 
-**What each outcome means.** Two or three PASS: post-training moves the value-error split within a base
-model at 7 to 9B, a 4-shaped result. One PASS, others inconclusive: suggestive, reported as one
-manipulated pair, grade 3+. Two FAIL: H1 refuted at scale, the paper stays descriptive, grade 3. All NOT
-IDENTIFIED (the larger models fail too rarely on value errors): rerun the primary on BFCL-live and on
-the distractor level of E6 that brings failures above 20, registered as an amendment before those runs.
+Totals: probe side 3 + 3 = 6 checkpoints, confidence side 3 + 3 = 6, with 4 new checkpoints at 4B or
+more. The exact two-sided floor for 6 vs 6 is 2/C(12,6) = 0.0022 (5 vs 5 would give 2/252 = 0.0079).
+Only the new checkpoints are out of sample: 3 vs 3 new gives the same p = 0.10 floor as v2, so the
+registration decides on all checkpoints and reports the new-only test beside it.
 
-**Expected grade.** If it passes: 3.5 alone, 4 together with E3 and E4. If it fails: 3, with a
-publishable negative result on H1.
+**Registration** (`docs/REGISTRATION_E3.md`):
 
-## E3. Comparator hardening (6 A100-h)
+> Prediction B1. Each new checkpoint's G_wav (pooled over its powered runs) falls on the side its family
+> predicts. Statistic: two-sided exact Mann-Whitney test on checkpoint-mean G_wav, probe-side families
+> against confidence-side families, all checkpoints from the clean E1/E3 extractions.
+> Decision: B1 holds if p <= 0.01 on all checkpoints and every new checkpoint's G_wav has the predicted
+> sign. B1 fails if any new checkpoint has the opposite sign with an interval excluding zero.
+> Otherwise inconclusive.
+> Outcomes: holds: the split becomes a test, with breadth at 4 to 12B. Fails: the family split does not
+> generalise and the paper reports where it breaks.
 
-**Question.** Is the phenomenon "the hidden states know what the confidence does not", or "the text shows
-what the confidence does not"? v2 already shows that a 0.8B reader without schemas matches the probe on
-most probe-side runs. Every comparator below is the strongest version an operator could build, run before
-any claim about internals.
+## E4. Mechanism (8 A100-h)
 
-1. **P(True) self-evaluation.** One extra forward pass per item: the deployed model reads its own request,
-   schemas and call, then "Is this tool call correct? Answer True or False.", and the score is P(True)
-   normalised over {True, False}. All 13 existing runs (on the laptop GPU or on the pod, about 0.2 h each
-   at 1 to 3B) and every new E1, E2 and E5 arm (0.3 h at 8B). About 4 A100-h.
-2. **Reader with schemas.** The reader re-renders the full prompt (schemas included) from the benchmark
-   files on CPU, then reads prompt and call. Two readers from different families: Qwen3.5-0.8B and
-   Llama-3.2-1B-Instruct. About 1 A100-h for all runs.
-3. **A large reader.** Qwen3-8B as a reader (probe on its states) on the probe-side runs. About 1 A100-h.
+**Question.** On the probe side the value error is in the residual stream (the probe reads it) and in the
+text (the judge and reader read it on most runs), but the model's own token probabilities do not reflect
+it. Is the probe's value-error direction read out into the next-token distribution on confidence-side
+models and not on probe-side models?
 
-**Registration text** (commit as `docs/REGISTRATION_E3.md`):
+**Design** (teacher-forced passes on stored generations, no new generation):
+1. The probe's direction w at its best depth for the argument-value role, fitted on training folds.
+2. Ablation at the argument-value positions: directional ablation and mean ablation (mean over valid
+   calls), two lesion types. Measure the change in the value tokens' mean log-probability and in
+   confidence AUC on value errors.
+3. Steering: add alpha * w, alpha in {-2, -1, +1, +2} projection SDs; slope of the value tokens'
+   log-probability against alpha.
+4. Matched random control: 100 directions per model, matched to w on norm and drawn from the top-256
+   principal subspace of the same layer (covariance-matched), |cos(w, r)| < 0.1 asserted. A claim is made
+   only where w falls outside the 2.5 to 97.5 percentile band.
+5. Readout geometry on CPU: share of w's norm in the span of the top 1% of unembedding directions after
+   the final norm, against the same band.
 
-> Hypothesis C-text. On probe-side runs, the best output-side comparator (max over P(True), the
-> output-only judge and the readers) is within 0.05 of the token-role probe on wrong argument values.
-> Statistic: probe AUC minus best-comparator AUC, with the best comparator chosen on training folds (not
-> on test items), tool-resampled interval as above.
-> Decision per run: "text suffices" if the upper end < +0.05; "internals add" if the lower end > 0;
-> otherwise unresolved. Overall: C-text holds if at least 5 of 7 probe-side runs are "text suffices".
-> Outcomes: if C-text holds, the paper's phenomenon is stated as a property of the model's confidence
-> (it misses errors visible in the text) and probes are presented as one of several equivalent judges.
-> If it fails on 3 or more runs, those runs carry the claim that the hidden states hold information the
-> text does not.
+Models: the 6 paper checkpoints (0.3 h each) and the 4B to 12B checkpoints of E2/E3 (about 1 h each for
+four) = about 8 h.
 
-**Claim it changes.** It decides the title's verb and the deployment recommendation (train a reader
-judge, which needs no access to the deployed model's states, against train a probe). Either outcome is
-publishable. Not running it leaves the reviewer's first question open.
+**Registration** (`docs/REGISTRATION_E4.md`, after E1 to E3 are extracted, before any of this is computed):
 
-**Expected grade.** Neutral alone (3), but required for 4: a 4 cannot rest on a comparator a reviewer
-can beat in ten minutes.
+> Hypothesis M1. Ablating w changes the value tokens' mean log-probability by more than the 97.5th
+> percentile of the matched random directions on confidence-side models and by less on probe-side
+> models. Decision: holds if outside the band on at least 3 of 4 confidence-side and inside it on at
+> least 3 of 4 probe-side models, with both lesion types agreeing; fails if the ordering is reversed on
+> half the models or more. Steering is reported with the same band and does not decide.
 
-## E4. Mechanism: why confidence misses value errors on one side (8 A100-h)
+**Outcomes.** Holds: the split has a mechanism (the error is carried and read out on one side, carried
+and not read out on the other) and a figure that shows it against a matched control. Fails: the split is
+not a readout difference and the paper says so in one paragraph.
 
-**Question.** On probe-side models the error is present in the residual stream at the argument-value
-tokens (the probe reads it) and is visible in the text (a reader sees it), yet the model's own token
-probabilities do not reflect it. Is the error direction read out into the next-token distribution on
-confidence-side models and not on probe-side models?
+## E5. Within-base swaps at 7 to 9B, native and forced JSON (24 A100-h)
 
-**Design.** Teacher-forced passes only, no generation, on the stored generations:
+| pair | arms | difference |
+|---|---|---|
+| Olmo-3 7B | Base, Instruct, Think | none / instruction tuning / reasoning post-training (graded) |
+| Llama-3.1 8B | Llama-3.1-8B-Instruct, DeepSeek-R1-Distill-Llama-8B | Meta instruct recipe against SFT on reasoning traces (prompts rendered with the Llama-3.1 template for both, asserted identical) |
+| Qwen3.5 9B | Qwen3.5-9B-Base, Qwen3.5-9B | all post-training (the 9B scale-up of the 4B swap; both in the local HF cache) |
 
-1. Take the probe's direction w at its best depth for the argument-value role (the logistic
-   coefficients mapped back to the residual basis), on the training folds only.
-2. **Ablation.** At the argument-value positions, project w out of the residual stream (directional
-   ablation), and separately replace the projection by its mean over valid calls (mean ablation), the
-   second lesion type. Measure the change in the mean log-probability of the call's value tokens and the
-   change in confidence AUC on value errors.
-3. **Steering.** Add alpha w (alpha in {-2, -1, +1, +2} times the projection's standard deviation) and
-   measure the slope of the value tokens' log-probability against alpha.
-4. **Matched random control.** 100 random directions per model, matched to w on norm and drawn from the
-   top-256 principal subspace of the same layer's residual states (covariance-matched), with |cos(w, r)|
-   < 0.1 asserted. Each statistic is reported against the 2.5 to 97.5 percentile band of the random
-   directions, and a claim is made only where w falls outside the band.
-5. **Readout geometry** (CPU, from weights): the fraction of w's norm inside the span of the top 1% of
-   unembedding directions after the final norm, against the same band.
+7 arms x 2 formats = 14 lean runs x 2.0 h = 28 h, minus Llama-3.1-8B-Instruct native and Qwen3.5-9B
+native already run in E2/E3 = 24 h. Registration as in the previous plan (H1-7B: D_wav >= +0.05 with lower
+end > 0 per pair; holds if at least two of three pairs PASS and none FAILS; refuted if two or more FAIL),
+with the forced-JSON arm using the list-allowing fallback of E1.
 
-Models: the 6 paper checkpoints (laptop-size, 0.3 h each) plus the 7 to 9B arms of E2 (1 h each for the
-top 4) = about 8 A100-h.
+## E6. Comparators a reviewer will build (4 A100-h, plus CPU)
 
-**Registration text** (commit as `docs/REGISTRATION_E4.md`, after E2's runs are extracted and before any
-of this is computed):
+P(True) self-evaluation (one extra short pass: "Is this tool call correct? True or False", P(True)
+normalised over {True, False}) on every paper run and every new arm. On CPU: the reader with the full
+rendered prompt (schemas re-rendered from the benchmark files), and a second reader family
+(Llama-3.2-1B). Registration C-text as in the previous plan, decided on value errors: "text suffices" on a
+run if probe minus the best output-side comparator (chosen on training folds) has an upper end < +0.05;
+the abstract's verb follows the count.
 
-> Hypothesis M1. Ablating the probe's value-error direction changes the value tokens' mean
-> log-probability by more than the 97.5th percentile of 100 matched random directions on confidence-side
-> models, and by less than it on probe-side models.
-> Statistic: |Delta mean log-prob of value tokens| for w, divided by the median of the same for the random
-> directions (the ablation ratio), per model; and the steering slope ratio.
-> Decision: M1 holds if the ablation ratio is outside the random band on at least 3 of 4 confidence-side
-> models (Qwen3, Qwen3.5, MiniCPM5 and the E2 reasoning arms) and inside it on at least 3 of 4 probe-side
-> models (Llama-3.2-1B, 3B, Gemma-3-1B and the E2 non-reasoning arms), with both lesion types agreeing.
-> It fails if the ordering is reversed on half the models or more. The steering result is reported
-> with the same band and does not decide.
-> Outcomes: M1 holds means that on one side the residual stream carries the error and the output head
-> reads it, and on the other side the error is carried and not read. That is the mechanism of the split
-> and gives the paper its explanatory figure. M1 fails means the split is not a readout difference, and
-> the paper says so.
+## E7. R2 distractor ladder, or its withdrawal (12 A100-h, optional)
 
-**Expected grade.** With E2 passing and M1 holding: 4. With M1 alone: 3.5 (mechanism without a
-manipulated cause). M1 failing: no change to the grade, one honest paragraph.
-
-## E5. 7B+ breadth on both sides of the split (20 A100-h)
-
-**Question.** Does the value-error split hold above 3B, on new checkpoints of the same families and on a
-family not in the paper?
-
-| model | predicted side | why | runs | A100-h |
-|---|---|---|---|---|
-| Qwen3-8B | confidence | same family as Qwen3-1.7B, reasoning-mode template | BFCL, BFCL-live | 4 |
-| Gemma-3-12B | probe | same family as Gemma-3-1B, no reasoning mode | BFCL, BFCL-live | 6 |
-| Llama-3.1-8B-Instruct | probe | shared with E2, adds BFCL-live | BFCL-live | 2 |
-| Llama-xLAM-2-8b-fc-r | R1b | registered R1b, same base as Llama-3.1-8B-Instruct | BFCL, BFCL-live | 4 |
-| gpt-oss-20b (MoE, 3.6B active) | confidence | reasoning post-training, a new family | BFCL | 4 if it fits |
-
-gpt-oss-20b: about 13 GB in MXFP4, about 42 GB dequantised to bf16, so it fits the A100 with eager
-attention and stored hidden states. It needs its own code path (harmony format parser, attention sinks in
-the eager path). Budget half a day of engineering on CPU before the GPU run, and drop it rather than let it
-delay E6.
-
-**Registration text** (`docs/REGISTRATION_E5.md`):
-
-> Prediction B1. On wrong argument values against valid calls, G_wav > 0 with the lower interval end > 0
-> on Gemma-3-12B and Llama-3.1-8B-Instruct, and G_wav < 0 on Qwen3-8B and gpt-oss-20b. Decision: B1 holds
-> if every powered run lands on its predicted side by the sign of G_wav, with an interval excluding zero
-> on at least half. It fails if any powered run lands on the opposite side with an interval excluding
-> zero.
-> R1b, as registered on 2026-09-29: the tool-tuned Llama-xLAM-2-8b has a smaller internal advantage than
-> Llama-3.1-8B-Instruct, with a joint interval excluding zero. Primary on every failure (as registered),
-> secondary on value errors.
-
-**Claim it changes.** Breadth goes from 6 checkpoints at most 3B to 11 to 12 checkpoints with 4 to 5 at
-7B+, two per side at scale. The checkpoint-level test becomes possible: with 5 against 6 checkpoints the
-exact two-sided floor is 2/C(11,5) = 0.0043, so the split can be tested instead of described.
-
-**Expected grade.** Passing makes the breadth criterion of a 4. Failing (a family flips at scale) is a
-finding that narrows the claim to small models, grade 3.
-
-## E6. R2 distractor ladder, or its withdrawal (12 A100-h)
-
-**Question (registered 2026-09-29).** Does the internal advantage rise with the number of near-miss
-distractor tools in the schema? It is the graded, dose-response experiment the paper lacks.
-
-**Runs.** Two models, one per side (Llama-3.1-8B-Instruct and Qwen3-8B, both already cached from E2 and
-E5), 6 levels (0, 2, 4, 8, 16, 32 distractors), 400 BFCL items each = 12 runs x about 1.0 h.
-
-**Registration** is already committed (R2: Spearman at least +0.8 over six levels on at least one model
-from each side). Add before running, as an amendment: the same ladder scored on value errors (the paper's
-current unit) as secondary, and H2's distractor half (the advantage stays within 0.05 of its full value)
-reported from the same runs.
-
-**Withdrawal text, if the budget is cut** (to `docs/REGISTRY.md` and the paper's registry, verbatim):
+Default: withdrawn before any run, recorded verbatim in `docs/REGISTRY.md` and the paper's registry:
 "R2 withdrawn on <date>, before any run, for budget. The prediction is not tested in this paper." No
-sentence about R2 appears outside the registry.
+sentence about R2 appears outside the registry. If E0 to E6 finish with 12 h left: Llama-3.1-8B-Instruct
+and Qwen3-8B at 0, 2, 4, 8, 16, 32 distractors, 400 BFCL items each, decided on value errors as amended
+before the run.
 
-**Expected grade.** A graded response on both sides moves 3.5 to 4 when E2 passes. A flat ladder is a
-finding: the split is a model property independent of task difficulty.
+## 3. How the Qwen3.5-4B swap feeds in either way
 
-## How the parts combine: the go/no-go rule for "this is a 4"
+It runs first in E2 (it is registered and cheap). PASS on value errors with side flip: the abstract gains
+one manipulated cause at 4B, E5 becomes a replication at scale, and the Discussion's post-training reading
+moves to Results. PASS on the pooled statistic only: the shift is in the failure mix, as with forced JSON,
+and is reported as such. FAIL: H1 is refuted on its cleanest pair; E5's Olmo-3 Instruct/Think pair becomes
+the only remaining test of the reasoning reading; the tool-tuning reading (R1b) is unaffected. NOT
+IDENTIFIED (a base model that rarely writes a parseable call): base-against-instruct is not testable
+through a tool template, and E5's Instruct/Think pairs carry the test. In every case the LaTeX comments in
+`paper/icml_v2/sections/discussion.tex` and the registry in `appendix.tex` receive the verdict under the
+registered rule and nothing else changes in the text until E5 reports.
 
-The paper is submitted as a 4-shaped paper (phenomenon, manipulated cause, mechanism, breadth) **only if
-all four hold on the registered rules**:
+## 4. Go/no-go rule for "this is a 4"
 
-1. **Cause.** H1-7B holds (E2: at least two of three pairs PASS on value errors, none FAILS), or E1
-   passes with side flip and at least one E2 pair passes with none failing.
-2. **Comparator.** E3 is run, and the abstract's claim is stated at the width E3 allows: as a property of
-   confidence if C-text holds, as internal information otherwise. The cause in (1) must survive with the
-   reader qualifier (the reasoning arm's confidence closes the gap to the reader).
-3. **Mechanism.** M1 holds with both lesion types (E4), outside the matched random band.
-4. **Breadth.** B1 holds (E5), with at least two checkpoints per side at 7B or above.
+The paper is written as a 4-shaped paper only if all of these hold on their registered rules:
 
-If (1) fails, the paper is a 3: an honest description with a refuted hypothesis, and the abstract says so.
-If (1) holds and (3) or (4) fails, it is a 3.5 and is written as "a manipulated cause, without a
-mechanism" or "at the scales tested". Nothing is described as a 4 in the text either way: the rule decides
-which claims the abstract makes.
+1. **Clean basis.** U1 and U2 pass on the uniform clean re-extraction (E1).
+2. **Breadth as a test.** B1 holds (E3): p <= 0.01 on checkpoint means with at least two checkpoints per
+   side at 4B or more, and every new checkpoint on its predicted side.
+3. **Cause.** At least one manipulated pair PASSES on value errors (E2 or E5) and none FAILS, with the
+   reader qualifier reported.
+4. **Mechanism.** M1 holds with both lesion types, outside the matched random band (E4).
+5. **Comparator.** The abstract's verb is the one C-text allows (E6).
 
-Budget: **97 A100-h** in total (81 h of runs plus 16 h contingency), with the 4-deciding subset
-E0 to E4 at **49 A100-h**. At the laptop rate the same work would take about 2.2 times as long and
-could not fit the 7 to 9B arms in memory, which is why the plan needs the A100.
+If 1 fails: the paper is about what survives provenance (2 to 2.5). If 1 holds and 2 fails: a careful
+description of small models (3). If 1 and 2 hold and 3 or 4 fails: 3 to 3.5, written as "a tested split
+without a cause" or "without a mechanism". Nothing in the text calls itself a 4; the rule decides which
+claims the abstract makes.
 
-## Calendar (backwards from 22 January 2027)
+**Total: 94 A100-h (78 h of runs, 16 h contingency); 4-deciding subset E0 to E4 plus E6: 54 h, 65 h with
+contingency; optional R2 ladder +12 h.**
 
-- Content freeze 21 January, 18:00. Last result accepted into the paper: 14 January.
-- E0 to E2 in the first week the pod is available, E3 and E4 in the second, E5 and E6 in the third.
-- After each experiment: regenerate `analysis/icml_v2_numbers.py` and `analysis/icml_v2_figures.py`,
-  rebuild, rerun `check_numbers.py`, `check_figures.py`, `analysis/voice_audit.py`, and one cold
-  red-team read.
-- Registrations are committed before each run and never edited. Amendments are new commits.
+## 5. Before submission: template, double-blind and release scrub
+
+- **Template.** `icml2026.sty` must be replaced by `icml2027.sty` when it is released; re-measure the page
+  budget then.
+- **Workshop paper.** The self-citation is identifying: its exact title appears on icml.cc, and its
+  author list overlaps with Healy et al. (2026), which the paper cites. v2 cites it in the third person
+  as "Anonymous (2026)" with the title suppressed and a minimal description, through the
+  `\ifanonsubmission` switch in `main.tex`. **Flag for the author:** the bib entry gives PMLR volume 306,
+  which may make the workshop paper archival. Check the ICML 2027 dual-submission and prior-publication
+  rules before submitting, and decide whether the paper needs a statement of what is new over it.
+- **Release-scrub checklist** (for the anonymous branch; none of these was edited here, only
+  `paper/icml_v2/` is owned by this revision):
+  - root `main.tex`: author name, affiliation, email;
+  - `CITATION.cff`: the workshop paper's title and an anonymous.4open.science URL;
+  - absolute user paths in `analysis/audit_meta_extract.py:18`, `analysis/icml_extra.py:33`,
+    `run_eval_all.py:10`, `scripts_swap/make_smoke_pair.py:7`;
+  - the `spectral_trust` dependency's PyPI and GitHub links (they name the author);
+  - commit hashes in every `run_meta.json` (they link to the public history);
+  - old drafts (`paper/iclr/`, `paper/icml/`), `docs/` (collaborator notes, audit and gate reports,
+    session plans), `scratch/`, `scripts_local/`, `notebooks/`;
+  - `git log` author identity and timezone on the anonymous branch (set
+    `Anonymous <anonymous@example.invalid>` and `TZ=UTC0`).

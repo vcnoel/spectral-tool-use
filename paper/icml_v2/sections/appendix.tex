@@ -11,32 +11,26 @@
 \section{Head averaging under causal attention}
 \label{app:proofs}
 
-Purpose: the two statements behind \cref{sec:attention}, proved for the causal attention of the decoders studied here, and the scope of each.
+Purpose: two elementary facts behind the head-averaging measurement of \cref{sec:attention}, stated for causal attention. Neither predicts which models fall on which side of the value-error split, and neither is a contribution of this paper.
 
-Fix one layer with $H$ heads and $T$ positions. Head $h$ produces a row-stochastic attention matrix $A_h$, lower triangular under a causal mask. It is symmetrised and stripped of self-loops into $W_h = \tfrac12(A_h + A_h^\top) - \operatorname{diag}(\tfrac12(A_h + A_h^\top))$, with combinatorial Laplacian $L_h = D_h - W_h$ and symmetric normalised Laplacian $\mathcal{L}_h = I - D_h^{-1/2} W_h D_h^{-1/2}$. The head-averaged graph is $\bar W = \frac1H \sum_h W_h$, and $\lambda_2$ is the second-smallest eigenvalue.
+Fix one layer with $H$ heads and $T$ positions. Head $h$ produces a row-stochastic attention matrix $A_h$, lower triangular under a causal mask, symmetrised and stripped of self-loops into $W_h = \tfrac12(A_h + A_h^\top) - \operatorname{diag}(\tfrac12(A_h + A_h^\top))$, with combinatorial Laplacian $L_h = D_h - W_h$ and symmetric normalised Laplacian $\mathcal{L}_h = I - D_h^{-1/2} W_h D_h^{-1/2}$. The head-averaged graph is $\bar W = \frac1H \sum_h W_h$, and $\lambda_2$ is the second-smallest eigenvalue.
 
-\begin{proposition}[head averaging is many-to-one]
+\begin{remark}[head averaging is many-to-one]
 \label{prop:annihilation}
-Any map of the form $\{W_h\} \mapsto \Phi(\bar W)$ is constant on head configurations sharing the same mean. For every $T \ge 3$ there are two configurations of two causal row-stochastic heads with the same mean whose spreads of per-head connectivity, $\max_h \lambda_2(L_h) - \min_h \lambda_2(L_h)$, differ by $\cos(\pi/T) - \tfrac12$.
-\end{proposition}
-\begin{proof}
-The first claim holds because $\Phi$ factors through $\bar W$. For the second, let $A_P$ be the previous-token head, $A_P[i,i-1] = 1$ for $i \ge 1$ and $A_P[0,0] = 1$, and $A_S$ the sink head, $A_S[i,0] = 1$ for every $i$. Both are causal and row-stochastic, and so is $A_M = \tfrac12(A_P + A_S)$. Symmetrisation and the removal of the diagonal are linear, so $W_M = \tfrac12(W_P + W_S)$, and the configurations $\{A_P, A_S\}$ and $\{A_M, A_M\}$ share the mean graph $W_M$. $W_P$ is the path on $T$ nodes with edge weights $\tfrac12$, whose Laplacian has eigenvalues $1 - \cos(k\pi/T)$, so $\lambda_2(L_P) = 1 - \cos(\pi/T)$. $W_S$ is the star centred on position $0$ with edge weights $\tfrac12$, whose Laplacian has eigenvalues $0$, $\tfrac12$ with multiplicity $T-2$, and $T/2$, so $\lambda_2(L_S) = \tfrac12$ for $T \ge 3$. The spread is $\cos(\pi/T) - \tfrac12$ in the first configuration and zero in the second.
-\end{proof}
+Any map of the form $\{W_h\} \mapsto \Phi(\bar W)$ is constant on head configurations sharing the same mean, because it factors through $\bar W$. For $T \ge 4$ two configurations of two causal row-stochastic heads with the same mean exist whose spreads of per-head connectivity, $\max_h \lambda_2(L_h) - \min_h \lambda_2(L_h)$, differ by $\cos(\pi/T) - \tfrac12$, which is at least $\cos(\pi/4) - \tfrac12 \approx \propBound{}$. Let $A_P$ be the previous-token head, $A_P[i,i-1] = 1$ for $i \ge 1$ and $A_P[0,0] = 1$, and $A_S$ the sink head, $A_S[i,0] = 1$ for every $i$. Both are causal and row-stochastic, and so is $A_M = \tfrac12(A_P + A_S)$. Symmetrisation and the removal of the diagonal are linear, so $\{A_P, A_S\}$ and $\{A_M, A_M\}$ share the mean graph. $W_P$ is the path on $T$ nodes with edge weights $\tfrac12$, so $\lambda_2(L_P) = 1 - \cos(\pi/T)$, and $W_S$ the star on position $0$ with edge weights $\tfrac12$, so $\lambda_2(L_S) = \tfrac12$ for $T \ge 3$. The spread is $\cos(\pi/T) - \tfrac12$ in the first configuration and zero in the second.
+\end{remark}
 
-\begin{proposition}[head averaging overstates combinatorial connectivity]
+\begin{remark}[combinatorial connectivity of the averaged graph]
 \label{prop:jensen}
-For any heads $W_1, \dots, W_H$, $\lambda_2(\bar L) \ge \frac1H \sum_h \lambda_2(L_h)$, with equality if and only if the heads admit a common Fiedler vector.
-\end{proposition}
-\begin{proof}
-The Laplacian is linear in the adjacency, so $\bar L = \frac1H \sum_h L_h$. By the min-max theorem of Courant and Fischer, $\lambda_2(L) = \min_{x \perp \mathbf 1, \|x\|=1} x^\top L x$ is a pointwise minimum of linear functionals of $L$ and hence concave. If $x^\star$ attains the minimum for $\bar L$ then $\lambda_2(\bar L) = \frac1H \sum_h x^{\star\top} L_h x^\star \ge \frac1H \sum_h \lambda_2(L_h)$, with equality exactly when $x^\star$ is a Fiedler vector of every head \citep{chung1997spectral}.
-\end{proof}
+For any heads, $\lambda_2(\bar L) \ge \frac1H \sum_h \lambda_2(L_h)$, with equality if and only if the heads admit a common Fiedler vector. The Laplacian is linear in the adjacency, and by the min-max theorem of Courant and Fischer $\lambda_2$ is a minimum of linear functionals of $L$ and hence concave \citep{chung1997spectral}.
+\end{remark}
 
 \paragraph{Scope.}
-Both statements hold for any row-stochastic heads, so the causal decoders here are instances of them, and \cref{prop:annihilation} uses only causal heads. \cref{prop:jensen} covers the combinatorial Laplacian only. The spectral detectors of \cref{sec:attention} use the normalised Laplacian, whose Rayleigh quotient is not linear in $W$, and for it no inequality in either direction holds. In the construction of \cref{prop:annihilation}, computed by \texttt{analysis/v2\_causal\_construction.py}, the normalised connectivity of the averaged graph minus the per-head mean is \ccNormDiffSmall{} at $T=\ccTsmall{}$ and \ccNormDiffLarge{} at $T=\ccTlarge{}$, so the sign of the gap changes with length. Under the combinatorial Laplacian the same difference is \ccCombDiffSmall{} at $T=\ccTsmall{}$ and \ccCombDiffLarge{} at $T=\ccTlarge{}$, as \cref{prop:jensen} requires. On \jensenLayers{} measured layers from three models and three inputs the combinatorial inequality holds without violation, the normalised one fails on \jensenNormViolations{} layers, and the averaged graph reports connectivity a median \jensenRatioMedianPct{}\% above the mean over heads. Neither statement predicts which models fall on which side of the value-error split.
+The second remark covers the combinatorial Laplacian only. The spectral readouts of \cref{sec:attention} use the normalised Laplacian, whose Rayleigh quotient is not linear in $W$, and for it no inequality in either direction holds. In the construction of the first remark, computed by \texttt{analysis/v2\_causal\_construction.py}, the normalised connectivity of the averaged graph minus the per-head mean is \ccNormDiffSmall{} at $T=\ccTsmall{}$ and \ccNormDiffLarge{} at $T=\ccTlarge{}$, and the combinatorial difference is \ccCombDiffSmall{} and \ccCombDiffLarge{}. On \jensenLayers{} measured layers from three models and three inputs the combinatorial inequality holds without violation, the normalised one fails on \jensenNormViolations{} layers, and the averaged graph reports connectivity a median \jensenRatioMedianPct{}\% above the mean over heads.
 
 \begin{remark}[LapEigvals reads degrees]
 \label{rem:lapeig}
-\citet{binkowski2025lapeigvals} observe that for a causal attention matrix the Laplacian $L = D - A$ is lower triangular, so its spectrum is its diagonal $\{d_j - A_{jj}\}$. Their top-$k$ features depend on $A$ only through its column sums and diagonal. The symmetrisation above destroys triangularity, so the per-head profile reads global functionals of the routing. The two families are not two estimates of one object, and what they share is that both keep heads apart.
+\citet{binkowski2025lapeigvals} observe that for a causal attention matrix the Laplacian $L = D - A$ is lower triangular, so its spectrum is its diagonal $\{d_j - A_{jj}\}$, and their top-$k$ features depend on $A$ only through its column sums and diagonal. The symmetrisation above destroys triangularity, so the two readouts are not two estimates of one object, and what they share is that both keep heads apart.
 \end{remark}
 
 \section{Protocol details}
@@ -44,7 +38,9 @@ Both statements hold for any row-stochastic heads, so the causal decoders here a
 
 Purpose: every setting needed to rerun the extraction and the scoring without another paper.
 
-\paragraph{Generation.} Greedy decoding in bfloat16 with deterministic kernels, a budget of 256 new tokens (160 on multi-turn prompts), tool schemas passed through the model's chat template with its reasoning mode disabled, and every end-of-turn id of the template among the stopping ids. The rendered text is tokenised without a second beginning-of-sequence token. Each record stores its budget, library versions and commit.
+\paragraph{Generation.} Greedy decoding in bfloat16 with deterministic kernels, a budget of 256 new tokens (160 on multi-turn prompts), tool schemas passed through the model's chat template with its reasoning mode disabled, and every end-of-turn id of the template among the stopping ids. The rendered text is tokenised without a second beginning-of-sequence token on the re-extracted runs. Runs from the corrected extractor store their budget, library versions, commit and a flag for uncommitted changes (\cref{tab:provenance}). Runs from the first extractor store none of these.
+
+\paragraph{Fallback prompt.} When a model's chat template drops the tool argument (Gemma-3), or under forced JSON, the schemas are passed in this system prompt, followed by one JSON schema per line: ``You are a helpful assistant with access to the following functions. When a function is needed, reply with ONLY a JSON object of the form \texttt{\{"name": \textless{}function name\textgreater{}, "arguments": \{\textless{}arg name\textgreater{}: \textless{}value\textgreater{}\}\}} and nothing else. Available functions:''. It asks for one object, which a model can read as a request to write one call (\texttt{run\_pilot\_v2.py}, \texttt{TOOL\_PROMPT\_FALLBACK}).
 
 \paragraph{Features.} Residual states are read at eight depths spaced evenly over the layer count at the function-name token, the mean over argument-value tokens and the closing delimiter, located by aligning the parsed call to token offsets in each dialect. Attention features are reduced inside a forward hook on each attention module, on the subgraph induced on the generated call.
 
@@ -87,7 +83,7 @@ Runs sharing a checkpoint treated as independent in a rank test & aggregate & th
 \section{Registered predictions and outcomes}
 \label{app:registry}
 
-Purpose: every prediction committed to the repository, beside its outcome. C1 was committed before the audit, R1 to R3 before the first labelling repair, and H1 and H2 after the first two repairs and before the third. R1 was written when the split under the unrepaired labels was already known. P1 and P2 were written on the day of the October audit, before the measurement.
+Purpose: every prediction committed to the repository, beside its outcome. C1 was committed before the audit, R1 to R3 before the first labelling repair, and H1 and H2 after the first two repairs and before the third. R1 and H1 were written when all six checkpoints had already been scored, R1 under the unrepaired labels, so neither is a test on these checkpoints. P1 and P2 were written on the day of the October audit, before the measurement.
 
 \begin{center}\small
 \begin{tabular}{p{0.06\linewidth}p{0.42\linewidth}p{0.44\linewidth}}
@@ -97,7 +93,7 @@ Id & Prediction & Outcome \\
 R1 & The internal advantage separates the families by release period: MiniCPM5 and Qwen3.5 below Llama-3.2, Gemma-3 and Qwen3 at every checkpoint. & Failed. Qwen3-1.7B moved to the confidence side once the list-argument defect was repaired. The division that holds was found afterwards and is descriptive. \\
 R1b & The tool-tuned Llama-xLAM-2-8b has a smaller internal advantage than Llama-3.1-8B-Instruct, with an interval excluding zero. & Not run. \\
 R2 & On a distractor-tool dose ladder the internal advantage rises with the number of distractors on at least one model from each side. & Not run. \\
-R3 & Under forced JSON output the families where confidence wins keep an advantage at or below zero, and the prediction fails if it exceeds \rThreeThreshold{}. & Failed on MiniCPM5-2B, \rThreeJsonMiniCpm{} [\rThreeJsonLoMiniCpm{}, \rThreeJsonHiMiniCpm{}], on a partial run of \nJsonItemsMiniCpm{} of \nAllMiniCpmBfcl{} items extracted from a tree with uncommitted changes. Undecided on Qwen3.5-0.8B, \rThreeJsonQwenThreeFive{} [\rThreeJsonLoQwenThreeFive{}, \rThreeJsonHiQwenThreeFive{}]. The shift is carried by dropped parallel calls. On wrong argument values both stay below zero (\cref{sec:result}). \\
+R3 & Under forced JSON output the families where confidence wins keep an advantage at or below zero, and the prediction fails if it exceeds \rThreeThreshold{}. & Failed on MiniCPM5-2B, \rThreeJsonMiniCpm{} [\rThreeJsonLoMiniCpm{}, \rThreeJsonHiMiniCpm{}], on a partial run of \nJsonItemsMiniCpm{} of \nAllMiniCpmBfcl{} items extracted from a tree with uncommitted changes. Undecided on Qwen3.5-0.8B, \rThreeJsonQwenThreeFive{} [\rThreeJsonLoQwenThreeFive{}, \rThreeJsonHiQwenThreeFive{}]. Dropped parallel calls, which the fallback prompt invites, make up most failures on both forced runs. On wrong argument values both stay below zero (\cref{sec:result}). \\
 C1 & The per-head spectral score and LapEigvals are not interchangeable, each keeps signal when the other is conditioned on, and their union exceeds both. & Two parts held and the third failed (union gain within noise on eleven runs), measured on the labels before the audit. \\
 H1 & Models whose post-training included a reasoning mode have an internal advantage lower by at least 0.05 than a matched model without it, same base. & No matched pair has been run. Qwen3-1.7B with its reasoning mode switched on at generation fails on \thinkPos{} of \thinkScored{} scored calls, below the thirty needed to score. \\
 % H1-swap (docs/REGISTRATION_SWAP.md, Qwen3.5-4B-Base against Qwen3.5-4B, registered 2026-10-04):
@@ -122,7 +118,7 @@ Purpose: the AUC of every detector, so that any comparison in the body can be re
 \section{Output-only judges and the reader model per run}
 \label{app:judges}
 
-Purpose: each output-side comparator of \cref{sec:judges} on each run, with its paired interval against the probe. Structural floor, confidence summaries in one regression and text n-grams are the three parts of the output-only judge. The fusion is an equal-weight rank average of the probe and the output-only judge, with no fitted weight. The reader cells read n.c. where the reader run is absent.
+Purpose: each output-side comparator of \cref{sec:judges} on each run, with its paired interval against the probe. Structural floor, confidence summaries in one regression and text n-grams are the three parts of the output-only judge. The fusion is an equal-weight rank average of the probe and the output-only judge, with no fitted weight. All on every scored failure. The reader is Qwen3.5-0.8B, the same checkpoint as one confidence-side model.
 
 \begin{center}\scriptsize\setlength{\tabcolsep}{3pt}
 \input{table_judges}
@@ -140,7 +136,7 @@ Purpose: the internal advantage of each kind of error against valid calls, on ev
 \section{Worked examples of each kind of error}
 \label{app:examples}
 
-Purpose: one stored generation per kind of error, the first in file order, so a reader can see what each label means. The first row is a value error by Gemma-3 that does not copy the schema. The second is a schema echo labelled missing arguments. A partial echo, which copies a type and a description into one argument without the schema's outer fields, is not matched by the echo pattern of \cref{sec:setup} and can be labelled a value error.
+Purpose: one stored generation per kind of error, so a reader can see what each label means. Each row is the first call-required item in file order with that failure mode, with two filters: the second row is the first whose call matches the schema-echo pattern of \cref{sec:setup}, and every other row skips calls that match the pattern or contain a \texttt{description} field, which copies part of a schema. A partial echo of that second kind is not matched by the pattern and can be labelled a value error, so the echo shares of \cref{sec:setup} are lower bounds.
 
 \begin{center}\scriptsize\setlength{\tabcolsep}{3pt}
 \input{table_examples}
@@ -153,6 +149,17 @@ Purpose: the fold-chosen confidence summary of \cref{sec:controls} in full.
 
 On the re-extracted runs eleven length-invariant summaries of the token log-probabilities are stored per call: the mean, the minimum, the mean of the five least likely tokens, the perplexity, the fraction of tokens below one half, the mean, maximum and final predictive entropy, and the mean, minimum and mean-of-five over the call's own tokens with special tokens removed. For each fold the summary with the highest AUC on the items of the other folds is applied to the fold's items. On Llama-3.2-1B on BFCL the chosen summary reaches \aucBestConfLlamaOneBBfcl{} against \aucConfLlamaOneBBfcl{} for the mean, and the advantage becomes \gapBestLlamaOneBBfcl{} [\gapBestLoLlamaOneBBfcl{}, \gapBestHiLlamaOneBBfcl{}]. On Gemma-3-1B on BFCL the chosen summary pools to \aucBestConfGemmaBfcl{}, below the mean's \aucConfGemmaBfcl{}, because the summary that leads on four folds trails on the fifth. On Qwen3.5-0.8B the chosen summary reaches \aucBestConfQwenThreeFiveBfcl{} and the advantage \gapBestQwenThreeFiveBfcl{} [\gapBestLoQwenThreeFiveBfcl{}, \gapBestHiQwenThreeFiveBfcl{}]. Two summaries that grow with the call's length, its token count and its total log-probability, are excluded as length features: on Gemma-3-1B on BFCL the token count alone reaches the length floor of that run, \aucFloorGemmaBfcl{}.
 
+\section{Further controls}
+\label{app:more}
+
+Purpose: the chance level of the pipeline and the protocol choices that move the numbers.
+
+\paragraph{Chance level of the pipeline.}
+With the labels permuted, \nullN{} refits of the whole probe pipeline on Qwen3.5-0.8B score \nullMean{} AUC with a standard deviation of \nullSd{}. The standard deviation of the permuted advantage is \nullGapSd{}, which is why single-run advantages of a few hundredths are not interpreted. Inside individual folds the advantage is negative on \foldNegMinInternals{} to \foldNegMaxInternals{} of \nFoldGaps{} fold and seed pairs on the probe side and on \foldNegMinConfidence{} to \foldNegMaxConfidence{} on the confidence side.
+
+\paragraph{Training population and pooling.}
+Training the probe on the scored population only, and fixing the sign of the log-probability on that population, both moved the numbers toward confidence (\cref{app:audit}). Pooling out-of-fold scores across folds penalises a fitted probe and not a fixed score: the advantage computed within folds exceeds the pooled one by \poolShiftMean{} on average.
+
 \section{Head resolution controls}
 \label{app:ladder}
 
@@ -163,9 +170,9 @@ On the stored per-head features of \ladNRuns{} runs, under the same classifier a
 \section{Calls with a history}
 \label{app:multiturn}
 
-Purpose: the multi-turn protocol and its result.
+Purpose: the multi-turn protocol and its anecdotal result.
 
-The four multi-turn categories of BFCL-v4 (base, missing parameter, missing function, long context), one record per turn up to the fourth, with the ground-truth calls of the two preceding turns rendered as assistant messages, each followed by a fixed acknowledgement. In the corrupted condition one of the two preceding turns carries a call drawn from another conversation. Conversations with more than 22 tools are skipped. Folds group items that share either a tool or a conversation. Labels penalise arguments the schema does not define, because a weak model echoes tool schemas into argument-less calls on these prompts. On \mtN{} turns of MiniCPM5-2B, \mtPosAll{} failures and \mtNegAll{} valid calls are scored. Linking tools and conversations leaves \mtGroupsAll{} groups, so the folds and the group bootstrap rest on \mtGroupsAll{} units. The probe reads \mtAucProbe{} and confidence \mtAucConf{}, an advantage of \mtGapAll{} [\mtGapLoAll{}, \mtGapHiAll{}], and \mtGapSem{} [\mtGapLoSem{}, \mtGapHiSem{}] when the probe is trained on the scored population only.
+The four multi-turn categories of BFCL-v4 (base, missing parameter, missing function, long context), one record per turn up to the fourth, with the ground-truth calls of the two preceding turns rendered as assistant messages, each followed by a fixed acknowledgement. In the corrupted condition one of the two preceding turns carries a call drawn from another conversation. Conversations with more than 22 tools are skipped. Folds group items that share either a tool or a conversation. Labels penalise arguments the schema does not define, because a weak model echoes tool schemas into argument-less calls on these prompts. On \mtN{} turns of MiniCPM5-2B, \mtPosAll{} failures and \mtNegAll{} valid calls are scored. Linking tools and conversations leaves \mtGroupsAll{} groups, so the folds rest on \mtGroupsAll{} units and no interval is reported. The probe reads \mtAucProbe{} and confidence \mtAucConf{}. The run comes from a tree with uncommitted changes (\cref{tab:provenance}).
 
 \section{Models and versions}
 \label{app:models}
@@ -195,4 +202,11 @@ openbmb/MiniCPM5-2B & 2026-09 & dense, 42 layers, 16 heads & all \\
 \end{tabular}
 \end{center}
 
-Two further Qwen3.5 checkpoints in the stored data are left out: a 2B run with too few failures to score and a 4B run extracted before the stopping-token repair. Experiments were run on a single 16\,GB consumer GPU, and the reader model and all comparators on CPU. Library versions, the generation seed and the commit are recorded in every extraction.
+Two further Qwen3.5 checkpoints in the stored data are left out: a 2B run with too few failures to score and a 4B run extracted before the stopping-token repair. Experiments were run on a single 16\,GB consumer GPU, and the reader model and all comparators on CPU. \cref{tab:provenance} lists, for every run, the extractor generation, the commit and whether the tree had uncommitted changes. The first extractor recorded none of these, and \nDirtyRuns{} of the \nProvRuns{} listed runs were extracted with uncommitted changes.
+
+\begin{table}[h]
+\centering\small
+\caption{Extraction provenance per run, from each run's metadata file. ``first'': the extractor before the audit, which stores no metadata. Uncommitted changes: the tree differed from the recorded commit at extraction time.}
+\label{tab:provenance}
+\input{table_provenance}
+\end{table}

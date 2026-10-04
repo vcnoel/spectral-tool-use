@@ -56,7 +56,7 @@ def fig1():
     R = powered()
     T = load(AUD / "failure_type.json")
     J = load(AUD / "forced_json.json")
-    PW = load(V2 / "parallel_within.json")
+    CAT = load(V2 / "redteam_checks.json")["category"]
     labels = [H.run_label(r) for r in R] + [lab for _, lab in JSONROWS]
     keys = [r["key"] for r in R] + [k for k, _ in JSONROWS]
     side = {r["key"]: r["side"] for r in R}
@@ -74,24 +74,32 @@ def fig1():
         interval(axs[0], yi, allgap[k], col, js)
         if "wrong_arg_values" in T.get(k, {}):
             interval(axs[1], yi, T[k]["wrong_arg_values"], col, js)
-        if "missing_calls" in T.get(k, {}):
-            interval(axs[2], yi + 0.17, T[k]["missing_calls"], col, js)
-        if PW.get(k, {}).get("testable"):
-            g = PW[k]["within_parallel"]
-            axs[2].plot([g["ci_lo"], g["ci_hi"]], [yi - 0.2, yi - 0.2], color=MID, lw=1.1, solid_capstyle="butt")
-            axs[2].plot(g["delta"], yi - 0.2, "D", color=MID, ms=3.0)
-    titles = ["(a) every failure", "(b) wrong argument values", "(c) dropped parallel calls"]
-    for ax, t in zip(axs, titles):
+        if k in CAT:
+            c = CAT[k]
+            axs[2].plot([min(c["conf_auc"], c["probe_auc"]), max(c["conf_auc"], c["probe_auc"])], [yi, yi],
+                        color=FAINT, lw=2.4, solid_capstyle="butt", zorder=1)
+            axs[2].plot(c["conf_auc"], yi, "s", color=INK, ms=3.4, mfc="white", mew=0.8, zorder=3)
+            axs[2].plot(c["indicator_auc"], yi, "D", color=MID, ms=3.2, zorder=3)
+            axs[2].plot(c["probe_auc"], yi, "o", color=col, ms=3.6, mfc="white" if js else col, mew=0.9, zorder=4)
+    titles = ["(a) every scored failure", "(b) wrong argument values", "(c) dropped parallel calls, AUC"]
+    for ax, t in zip(axs[:2], titles[:2]):
         ax.axvline(0, color=INK, lw=0.5)
         ax.set_xlim(-0.75, 0.75)
         ax.set_xticks([-0.5, 0, 0.5])
         ax.set_title(t, loc="left")
         ax.set_xlabel("probe AUC minus confidence AUC")
+    axs[2].set_title(titles[2], loc="left")
+    axs[2].set_xlim(0.55, 1.02)
+    axs[2].set_xticks([0.6, 0.7, 0.8, 0.9, 1.0])
+    axs[2].set_xlabel("AUC against valid calls")
+    yt = y[keys.index("GemmaGlaive")] - 0.1
+    for txt, mk, kw, dy in (("probe", "o", dict(color=INK), 0.0), ("confidence", "s", dict(color=INK, mfc="white", mew=0.8), -0.8),
+                            ("parallel-category flag", "D", dict(color=MID), -1.6)):
+        axs[2].plot(0.6, yt + dy, mk, ms=3.4, **kw)
+        axs[2].text(0.625, yt + dy, txt, fontsize=ANNOT, va="center", color=INK)
     axs[0].set_yticks(y)
     axs[0].set_yticklabels(labels)
     axs[0].set_ylim(y.min() - 0.7, y.max() + 0.7)
-    axs[2].text(0.74, y[keys.index("GemmaBfcl")] - 0.62, "grey: within parallel categories", color=MID,
-                fontsize=ANNOT, ha="right", va="center")
     H.save_at_width(fig, "fig1_types.pdf", H.TEXT)
 
 
