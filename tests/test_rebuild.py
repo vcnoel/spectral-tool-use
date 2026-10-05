@@ -60,3 +60,24 @@ def test_compact_dtype_policy():
     assert d2 == "float32"
     c, d3 = storage.compact(np.array([1, 2], np.int32))
     assert d3 == "int32"
+
+
+def test_multi_call_dialects_decode():
+    """Every dialect the evaluated models write for two parallel calls must decode to two calls
+    after clean_prediction. Added after the 5 Oct 2026 labeller bug (Amendment 3): Llama's
+    '<|python_tag|>{..}; {..}' was rejected because the tag was not stripped."""
+    from rebuild.labels import clean_prediction
+    from spectral_guardrails.probes.labeling import extract_calls
+    cases = {
+        "llama_semicolon": '<|python_tag|>{"name": "f", "parameters": {"a": 1}}; '
+                           '{"name": "f", "parameters": {"a": 2}}<|eom_id|>',
+        "qwen_tool_call": '<tool_call>\n{"name": "f", "arguments": {"a": 1}}\n</tool_call>\n'
+                          '<tool_call>\n{"name": "f", "arguments": {"a": 2}}\n</tool_call><|im_end|>',
+        "json_list": '[{"name": "f", "arguments": {"a": 1}}, {"name": "f", "arguments": {"a": 2}}]',
+        "newline_objects": '{"name": "f", "arguments": {"a": 1}}\n{"name": "f", "arguments": {"a": 2}}',
+    }
+    for dialect, text in cases.items():
+        calls, looked = extract_calls(clean_prediction(text))
+        assert looked and calls is not None and len(calls) == 2, (dialect, calls)
+    single, _ = extract_calls(clean_prediction('<|python_tag|>{"name": "f", "parameters": {"a": 1}}<|eom_id|>'))
+    assert single is not None and len(single) == 1

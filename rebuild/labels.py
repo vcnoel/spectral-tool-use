@@ -26,7 +26,7 @@ import re
 from spectral_guardrails.probes.labeling import extract_calls
 
 ECHO_RE = re.compile(r'"properties"|"type"\s*:\s*"object"|"required"\s*:\s*\[')
-CONTROL_MARKERS = ("<|im_end|>", "<|endoftext|>", "<end_of_turn>", "<|eot_id|>", "<|eom_id|>",
+CONTROL_MARKERS = ("<|python_tag|>", "<|im_end|>", "<|endoftext|>", "<end_of_turn>", "<|eot_id|>", "<|eom_id|>",
                    "<|end|>", "<|end_of_text|>", "</s>", "<|assistant|>", "<|return|>", "<|call|>")
 NEXT_TURN_MARKERS = ("<|im_start|>", "<|start_header_id|>", "<start_of_turn>")
 TRUNCATION_SENSITIVE = {"unparseable_call", "missing_args", "missing_calls", "wrong_arg_values", "extra_args"}

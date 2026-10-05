@@ -388,3 +388,16 @@ it was read. The cap default is now 0 (every item of the adapter) in `rebuild/ex
 `scripts_rebuild/run_queue.sh`, and `rebuild/loader.py` refuses any non-smoke run whose `n_requested` is
 positive. The queue is relaunched from a new pin; the registered hypotheses, rules and item sets are
 unchanged.
+
+## Amendment 3 (5 October 2026, 12:10, before any clean data were analysed): labeller marker bug
+
+After the first two runs of pin 0672cba (Llama-3.2-1B complete, Llama-3.2-3B at 49%), the coordinator
+found that `rebuild/labels.py: clean_prediction` did not strip Llama's `<|python_tag|>`, so the native
+multi-call format `<|python_tag|>{..}; {..}<|eom_id|>` was decoded as no call: 344 of the 400 parallel
+items of the 1B run were labelled unparseable and classified never-solved, and no within-reach features
+were extracted for them. Relabelling the stored 1B outputs offline with the fix gives, on the parallel
+categories, 172 valid, 101 wrong-argument-value, 58 dropped-call and 14 unparseable; no other category
+changes except three schema-echo outputs the old path had accepted as valid. Because item classes and the
+featured samples depend on labels, both runs are deleted and nothing from them is read. A dialect fixture
+test (`tests/test_rebuild.py: test_multi_call_dialects_decode`) now covers Llama, Qwen, list and newline
+formats. The queue restarts from a new pin; hypotheses, rules and item sets are unchanged.
