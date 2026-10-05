@@ -401,3 +401,8 @@ changes except three schema-echo outputs the old path had accepted as valid. Bec
 featured samples depend on labels, both runs are deleted and nothing from them is read. A dialect fixture
 test (`tests/test_rebuild.py: test_multi_call_dialects_decode`) now covers Llama, Qwen, list and newline
 formats. The queue restarts from a new pin; hypotheses, rules and item sets are unchanged.
+
+### Erratum to Amendment 3 (5 October 2026, 11:45)
+The header time "12:10" was written from an estimate; the fix commit is 327d4ee at 11:37 machine time and
+the relaunch acquired the GPU lock at 11:43:14 (data/rebuild_logs/gpu_queue.log). The queue log is the
+record of order; this note corrects the header and changes nothing else.
