@@ -406,3 +406,17 @@ formats. The queue restarts from a new pin; hypotheses, rules and item sets are 
 The header time "12:10" was written from an estimate; the fix commit is 327d4ee at 11:37 machine time and
 the relaunch acquired the GPU lock at 11:43:14 (data/rebuild_logs/gpu_queue.log). The queue log is the
 record of order; this note corrects the header and changes nothing else.
+
+## Amendment 4 (10 October 2026, before any clean data were analysed): readout transfer cost
+
+The first clean run (`r1_llama1b_bfcl_sota`, pin 327d4ee) stopped at 1,096 of 1,720 items on 5 October without
+a closing line in `gpu_queue.log`, and nothing from it has been read. It averaged about 16 s per item against
+the 2.5 h per run in section 6. Its per-item timings put the cost in the teacher-forced feature pass
+(3.9 s median) and in the resampled generations featurized again (8.3 s mean). Within that pass the
+LapEigvals, SinkProbe and anchored readouts converted CUDA tensors to Python floats one element at a time,
+about 130 ms per layer each, and the reducer recomputed each head-averaged spectrum once per metric. Commits
+27f8726 and 8bf9fd6 copy once and compute each spectrum once. On the first 20 items of the same run with the
+same seed, the feature pass fell from 3.6 s to 1.0 s and resampling from 5.4 s to 2.0 s, and all 1,007 stored
+arrays (459 greedy, 548 sampled) are identical to those of the stopped run. `tests/test_readout_transfer.py`
+pins the identity. The queue restarts from a new pin that includes these commits. Hypotheses, rules, item
+sets, K and every stored feature are unchanged.
