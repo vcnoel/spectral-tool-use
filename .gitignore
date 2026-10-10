@@ -45,3 +45,14 @@ run_eval_only.py
 # Tool internals
 .claude/
 wandb/
+
+# Budget plan (Oct 2026): outputs written while the extraction queue runs. They are
+# ignored so that the tree stays clean for the extractor's clean-tree guard, and are
+# force-added (git add -f) when the results are frozen.
+results/budget_oct2026/
+results/swap_oct2026/bfcl_*
+results/swap_oct2026/glaive_*
+results/v2_oct2026/reader_types/*
+
+# Clean rebuild (Oct 2026): validation outputs written while the queue runs; force-added when frozen
+results/rebuild/

@@ -279,6 +279,102 @@ TOOL_PROMPT_FALLBACK = (
     "and nothing else.\n\nAvailable functions:\n{schemas}"
 )
 
+# Budget plan (October 2026, docs/REGISTRATION_BUDGET.md B1): the fallback
+# above asks for ONE object, which a model can read as "write one call", and
+# the parallel categories then fail as dropped calls. This variant permits a
+# list. Selected by `extract --fallback list`; the default stays "object" so
+# every stored run reproduces.
+TOOL_PROMPT_FALLBACK_LIST = (
+    "You are a helpful assistant with access to the following functions.\n"
+    "When a function is needed, reply with ONLY a JSON list of one or more objects of the form\n"
+    '[{{"name": <function name>, "arguments": {{<arg name>: <value>}}}}, ...]\n'
+    "with one object per call, and nothing else.\n\nAvailable functions:\n{schemas}"
+)
+FALLBACK_KIND = "object"
+
+
+def _matching_close(text: str, i: int) -> int:
+    """Index of the bracket closing text[i] ('{' or '['), skipping strings; -1 if none."""
+    open_c = text[i]
+    close_c = "}" if open_c == "{" else "]"
+    depth, in_str, esc = 0, False, False
+    for j in range(i, len(text)):
+        c = text[j]
+        if in_str:
+            if esc:
+                esc = False
+            elif c == "\\":
+                esc = True
+            elif c == '"':
+                in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c == open_c:
+            depth += 1
+        elif c == close_c:
+            depth -= 1
+            if depth == 0:
+                return j
+    return -1
+
+
+_JSON_VALUE_RE = None
+
+
+def value_char_spans(gen_text: str) -> list[tuple[int, int]]:
+    """Character spans of the argument VALUES of every call in a generation.
+
+    JSON dialects: inside each "arguments"/"parameters" object, every value
+    that follows a key's colon (strings, numbers, literals, flat lists; the
+    values inside nested objects and lists of objects are reached through
+    their own colons). XML dialects: the text between <parameter=k> or
+    <param name="k"> and its closing tag. Keys, braces and separators are not
+    value characters. Used for the value-span confidence (budget plan B1)."""
+    import re
+    global _JSON_VALUE_RE
+    if _JSON_VALUE_RE is None:
+        _JSON_VALUE_RE = re.compile(
+            r':\s*("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|\[[^\[\]{}]*\]|-?[\w.+\-]+)')
+    spans = []
+    for m in re.finditer(r"<parameter\s*=\s*[\w.\-]+\s*>\s*(.*?)\s*</parameter>", gen_text, re.DOTALL):
+        spans.append((m.start(1), m.end(1)))
+    for m in re.finditer(r"<param\s+name\s*=\s*[\"'][\w.\-]+[\"']\s*>\s*(.*?)\s*</param>", gen_text, re.DOTALL):
+        spans.append((m.start(1), m.end(1)))
+    if spans:
+        return [s for s in spans if s[1] > s[0]]
+    for m in re.finditer(r'"(?:arguments|parameters)"\s*:\s*\{', gen_text):
+        a = m.end() - 1
+        b = _matching_close(gen_text, a)
+        region = gen_text[a: (b + 1 if b >= 0 else len(gen_text))]
+        for v in _JSON_VALUE_RE.finditer(region):
+            s, e = a + v.start(1), a + v.end(1)
+            if gen_text[s] in "\"'" and e - s >= 2:   # string content, quotes excluded
+                s, e = s + 1, e - 1
+            spans.append((s, e))
+    return [s for s in spans if s[1] > s[0]]
+
+
+def value_token_indices(tok, gen_ids, special_ids=()) -> list[int]:
+    """Generated-token indices whose characters overlap an argument value."""
+    gen_text = tok.decode(gen_ids)
+    vs = value_char_spans(gen_text)
+    if not vs:
+        return []
+    out, cur = [], 0
+    for i, tid in enumerate(gen_ids):
+        piece = tok.decode([tid])
+        start = gen_text.find(piece, cur)
+        if start == -1:
+            start = cur
+        end = start + len(piece)
+        cur = end
+        if tid in special_ids or end <= start:
+            continue
+        if any(end > a and start < b for a, b in vs):
+            out.append(i)
+    return out
+
 
 # Set by `extract --thinking`: leave the template's reasoning mode on, so the
 # model may think before it calls. Set by `extract --force-json`: render the
@@ -341,7 +437,8 @@ def render_tool_prompt(tok, tools, user, history=None):
         return text
 
     schemas = "\n".join(json.dumps(t) for t in tools)
-    sys_msg = TOOL_PROMPT_FALLBACK.format(schemas=schemas)
+    fb = TOOL_PROMPT_FALLBACK_LIST if FALLBACK_KIND == "list" else TOOL_PROMPT_FALLBACK
+    sys_msg = fb.format(schemas=schemas)
     for msgs in ([{"role": "system", "content": sys_msg}] + prior
                  + [{"role": "user", "content": user}],
                  prior + [{"role": "user",
@@ -375,6 +472,11 @@ def _write_run_meta(args, model, tok, n_layers, probe_layers):
         "full_graph_max_tokens": FULL_GRAPH_MAX_TOKENS,
         "attn_layer_stride": ATTN_LAYER_STRIDE,
         "template_date": TEMPLATE_DATE,
+        "force_json": bool(FORCE_JSON),
+        "fallback_prompt": FALLBACK_KIND,
+        "rich": bool(getattr(args, "rich", True)),
+        "code_pin": os.environ.get("BUDGET_PIN"),
+        "model_revision": getattr(model.config, "_commit_hash", None),
         **determinism.enable_deterministic_torch(warn_only=True),
         "torch": torch.__version__,
         "cuda": torch.version.cuda,
@@ -401,11 +503,26 @@ def _write_run_meta(args, model, tok, n_layers, probe_layers):
 
 
 def handle_extract(args):
-    global THINKING_MODE, FORCE_JSON
+    global THINKING_MODE, FORCE_JSON, FALLBACK_KIND
     THINKING_MODE = bool(getattr(args, "thinking", False))
     FORCE_JSON = bool(getattr(args, "force_json", False))
-    if THINKING_MODE or FORCE_JSON:
-        print(f"[extract] thinking={THINKING_MODE} force_json={FORCE_JSON}")
+    FALLBACK_KIND = getattr(args, "fallback", "object") or "object"
+    if THINKING_MODE or FORCE_JSON or FALLBACK_KIND != "object":
+        print(f"[extract] thinking={THINKING_MODE} force_json={FORCE_JSON} fallback={FALLBACK_KIND}")
+    # Budget plan B1: every extraction from a clean commit. Opt-in so that the
+    # default behaviour of the stored runs is unchanged.
+    if os.environ.get("REQUIRE_CLEAN") == "1":
+        import subprocess
+        st = subprocess.check_output(["git", "status", "--porcelain"], text=True).strip()
+        if st:
+            raise SystemExit(f"[extract] REFUSED: working tree not clean:\n{st}")
+        pin = os.environ.get("BUDGET_PIN")
+        if pin:
+            changed = subprocess.check_output(
+                ["git", "diff", "--name-only", pin, "HEAD", "--", ".",
+                 ":(exclude)docs", ":(exclude)results"], text=True).strip()
+            if changed:
+                raise SystemExit(f"[extract] REFUSED: code differs from pin {pin}:\n{changed}")
     from transformers import AutoTokenizer, AutoModelForCausalLM
 
     torch.manual_seed(SEED)
@@ -425,11 +542,17 @@ def handle_extract(args):
 
     tok = AutoTokenizer.from_pretrained(args.model)
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, dtype=torch.bfloat16, device_map="cuda",
+        args.model, dtype=torch.bfloat16,
+        # EXTRACT_DEVICE=cpu only for smoke tests; every reported run uses cuda
+        device_map=os.environ.get("EXTRACT_DEVICE", "cuda"),
         attn_implementation="eager",
+        # weights go straight to the device, no full CPU copy (the swap's
+        # 4B loads segfaulted under RAM and disk pressure, 4 Oct 2026)
+        low_cpu_mem_usage=True,
     )
     model.eval()
-    n_layers = model.config.num_hidden_layers
+    _cfg = model.config
+    n_layers = getattr(_cfg, "num_hidden_layers", None) or _cfg.get_text_config().num_hidden_layers
     probe_layers = sorted(set(
         np.linspace(1, n_layers, N_PROBE_LAYERS).round().astype(int).tolist()))
     print(f"[extract] {args.model}: {n_layers} layers, probe layers {probe_layers}")
@@ -614,6 +737,20 @@ def handle_extract(args):
                 conf["call_mean_lowest5"] = float(
                     call_lp.topk(k, largest=False).values.mean())
                 conf["call_tokens"] = int(call_lp.numel())
+        # Value-span confidence (budget plan B1): log-probabilities of the
+        # argument-value tokens only. Stored outside `confidence`, so the
+        # evaluator's rows are unchanged; analysis/budget_b1.py scores it.
+        value_pos, value_conf = [], None
+        try:
+            value_pos = value_token_indices(tok, gen_ids, special_ids)
+            if lp_all is not None and value_pos:
+                vlp = lp_all[[i for i in value_pos if i < lp_all.numel()]]
+                vlp = vlp[torch.isfinite(vlp)]
+                if vlp.numel():
+                    value_conf = {"mean": float(vlp.mean()), "min": float(vlp.min()),
+                                  "n": int(vlp.numel())}
+        except Exception as e:  # never lose a record over the extra summary
+            value_conf = {"error": repr(e)[:200]}
         # Per-token residual states over the generated span at one mid-late
         # depth, for the token-level probe baseline (Obeso et al., 2025),
         # capped in length and stored at reduced precision to keep the dump
@@ -673,6 +810,12 @@ def handle_extract(args):
             "probe_layers": probe_layers,
             "attn_layer_stride": ATTN_LAYER_STRIDE,
             "n_attn_layers_used": len(attn_layers),
+            # budget plan B1/B5 additions (new keys only)
+            "value_conf": value_conf,
+            "value_pos": value_pos,
+            "gen_ids": gen_ids,
+            "t_args": [int(x) - int(prompt_len) for x in pos.get("t_args", [])],
+            "fallback_prompt": FALLBACK_KIND,
         }
         if args.rich:
             rec["eig_profile"] = eig_profile or eig_profile_span
@@ -1549,6 +1692,9 @@ def main():
                    help="leave the chat template's reasoning mode on")
     e.add_argument("--force-json", dest="force_json", action="store_true",
                    help="render tools through the JSON system-prompt spec for every model")
+    e.add_argument("--fallback", choices=["object", "list"], default="object",
+                   help="system-prompt fallback (templates that drop tools, and --force-json): "
+                        "'object' = the stored runs' one-object prompt, 'list' = a list of calls")
     e.add_argument("--tag", default=None,
                    help="output subdir tag (default: derived from model id)")
     v = sub.add_parser("evaluate")

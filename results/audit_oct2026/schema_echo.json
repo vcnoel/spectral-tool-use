@@ -1,0 +1,167 @@
+{
+ "LlamaOneBGlaive": {
+  "side": "internals",
+  "echo_rate_pos": 0.3755656108597285,
+  "echo_rate_neg": 0.008356545961002786,
+  "regex_auc": 0.6836045324493629,
+  "n_pos_without_echo": 138,
+  "n_neg_without_echo": 356,
+  "probe_auc": 0.9518889431688651,
+  "conf_auc": 0.6030573196547794,
+  "gap": {
+   "delta": 0.3488316235140857,
+   "ci_lo": 0.0062948241421199175,
+   "ci_hi": 0.6382766447131051
+  }
+ },
+ "LlamaOneBBfcl": {
+  "side": "internals",
+  "echo_rate_pos": 0.11180124223602485,
+  "echo_rate_neg": 0.0,
+  "regex_auc": 0.5559006211180124,
+  "n_pos_without_echo": 143,
+  "n_neg_without_echo": 339,
+  "probe_auc": 0.8109474596200261,
+  "conf_auc": 0.6140231449965964,
+  "gap": {
+   "delta": 0.19692431462342969,
+   "ci_lo": 0.09767800333725532,
+   "ci_hi": 0.2947949483097901
+  }
+ },
+ "LlamaOneBLive": {
+  "side": "internals",
+  "echo_rate_pos": 0.33653846153846156,
+  "echo_rate_neg": 0.06369426751592357,
+  "regex_auc": 0.6364220970112691,
+  "n_pos_without_echo": 138,
+  "n_neg_without_echo": 147,
+  "probe_auc": 0.7189539583949524,
+  "conf_auc": 0.7391797298629597,
+  "gap": {
+   "delta": -0.020225771468007435,
+   "ci_lo": -0.1552710688961798,
+   "ci_hi": 0.10030106115767772
+  }
+ },
+ "LlamaThreeBGlaive": {
+  "side": "internals",
+  "echo_rate_pos": 0.0,
+  "echo_rate_neg": 0.0,
+  "regex_auc": 0.5,
+  "n_pos_without_echo": 90,
+  "n_neg_without_echo": 555,
+  "probe_auc": 0.9108748748748748,
+  "conf_auc": 0.785105105105105,
+  "gap": {
+   "delta": 0.12576976976976992,
+   "ci_lo": 0.01692091739498661,
+   "ci_hi": 0.2763495939507245
+  }
+ },
+ "LlamaThreeBBfcl": {
+  "side": "internals",
+  "echo_rate_pos": 0.0,
+  "echo_rate_neg": 0.0,
+  "regex_auc": 0.5,
+  "n_pos_without_echo": 120,
+  "n_neg_without_echo": 576,
+  "probe_auc": 0.8314930555555555,
+  "conf_auc": 0.7067708333333333,
+  "gap": {
+   "delta": 0.1247222222222222,
+   "ci_lo": 0.05461063613409031,
+   "ci_hi": 0.19374059009335254
+  }
+ },
+ "GemmaGlaive": {
+  "side": "internals",
+  "echo_rate_pos": 0.21518987341772153,
+  "echo_rate_neg": 0.008695652173913044,
+  "regex_auc": 0.6032471106219043,
+  "n_pos_without_echo": 124,
+  "n_neg_without_echo": 456,
+  "probe_auc": 0.8610409592529711,
+  "conf_auc": 0.5680355121675156,
+  "gap": {
+   "delta": 0.29300544708545556,
+   "ci_lo": 0.16412833406096794,
+   "ci_hi": 0.4763430281436043
+  }
+ },
+ "GemmaBfcl": {
+  "side": "internals",
+  "echo_rate_pos": 0.728021978021978,
+  "echo_rate_neg": 0.07333333333333333,
+  "regex_auc": 0.8273443223443224,
+  "n_pos_without_echo": 99,
+  "n_neg_without_echo": 139,
+  "probe_auc": 0.83386381803648,
+  "conf_auc": 0.4950948332243296,
+  "gap": {
+   "delta": 0.3387689848121503,
+   "ci_lo": 0.2369552517254667,
+   "ci_hi": 0.43790202371417003
+  }
+ },
+ "QwenThreeBfcl": {
+  "side": "confidence",
+  "echo_rate_pos": 0.0,
+  "echo_rate_neg": 0.0,
+  "regex_auc": 0.5,
+  "n_pos_without_echo": 52,
+  "n_neg_without_echo": 639,
+  "probe_auc": 0.7451968219573855,
+  "conf_auc": 0.798573492235464,
+  "gap": {
+   "delta": -0.053376670278078665,
+   "ci_lo": -0.15355201866656434,
+   "ci_hi": 0.05096341017708438
+  }
+ },
+ "MiniCpmBfcl": {
+  "side": "confidence",
+  "echo_rate_pos": 0.0,
+  "echo_rate_neg": 0.0,
+  "regex_auc": 0.5,
+  "n_pos_without_echo": 54,
+  "n_neg_without_echo": 640,
+  "probe_auc": 0.7751967592592592,
+  "conf_auc": 0.822945601851852,
+  "gap": {
+   "delta": -0.04774884259259264,
+   "ci_lo": -0.15292251095251538,
+   "ci_hi": 0.04981771644772025
+  }
+ },
+ "MiniCpmLive": {
+  "side": "confidence",
+  "echo_rate_pos": 0.0,
+  "echo_rate_neg": 0.0,
+  "regex_auc": 0.5,
+  "n_pos_without_echo": 120,
+  "n_neg_without_echo": 475,
+  "probe_auc": 0.7443421052631579,
+  "conf_auc": 0.7970000000000002,
+  "gap": {
+   "delta": -0.05265789473684226,
+   "ci_lo": -0.15536611361244584,
+   "ci_hi": 0.020841272770312325
+  }
+ },
+ "QwenThreeFiveBfcl": {
+  "side": "confidence",
+  "echo_rate_pos": 0.0,
+  "echo_rate_neg": 0.0,
+  "regex_auc": 0.5,
+  "n_pos_without_echo": 86,
+  "n_neg_without_echo": 398,
+  "probe_auc": 0.6818774103073507,
+  "conf_auc": 0.7915741498188618,
+  "gap": {
+   "delta": -0.10969673951151104,
+   "ci_lo": -0.1890019158211736,
+   "ci_hi": -0.030906458553349177
+  }
+ }
+}

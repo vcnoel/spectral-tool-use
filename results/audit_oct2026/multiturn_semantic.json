@@ -1,0 +1,29 @@
+{
+ "tag": "v3_mt_minicpm",
+ "train_on": "semantic",
+ "n": 538,
+ "n_semantic": 504,
+ "pos_semantic": 328,
+ "neg_semantic": 176,
+ "modes": {
+  "extra_args": 4,
+  "missing_args": 3,
+  "missing_calls": 126,
+  "no_call": 34,
+  "valid": 176,
+  "wrong_arg_values": 73,
+  "wrong_name": 122
+ },
+ "n_groups_semantic": 4,
+ "probe_auc": 0.894187684774575,
+ "conf_auc": 0.8586994179600888,
+ "gap": {
+  "delta": 0.03548826681448636,
+  "ci_lo": -0.019551820728291314,
+  "ci_hi": 0.08048950712360414
+ },
+ "stored_auc_semantic": {
+  "token-role probe": 0.8995230506282336,
+  "mean log-probability": 0.8586994179600888
+ }
+}

@@ -1,0 +1,23 @@
+\begin{tabular}{@{}llrrccccccccc@{}}
+\toprule
+Model & Data & $n_+$ & $n_-$ & floor & conf. & judge & reader & probe & probe $-$ conf. & probe $-$ judge & values & dropped \\
+\midrule
+Llama-3.2-1B & Glaive & 221 & 359 & 0.539 & 0.576 & 0.910 & 0.949 & 0.963 & $+0.387$ {\scriptsize$[+0.18, +0.59]$} & $+0.053^{\phantom{\circ}}$ & $+0.357^{\circ}$ & n.c. \\
+Llama-3.2-1B$^{*}$ & BFCL & 161 & 339 & 0.635 & 0.651 & 0.755 & 0.818 & 0.831 & $+0.180$ {\scriptsize$[+0.09, +0.27]$} & $+0.077^{\circ}$ & $+0.240^{\circ}$ & n.c. \\
+Llama-3.2-1B & BFCL-live & 208 & 157 & 0.709 & 0.663 & 0.682 & 0.795 & 0.782 & $+0.119$ {\scriptsize$[-0.00, +0.24]$} & $+0.101^{\circ}$ & $-0.010^{\phantom{\circ}}$ & n.c. \\
+Llama-3.2-3B & Glaive & 90 & 555 & 0.522 & 0.785 & 0.684 & 0.931 & 0.911 & $+0.126$ {\scriptsize$[+0.02, +0.28]$} & $+0.227^{\phantom{\circ}}$ & $+0.145^{\circ}$ & n.c. \\
+Llama-3.2-3B & BFCL & 120 & 576 & 0.618 & 0.707 & 0.633 & 0.758 & 0.831 & $+0.125$ {\scriptsize$[+0.05, +0.20]$} & $+0.199^{\circ}$ & $+0.134^{\circ}$ & $+0.016^{\phantom{\circ}}$ \\
+Gemma-3-1B & Glaive & 158 & 460 & 0.704 & 0.650 & 0.872 & 0.853 & 0.883 & $+0.233$ {\scriptsize$[+0.11, +0.34]$} & $+0.011^{\phantom{\circ}}$ & $+0.226^{\circ}$ & n.c. \\
+Gemma-3-1B$^{*}$ & BFCL & 364 & 150 & 0.842 & 0.711 & 0.900 & 0.927 & 0.948 & $+0.237$ {\scriptsize$[+0.19, +0.29]$} & $+0.048^{\circ}$ & $+0.158^{\phantom{\circ}}$ & n.c. \\
+\midrule
+Qwen3-1.7B & BFCL & 52 & 639 & 0.628 & 0.799 & 0.558 & 0.662 & 0.745 & $-0.053$ {\scriptsize$[-0.16, +0.05]$} & $+0.187^{\circ}$ & $-0.124^{\phantom{\circ}}$ & n.c. \\
+Qwen3-1.7B$^\dagger$$^{*}$ & Glaive & 10 & 699 & 0.677 & 0.867 & n.c. & n.c. & 0.676 & $-0.191$ {\scriptsize$[-0.65, +0.21]$} & n.c. & n.c. & n.c. \\
+MiniCPM5-2B$^{*}$ & BFCL & 54 & 640 & 0.578 & 0.823 & 0.585 & 0.677 & 0.775 & $-0.048$ {\scriptsize$[-0.15, +0.05]$} & $+0.190^{\circ}$ & $-0.162^{\circ}$ & n.c. \\
+MiniCPM5-2B$^{*}$ & BFCL-live & 120 & 475 & 0.545 & 0.797 & 0.642 & 0.655 & 0.744 & $-0.053$ {\scriptsize$[-0.15, +0.02]$} & $+0.102^{\circ}$ & $-0.048^{\phantom{\circ}}$ & n.c. \\
+MiniCPM5-2B$^\dagger$$^{*}$ & Glaive & 9 & 716 & 0.685 & 0.913 & n.c. & n.c. & 0.710 & $-0.203$ {\scriptsize$[-0.51, +0.01]$} & n.c. & n.c. & n.c. \\
+Qwen3.5-0.8B$^{*}$ & BFCL & 86 & 398 & 0.601 & 0.792 & 0.678 & 0.730 & 0.682 & $-0.110$ {\scriptsize$[-0.19, -0.03]$} & $+0.004^{\phantom{\circ}}$ & $-0.121^{\circ}$ & n.c. \\
+\midrule
+MiniCPM5-2B$^{*}$ & BFCL, JSON & 83 & 514 & n.c. & 0.757 & n.c. & n.c. & 0.882 & $+0.125$ {\scriptsize$[+0.05, +0.19]$} & n.c. & $-0.066^{\phantom{\circ}}$ & $+0.330^{\circ}$ \\
+Qwen3.5-0.8B$^{*}$ & BFCL, JSON & 226 & 436 & n.c. & 0.808 & n.c. & n.c. & 0.868 & $+0.060$ {\scriptsize$[+0.01, +0.11]$} & n.c. & $-0.136^{\circ}$ & $+0.198^{\circ}$ \\
+\bottomrule
+\end{tabular}

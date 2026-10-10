@@ -1,0 +1,49 @@
+{
+ "key": "LlamaThreeBGlaive",
+ "tag": "base_llama3b_glaive",
+ "side": "internals",
+ "reader": "Qwen/Qwen3.5-0.8B",
+ "reader_auc_reproduced": 0.9312352352352352,
+ "reader_auc_previous": 0.9312352352352352,
+ "features_from_cache": false,
+ "all": {
+  "probe_minus_reader": {
+   "n_pos": 90,
+   "n_neg": 555,
+   "auc_a": 0.9108748748748748,
+   "auc_b": 0.9312352352352352,
+   "delta": -0.02036036036036031,
+   "ci_lo": -0.10501184588326168,
+   "ci_hi": 0.03999862270219948
+  },
+  "reader_minus_conf": {
+   "n_pos": 90,
+   "n_neg": 555,
+   "auc_a": 0.9312352352352352,
+   "auc_b": 0.785105105105105,
+   "delta": 0.14613013013013024,
+   "ci_lo": 0.035603154047034506,
+   "ci_hi": 0.2898763617845743
+  }
+ },
+ "wrong_arg_values": {
+  "probe_minus_reader": {
+   "n_pos": 85,
+   "n_neg": 555,
+   "auc_a": 0.9256301006889244,
+   "auc_b": 0.9514954954954955,
+   "delta": -0.025865394806571285,
+   "ci_lo": -0.10949799396209584,
+   "ci_hi": 0.020490065964876847
+  },
+  "reader_minus_conf": {
+   "n_pos": 85,
+   "n_neg": 555,
+   "auc_a": 0.9514954954954955,
+   "auc_b": 0.7810704822469529,
+   "delta": 0.17042501324854267,
+   "ci_lo": 0.07847184625784172,
+   "ci_hi": 0.3247251462913628
+  }
+ }
+}
