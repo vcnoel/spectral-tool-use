@@ -215,7 +215,8 @@ def _topk_desc(vals: torch.Tensor, k_store: int) -> list[list[float]]:
     if vals.shape[1] < k_store:
         pad = torch.zeros(H, k_store - vals.shape[1], device=vals.device)
         vals = torch.cat([vals, pad], dim=1)
-    return [[float(x) for x in row] for row in vals]
+    # one device-to-host copy; converting element by element syncs the GPU per value
+    return vals.cpu().tolist()
 
 
 def sink_scores(attn: torch.Tensor,
@@ -238,7 +239,7 @@ def sink_scores(attn: torch.Tensor,
     prepended special token sits).
     """
     s, _ = _incoming_by_position(attn)
-    top_pos = [int(p) for p in s.argmax(dim=-1)]
+    top_pos = s.argmax(dim=-1).cpu().tolist()
     return _topk_desc(s, k_store), top_pos
 
 
@@ -283,7 +284,7 @@ def anchored_readout(attn: torch.Tensor, prompt_len: int,
         a.max(-1).values,
         bar[:, :prompt_len].sum(-1),
     ], dim=-1)
-    return [[float(x) for x in row] for row in out]
+    return out.cpu().tolist()
 
 
 def gram_spectrum_features(hidden: torch.Tensor, k: int = 8) -> list[float]:
