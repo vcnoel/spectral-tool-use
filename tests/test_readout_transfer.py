@@ -54,7 +54,7 @@ def test_anchored_readout_bit_identical(device):
 
 
 def test_reducer_spectra_match_one_call_per_metric():
-    from rebuild import attention as RA
+    RA = pytest.importorskip("rebuild.attention")   # absent from checkouts without the rebuild package
     a = _causal_attention(H=4, T=50).unsqueeze(0)
     P, T = 38, 50
     rows = {"name": [40], "value": [42, 43], "close": [49], "last": [49], "gen": list(range(P, T))}
