@@ -57,3 +57,11 @@ is reported with its count and no AUC.
   The probe is roughly flat across strata on every run.
 - **Not yet done:** intervals for these per-stratum AUCs, the length floor within each stratum, and a schema-side
   copy definition. These counts are 4 to 87 per stratum, so they are a pilot.
+
+### Correction to the outcome (21 October 2026)
+
+The labeller these runs use (`run_pilot_v2.py`, `CONTROL_MARKERS`) does not strip Llama's `<|python_tag|>`, so 160
+of Llama-3.2-1B BFCL's multi-call predictions are stored as `unparseable_call` and leave the scored population.
+About 51 value errors are among them. The same defect was fixed only in `rebuild/labels.py` (Amendment 3 of
+the rebuild registration). The Llama-3.2-1B BFCL and BFCL-live rows above therefore omit those items. The
+analysis is rerun once the labeller is repaired, and both versions are kept.
