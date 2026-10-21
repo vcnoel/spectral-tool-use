@@ -43,3 +43,17 @@ Runs: the powered BFCL and BFCL-live runs of the paper, native and forced JSON.
 
 Every number is reported whatever the outcome, with the counts per stratum. A stratum with fewer than 10 errors
 is reported with its count and no AUC.
+
+## Outcome (21 October 2026, `results/copy_oct2026/copy_values.json`)
+
+- **P1 holds.** On all 7 runs with at least 10 errors in each stratum, the mean log-probability separates
+  generated value errors from valid calls better than copied ones. The pooled difference is +0.119 (rule:
+  at least +0.10).
+- **P2 fails, in the opposite direction.** The share of copied value errors is 0.18 to 0.38 on the probe side and
+  0.39 to 0.71 on the confidence side. Under the decision rule, copy blindness is a property of every model, and
+  the split is not a difference in the share of copies.
+- **The split survives within each stratum.** Mean log-probability AUC on copied errors is 0.54 to 0.58 on the
+  probe side and 0.65 to 0.88 on the confidence side. On generated errors it is 0.56 to 0.75 and 0.83 to 0.88.
+  The probe is roughly flat across strata on every run.
+- **Not yet done:** intervals for these per-stratum AUCs, the length floor within each stratum, and a schema-side
+  copy definition. These counts are 4 to 87 per stratum, so they are a pilot.
