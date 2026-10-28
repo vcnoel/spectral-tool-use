@@ -1,0 +1,11 @@
+CPU smoke test, 2026-10-04 (GPU hidden with CUDA_VISIBLE_DEVICES=-1; "" does not hide it on this build)
+- Prompt identity, Qwen3.5-4B-Base vs Qwen3.5-4B, BFCL native and forced JSON: 850/850 identical text and
+  token ids, identical stopping ids [248044, 248046] (identity_bfcl_native.json, identity_bfcl_json.json).
+- extract --no-rich on CPU: SmolLM2-135M-Instruct, 60 BFCL items, exit 0 (no valid call, so not evaluable);
+  Qwen3.5-0.8B, 3 items, exit 0: hybrid-attention path, positions found on the XML call, 8 probe depths x 3 roles,
+  6 full-attention layer diagnostics; ~0.36 MB per record at d=1024 (about 0.9 MB expected at d=2560).
+- evaluate -> paired_inference -> audit meta -> audit output judges -> joint bootstrap -> registered rules, end to end
+  on a fixture (first 300 stored records of Qwen3.5-0.8B BFCL native and forced JSON, attention tier dropped).
+  Reverse check: per-arm probe - confidence from swap_analysis equals the paper's paired_inference interval
+  (-0.139 [-0.26, -0.03] vs -0.139 [-0.259, -0.026]); folds agree tool by tool (1385/1385); relabel mismatches 0.
+  Fixture outputs deleted; matched-item key changed from prompt hash to request+tool after this test.

@@ -1,0 +1,28 @@
+\section{The internal advantage by kind of error}
+\label{sec:result}
+
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{1.5pt}
+\caption{Every run under the corrected labels. $n_+$ and $n_-$ are the labelled failures and valid calls in the scored population. The AUC columns are the length floor, the mean log-probability (conf.), the output-only judge, the Qwen3.5-0.8B reader and the token-role probe, all on every scored failure. The last four columns are differences of AUC on held-out tools: probe minus confidence on every scored failure with its 95\% tool-resampled interval, probe minus the output-only judge on every scored failure, and probe minus confidence on wrong argument values and on dropped parallel calls within the parallel categories, each against valid calls. $^{\circ}$ the interval excludes zero (intervals in \cref{app:judges,app:types}). n.c.\ not computed: too few failures of that kind or of valid parallel calls, an underpowered run, or a comparator not fitted on that run. $^{*}$ re-extracted under the corrected extractor. $^\dagger$ fewer than thirty items of one class.}
+\label{tab:main}
+\input{table_main}
+\end{table*}
+
+On every scored failure, the \nRunsInternals{} powered Llama-3.2 and Gemma-3 runs have an internal advantage of \gapInternalsMin{} to \gapInternalsMax{}, with an interval excluding zero on \nInternalsCiExcludesZero{} of them (\cref{tab:main}, \cref{fig:types}a). The \nRunsConfidence{} powered Qwen3, Qwen3.5 and MiniCPM5 runs read \gapConfidenceMin{} to \gapConfidenceMax{}, with an interval below zero on \nConfidenceCiBelowZero{}. Runs that share a checkpoint are not independent. With \nCkptInternals{} against \nCkptConfidence{} checkpoints the smallest attainable two-sided rank-test value is $p=\ckptExactFloor{}$, so the separation is a description of these \nCkpt{} checkpoints.
+
+\paragraph{Wrong argument values.}
+Every scored failure mixes kinds of error, so \cref{fig:types}b scores wrong argument values against valid calls alone. The probe leads confidence on \nWavInternalsPos{} of the \nInternalsRuns{} probe-side runs, by \wavInternalsMin{} to \wavInternalsMax{} in point estimate, with an interval excluding zero on \nWavInternalsCiExcl{}. The largest lead, Llama-3.2-1B on Glaive, has the widest interval, [\WavGapLoLlamaOneBGlaive{}, \WavGapHiLlamaOneBGlaive{}]. Llama-3.2-1B on the live categories reads \WavGapLlamaOneBLive{}, on the probe side by family and on neither side by measurement. Confidence leads the probe on all \nWavConfidenceRuns{} confidence-side runs, native and forced into JSON, where the advantage is \wavConfidenceMin{} to \wavConfidenceMax{}, with an interval excluding zero on \nWavConfidenceCiBelow{}. On these models the mean log-probability ranks most wrong values below right ones. Glaive repeats requests, and keeping the first occurrence of each unique request leaves the value-error advantage at \gdWavLlamaOneBGlaive{} on Llama-3.2-1B and \gdWavGemmaGlaive{} on Gemma-3.
+
+\paragraph{Dropped parallel calls.}
+A one-bit flag for a request in a parallel category separates dropped calls from valid calls at \catAucMin{} to \catAucMax{} AUC on the four runs with at least twenty of them (\cref{fig:types}c), because only parallel requests can drop a call. On Gemma-3 the flag reaches \catAucGemmaBfcl{} against the probe's \catProbeGemmaBfcl{}. Three of these runs use the fallback prompt that asks for one JSON object. Within the parallel categories, where the flag is constant, the probe leads confidence on MiniCPM5-2B and Qwen3.5-0.8B under forced JSON, \PwGapMiniCpmBfclJson{} [\PwGapLoMiniCpmBfclJson{}, \PwGapHiMiniCpmBfclJson{}] and \PwGapQwenThreeFiveBfclJson{} [\PwGapLoQwenThreeFiveBfclJson{}, \PwGapHiQwenThreeFiveBfclJson{}]. On Llama-3.2-3B, the only one of the four prompted through its native template, the lead vanishes at \PwGapLlamaThreeBBfcl{} [\PwGapLoLlamaThreeBBfcl{}, \PwGapHiLlamaThreeBBfcl{}], and Gemma-3 makes too few valid parallel calls to be tested. No claim about dropped calls is made beyond these three numbers.
+
+\paragraph{Output format and R3.}
+Qwen3 writes JSON like Llama-3.2 and Gemma-3 and sits on the confidence side, so the native format does not decide the side. Registered prediction R3 said that, forced to write JSON, the confidence-side families keep an advantage at or below zero on every scored failure, and that it fails above \rThreeThreshold{}. It failed on MiniCPM5-2B, at \rThreeJsonMiniCpm{} [\rThreeJsonLoMiniCpm{}, \rThreeJsonHiMiniCpm{}], on a partial run of \nJsonItemsMiniCpm{} of \nAllMiniCpmBfcl{} items extracted from a tree with uncommitted changes. On Qwen3.5-0.8B it is undecided by the rule, at \rThreeJsonQwenThreeFive{} [\rThreeJsonLoQwenThreeFive{}, \rThreeJsonHiQwenThreeFive{}]. Dropped parallel calls make up \rThreeMcJsonMiniCpm{} of \rThreePosJsonMiniCpm{} and \rThreeMcJsonQwenThreeFive{} of \rThreePosJsonQwenThreeFive{} failures under the fallback prompt, against \rThreeMcNatMiniCpm{} and \rThreeMcNatQwenThreeFive{} under the native templates. On wrong argument values both models stay on the confidence side.
+
+\paragraph{Size and release date.}
+Size does not separate the sides (one and three billion parameters against 0.8 to two), and within Llama-3.2 the probe does not improve from 1B to 3B (\aucProbeLlamaOneBBfcl{} at both sizes on BFCL). Release date, a reasoning mode and native tool-calling post-training all separate the six checkpoints (\cref{sec:discussion}).
+
+\paragraph{Calls with a history.}
+One multi-turn run, MiniCPM5-2B, reads \mtAucProbe{} for the probe and \mtAucConf{} for confidence, the opposite order to its single-turn runs, on \mtGroupsAll{} linked groups. It is anecdotal and enters no claim (\cref{app:multiturn}).

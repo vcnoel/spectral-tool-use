@@ -1,0 +1,22 @@
+{
+ "key": "QwenThreeBfcl",
+ "tag": "base_qwen3_17b_bfcl",
+ "side": "confidence",
+ "reader": "Qwen/Qwen3.5-0.8B",
+ "dim": 16384,
+ "n_pos": 52,
+ "n_neg": 639,
+ "reader_auc": 0.6615836041892379,
+ "probe_auc": 0.7451968219573855,
+ "conf_auc": 0.798573492235464,
+ "probe_minus_reader": {
+  "delta": 0.08361321776814741,
+  "ci_lo": -0.020283761070709807,
+  "ci_hi": 0.18584646532192098
+ },
+ "reader_minus_conf": {
+  "delta": -0.13698988804622608,
+  "ci_lo": -0.2487448314001437,
+  "ci_hi": -0.014485928821119941
+ }
+}

@@ -1,0 +1,19 @@
+\begin{tabular}{@{}lrcrcrcc@{}}
+\toprule
+Run & $n_+$ & wrong values & $n_+$ & missing arguments & $n_+$ & dropped calls & dropped, parallel only \\
+\midrule
+Llama-3.2-1B, Glaive & 132 & $+0.357$ {\scriptsize$[+0.00, +0.68]$} & 86 & $+0.441$ {\scriptsize$[+0.27, +0.63]$} & n.c. & n.c. & n.c. \\
+Llama-3.2-1B, BFCL & 127 & $+0.240$ {\scriptsize$[+0.14, +0.34]$} & 21 & $-0.055$ {\scriptsize$[-0.18, +0.04]$} & n.c. & n.c. & n.c. \\
+Llama-3.2-1B, BFCL-live & 89 & $-0.010$ {\scriptsize$[-0.20, +0.16]$} & 46 & $+0.223$ {\scriptsize$[+0.09, +0.36]$} & n.c. & n.c. & n.c. \\
+Llama-3.2-3B, Glaive & 85 & $+0.145$ {\scriptsize$[+0.05, +0.32]$} & n.c. & n.c. & n.c. & n.c. & n.c. \\
+Llama-3.2-3B, BFCL & 88 & $+0.134$ {\scriptsize$[+0.05, +0.22]$} & n.c. & n.c. & 25 & $+0.158$ {\scriptsize$[+0.05, +0.27]$} & $+0.016$ {\scriptsize$[-0.10, +0.13]$} \\
+Gemma-3-1B, Glaive & 109 & $+0.226$ {\scriptsize$[+0.03, +0.36]$} & 47 & $+0.260$ {\scriptsize$[+0.09, +0.48]$} & n.c. & n.c. & n.c. \\
+Gemma-3-1B, BFCL & 33 & $+0.158$ {\scriptsize$[-0.04, +0.33]$} & 219 & $+0.188$ {\scriptsize$[+0.14, +0.24]$} & 99 & $+0.342$ {\scriptsize$[+0.27, +0.42]$} & n.c. \\
+Qwen3-1.7B, BFCL & 33 & $-0.124$ {\scriptsize$[-0.25, +0.00]$} & n.c. & n.c. & n.c. & n.c. & n.c. \\
+MiniCPM5-2B, BFCL & 22 & $-0.162$ {\scriptsize$[-0.30, -0.02]$} & n.c. & n.c. & n.c. & n.c. & n.c. \\
+MiniCPM5-2B, BFCL-live & 84 & $-0.048$ {\scriptsize$[-0.16, +0.04]$} & 24 & $-0.085$ {\scriptsize$[-0.28, +0.05]$} & n.c. & n.c. & n.c. \\
+Qwen3.5-0.8B, BFCL & 54 & $-0.121$ {\scriptsize$[-0.22, -0.03]$} & n.c. & n.c. & n.c. & n.c. & n.c. \\
+MiniCPM5-2B, BFCL, JSON & 21 & $-0.066$ {\scriptsize$[-0.31, +0.12]$} & n.c. & n.c. & 56 & $+0.201$ {\scriptsize$[+0.15, +0.25]$} & $+0.330$ {\scriptsize$[+0.20, +0.45]$} \\
+Qwen3.5-0.8B, BFCL, JSON & 64 & $-0.136$ {\scriptsize$[-0.23, -0.04]$} & n.c. & n.c. & 143 & $+0.171$ {\scriptsize$[+0.13, +0.21]$} & $+0.198$ {\scriptsize$[+0.09, +0.32]$} \\
+\bottomrule
+\end{tabular}

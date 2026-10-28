@@ -1,0 +1,43 @@
+{
+ "arm_a": "Qwen/Qwen3.5-4B-Base",
+ "arm_b": "Qwen/Qwen3.5-4B",
+ "benchmark": "bfcl",
+ "force_json": true,
+ "n_items": 850,
+ "same_prompt_text": 850,
+ "same_token_ids": 850,
+ "n_unrenderable_a": 0,
+ "n_unrenderable_b": 0,
+ "n_over_max_prompt_tokens": 0,
+ "max_prompt_tokens": 2048,
+ "stop_ids_a": [
+  248044,
+  248046
+ ],
+ "stop_ids_b": [
+  248044,
+  248046
+ ],
+ "stop_ids_equal": true,
+ "generation_config_a": {
+  "do_sample": null,
+  "temperature": null,
+  "top_p": null,
+  "top_k": null,
+  "repetition_penalty": null
+ },
+ "generation_config_b": {
+  "do_sample": null,
+  "temperature": null,
+  "top_p": null,
+  "top_k": null,
+  "repetition_penalty": null
+ },
+ "decoding_in_extract": "greedy (do_sample=False), max_new_tokens=256, eos=stop ids",
+ "eos_token_a": "<|endoftext|>",
+ "eos_token_b": "<|im_end|>",
+ "pad_used_a": 248044,
+ "pad_used_b": 248046,
+ "vocab_equal": true,
+ "chat_template_equal": true
+}

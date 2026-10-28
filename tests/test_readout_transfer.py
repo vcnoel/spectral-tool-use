@@ -56,6 +56,7 @@ def test_anchored_readout_bit_identical(device):
 def test_reducer_spectra_match_one_call_per_metric():
     # absent from checkouts without the rebuild package
     RA = pytest.importorskip("rebuild.attention")
+    pytest.importorskip("spectral_trust")   # the reducer computes per-head spectra with it
     a = _causal_attention(H=4, T=50).unsqueeze(0)
     P, T = 38, 50
     rows = {"name": [40], "value": [42, 43], "close": [49], "last": [49], "gen": list(range(P, T))}

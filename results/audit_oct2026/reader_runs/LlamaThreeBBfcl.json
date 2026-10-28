@@ -1,0 +1,22 @@
+{
+ "key": "LlamaThreeBBfcl",
+ "tag": "base_llama3b_bfcl",
+ "side": "internals",
+ "reader": "Qwen/Qwen3.5-0.8B",
+ "dim": 16384,
+ "n_pos": 120,
+ "n_neg": 576,
+ "reader_auc": 0.7578269675925926,
+ "probe_auc": 0.8314930555555555,
+ "conf_auc": 0.7067708333333333,
+ "probe_minus_reader": {
+  "delta": 0.07366608796296292,
+  "ci_lo": 0.005999775147317203,
+  "ci_hi": 0.13969683397731525
+ },
+ "reader_minus_conf": {
+  "delta": 0.05105613425925928,
+  "ci_lo": -0.043730403963077744,
+  "ci_hi": 0.13652467559979647
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "key": "LlamaOneBGlaive",
+ "tag": "base_llama1b_glaive",
+ "side": "internals",
+ "reader": "Qwen/Qwen3.5-0.8B",
+ "dim": 16384,
+ "n_pos": 221,
+ "n_neg": 359,
+ "reader_auc": 0.9485990496477144,
+ "probe_auc": 0.963195906174769,
+ "conf_auc": 0.5757899645823618,
+ "probe_minus_reader": {
+  "delta": 0.014596856527054692,
+  "ci_lo": -0.02465346220016245,
+  "ci_hi": 0.10596372705133002
+ },
+ "reader_minus_conf": {
+  "delta": 0.37280908506535254,
+  "ci_lo": 0.11585062508014798,
+  "ci_hi": 0.5967418795581882
+ }
+}

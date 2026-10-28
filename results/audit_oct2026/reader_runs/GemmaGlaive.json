@@ -1,0 +1,22 @@
+{
+ "key": "GemmaGlaive",
+ "tag": "base_gemma3_glaive",
+ "side": "internals",
+ "reader": "Qwen/Qwen3.5-0.8B",
+ "dim": 16384,
+ "n_pos": 158,
+ "n_neg": 460,
+ "reader_auc": 0.853442487616951,
+ "probe_auc": 0.8829939460649422,
+ "conf_auc": 0.6503852504127683,
+ "probe_minus_reader": {
+  "delta": 0.02955145844799125,
+  "ci_lo": -0.08160112683791909,
+  "ci_hi": 0.1735119612377559
+ },
+ "reader_minus_conf": {
+  "delta": 0.2030572372041827,
+  "ci_lo": 0.07054744315476584,
+  "ci_hi": 0.35444967032536134
+ }
+}

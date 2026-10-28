@@ -1,0 +1,22 @@
+{
+ "key": "LlamaThreeBGlaive",
+ "tag": "base_llama3b_glaive",
+ "side": "internals",
+ "reader": "Qwen/Qwen3.5-0.8B",
+ "dim": 16384,
+ "n_pos": 90,
+ "n_neg": 555,
+ "reader_auc": 0.9312352352352352,
+ "probe_auc": 0.9108748748748748,
+ "conf_auc": 0.785105105105105,
+ "probe_minus_reader": {
+  "delta": -0.02036036036036031,
+  "ci_lo": -0.10501184588326168,
+  "ci_hi": 0.03999862270219948
+ },
+ "reader_minus_conf": {
+  "delta": 0.14613013013013024,
+  "ci_lo": 0.035603154047034506,
+  "ci_hi": 0.2898763617845743
+ }
+}

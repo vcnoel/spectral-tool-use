@@ -1,0 +1,29 @@
+\section{What the probe adds over the output text}
+\label{sec:judges}
+
+\begin{figure*}[t]
+\centering
+\includegraphics{fig2_judges}
+\caption{Every scored failure. (a) AUC per powered run of the length floor, the mean log-probability, the output-only judge, the Qwen3.5-0.8B reader and the token-role probe, with the span from confidence to probe shaded. (b) Probe AUC minus output-only judge AUC (triangles) and minus reader AUC (diamonds), with 95\% tool-resampled intervals.}
+\label{fig:judges}
+\end{figure*}
+
+The internal advantage sets a trained probe against an untrained summary of the output, so part of the probe's lead could come from training on labels rather than from the hidden states. The comparators of this section are trained on the same labels, folds and training population as the probe and read only what is visible outside the deployed model.
+
+\paragraph{On value errors.}
+\cref{tab:wavjudges} scores both comparators on wrong argument values against valid calls, the contrast that defines the split. The output-only judge recovers at least half of the probe's lead over confidence on \nJwShareMajority{} of the \nJwEligible{} probe-side runs where the probe leads (\jwShareLlamaOneBGlaive{}\% and \jwShareLlamaOneBBfcl{}\% on Llama-3.2-1B, \jwShareGemmaGlaive{}\% on Gemma-3 on Glaive) and none of it on Llama-3.2-3B, where the probe beats it by \jwGapLlamaThreeBGlaive{} on Glaive and \jwGapLlamaThreeBBfcl{} [\jwGapLoLlamaThreeBBfcl{}, \jwGapHiLlamaThreeBBfcl{}] on BFCL. The reader was scored on value errors on \nRwRuns{} runs, the three Llama-3.2-1B runs and Llama-3.2-3B on Glaive, and is within noise of the probe on all of them, with probe minus reader from \rwGapMinInternals{} to \rwGapMaxInternals{}. On Llama-3.2-3B on Glaive the output-only judge recovers none of the probe's lead and the reader matches the probe (\rwAucLlamaThreeBGlaive{} against \aucProbeWavLlamaThreeBGlaive{}), so on that run the value errors are visible to a second model and not to n-gram features.
+
+\paragraph{On every scored failure.}
+On the probe side the output-only judge recovers \ojShareMajorityMin{} to \ojShareMajorityMax{}\% of the probe's lead on \nOjShareMajority{} of the \nInternalsRuns{} runs, and the reader is within noise of the probe on \nReaderTiesInternals{} of \nReaderInternals{} (\cref{fig:judges}). On the confidence side both score below confidence, the judge at \ojMinConfidence{} to \ojMaxConfidence{} because a few dozen failures cannot fit its n-gram features.
+
+\paragraph{What the probe adds.}
+On most probe-side runs the probe's lead over confidence is visible in the call text, so what it shows is that the error can be read from the output. The reading that the model's states hold what its text does not would need a run where the probe beats both output-side comparators on value errors, and on none of the \nRwRuns{} runs where both were scored does it. Fusing the probe with the output-only judge by an equal-weight rank average gains \fusOutMinInternals{} to \fusOutMaxInternals{} over the judge alone on every scored failure on the probe side, with an interval excluding zero on \nFusOutCiExclInternals{} of \nInternalsRuns{} runs.
+
+\begin{table*}[t]
+\centering
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\caption{Wrong argument values against valid calls, per run. Probe minus confidence (point estimate), probe minus the output-only judge, the share of the probe's lead over confidence the judge recovers (n.c.\ where the probe does not lead), probe minus reader and reader minus confidence, with 95\% tool-resampled intervals.}
+\label{tab:wavjudges}
+\input{table_wav_judges}
+\end{table*}

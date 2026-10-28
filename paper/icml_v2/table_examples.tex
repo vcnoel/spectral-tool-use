@@ -1,0 +1,12 @@
+\begin{tabular}{@{}p{0.13\linewidth}p{0.11\linewidth}p{0.33\linewidth}p{0.37\linewidth}@{}}
+\toprule
+Model & Mode & Ground truth & Generated call \\
+\midrule
+Gemma-3-1B & wrong arg values & \raggedright\texttt{[\{"calculate\_\allowbreak{}resonant\_\allowbreak{}frequency": \{"inductance": [0.05], "capacitance": [0.0001], "round\_\allowbreak{}off": ["", 2]\}\}]} & \texttt{```json \{"name": "calculate\_\allowbreak{}resonant\_\allowbreak{}frequency", "arguments": \{ "inductance": 50, "capacitance": 100, "round\_\allowbreak{}off": 2 \}\} ```} \\
+Gemma-3-1B & missing args & \raggedright\texttt{[\{"algebra.quadratic\_\allowbreak{}roots": \{"a": [1], "b": [-3], "c": [2]\}\}]} & \texttt{\{"name": "algebra.quadratic\_\allowbreak{}roots", "arguments": \{ "type": "object", "properties": \{ "a": \{"type": "integer", "description": "Coefficient of x\^{}2."\}, "b": \{"type ...} \\
+Gemma-3-1B & missing calls & \raggedright\texttt{[\{"spotify.play": \{"artist": ["Taylor Swift"], "duration": [20]\}\}, \{"spotify.play": \{"artist": ["Maroon 5"], "duration": ...} & \texttt{```json \{"name": "spotify.play", "arguments": \{ "artist": "Taylor Swift", "duration": 20, "duration": 15 \}\} ```} \\
+Qwen3.5-0.8B, forced JSON & missing calls & \raggedright\texttt{[\{"spotify.play": \{"artist": ["Taylor Swift"], "duration": [20]\}\}, \{"spotify.play": \{"artist": ["Maroon 5"], "duration": ...} & \texttt{\{"name": "spotify.play", "arguments": \{"artist": "Taylor Swift", "duration": 120\}\}} \\
+Qwen3.5-0.8B & wrong arg values & \raggedright\texttt{[\{"solve\_\allowbreak{}quadratic": \{"a": [3], "b": [-11], "c": [-4], "root\_\allowbreak{}type": ["all"]\}\}]} & \texttt{<tool\_\allowbreak{}call> <function=solve\_\allowbreak{}quadratic> <parameter=a> 3 </parameter> <parameter=b> -11 </parameter> <parameter=c> -4 </parameter> <parameter=root\_\allowbreak{}type> real </pa ...} \\
+Qwen3.5-0.8B & valid & \raggedright\texttt{[\{"math.factorial": \{"number": [5]\}\}]} & \texttt{<tool\_\allowbreak{}call> <function=math.factorial> <parameter=number> 5 </parameter> </function> </tool\_\allowbreak{}call>} \\
+\bottomrule
+\end{tabular}

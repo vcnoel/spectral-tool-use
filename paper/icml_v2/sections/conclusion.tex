@@ -1,0 +1,4 @@
+\section{Conclusion}
+\label{sec:conclusion}
+
+On wrong argument values, a probe on the residual stream beats the mean token log-probability on Llama-3.2 and Gemma-3 and trails it on Qwen3, Qwen3.5 and MiniCPM5, including when the latter are made to write JSON. This is a description of three checkpoints per side, assigned by family, at three billion parameters or fewer. On most probe-side runs the probe's lead is also visible to a judge that reads only the output. Two recommendations follow, in order of cost: score the model's confidence on its value errors on held-out tools before building any judge, and where it misses them, train a judge on the output text and compare it with a probe before choosing. A third is cheaper than either: for parallel requests, count the calls.

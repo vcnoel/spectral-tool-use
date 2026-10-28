@@ -1,0 +1,501 @@
+{
+ "judge_wav": {
+  "LlamaOneBGlaive": {
+   "side": "internals",
+   "n_pos": 132,
+   "probe": 0.9459652232632735,
+   "conf": 0.5894445851270365,
+   "judge": 0.8613784080357897,
+   "probe_minus_judge": {
+    "auc_a": 0.9459652232632735,
+    "auc_b": 0.8613784080357897,
+    "delta": 0.08458681522748376,
+    "ci_lo": -0.04405375557288514,
+    "ci_hi": 0.5058525285454434
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.8613784080357897,
+    "auc_b": 0.5894445851270365,
+    "delta": 0.27193382290875323,
+    "ci_lo": -0.23862072902968,
+    "ci_hi": 0.6609434763115384
+   },
+   "share_recovered": 0.7627435660676657
+  },
+  "LlamaOneBBfcl": {
+   "side": "internals",
+   "n_pos": 127,
+   "probe": 0.8275335052145032,
+   "conf": 0.5873922839291106,
+   "judge": 0.7417462197756254,
+   "probe_minus_judge": {
+    "auc_a": 0.8275335052145032,
+    "auc_b": 0.7417462197756254,
+    "delta": 0.08578728543887766,
+    "ci_lo": 0.013588360063276125,
+    "ci_hi": 0.15918685747931366
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.7417462197756254,
+    "auc_b": 0.5873922839291106,
+    "delta": 0.1543539358465148,
+    "ci_lo": 0.04287321230024313,
+    "ci_hi": 0.2585507734247257
+   },
+   "share_recovered": 0.6427631833481638
+  },
+  "LlamaOneBLive": {
+   "side": "internals",
+   "n_pos": 89,
+   "probe": 0.6643598368281687,
+   "conf": 0.6746582695197881,
+   "judge": 0.50216846775925,
+   "probe_minus_judge": {
+    "auc_a": 0.6643598368281687,
+    "auc_b": 0.50216846775925,
+    "delta": 0.16219136906891865,
+    "ci_lo": 0.051896288351524864,
+    "ci_hi": 0.27359757368616094
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.50216846775925,
+    "auc_b": 0.6746582695197881,
+    "delta": -0.17248980176053813,
+    "ci_lo": -0.2988993603015343,
+    "ci_hi": -0.023978689719032328
+   },
+   "share_recovered": null
+  },
+  "LlamaThreeBGlaive": {
+   "side": "internals",
+   "n_pos": 85,
+   "probe": 0.9256301006889244,
+   "conf": 0.7810704822469529,
+   "judge": 0.7006550079491256,
+   "probe_minus_judge": {
+    "auc_a": 0.9256301006889244,
+    "auc_b": 0.7006550079491256,
+    "delta": 0.22497509273979865,
+    "ci_lo": -0.029793454308044406,
+    "ci_hi": 0.481703250848792
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.7006550079491256,
+    "auc_b": 0.7810704822469529,
+    "delta": -0.08041547429782728,
+    "ci_lo": -0.3559800561541894,
+    "ci_hi": 0.23311197893533717
+   },
+   "share_recovered": 0.0
+  },
+  "LlamaThreeBBfcl": {
+   "side": "internals",
+   "n_pos": 88,
+   "probe": 0.818169981060606,
+   "conf": 0.6838699494949495,
+   "judge": 0.6361939709595961,
+   "probe_minus_judge": {
+    "auc_a": 0.818169981060606,
+    "auc_b": 0.6361939709595961,
+    "delta": 0.1819760101010101,
+    "ci_lo": 0.10315699285122765,
+    "ci_hi": 0.2646976155281409
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.6361939709595961,
+    "auc_b": 0.6838699494949495,
+    "delta": -0.04767597853535355,
+    "ci_lo": -0.16946522826189991,
+    "ci_hi": 0.06292791792182212
+   },
+   "share_recovered": 0.0
+  },
+  "GemmaGlaive": {
+   "side": "internals",
+   "n_pos": 109,
+   "probe": 0.86817510969286,
+   "conf": 0.6417630634224174,
+   "judge": 0.8548264858396489,
+   "probe_minus_judge": {
+    "auc_a": 0.86817510969286,
+    "auc_b": 0.8548264858396489,
+    "delta": 0.013348623853210983,
+    "ci_lo": -0.229204773293723,
+    "ci_hi": 0.24083940189906122
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.8548264858396489,
+    "auc_b": 0.6417630634224174,
+    "delta": 0.21306342241723158,
+    "ci_lo": -0.027351247810858022,
+    "ci_hi": 0.3669678243047377
+   },
+   "share_recovered": 0.9410427842815988
+  },
+  "GemmaBfcl": {
+   "side": "internals",
+   "n_pos": 33,
+   "probe": 0.7103030303030303,
+   "conf": 0.5521212121212121,
+   "judge": 0.6124444444444445,
+   "probe_minus_judge": {
+    "auc_a": 0.7103030303030303,
+    "auc_b": 0.6124444444444445,
+    "delta": 0.0978585858585859,
+    "ci_lo": -0.07190295473027929,
+    "ci_hi": 0.21852283098894013
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.6124444444444445,
+    "auc_b": 0.5521212121212121,
+    "delta": 0.06032323232323229,
+    "ci_lo": -0.08049951703547603,
+    "ci_hi": 0.19819149128787478
+   },
+   "share_recovered": 0.38135376756066414
+  },
+  "QwenThreeBfcl": {
+   "side": "confidence",
+   "n_pos": 33,
+   "probe": 0.7167449139280125,
+   "conf": 0.841039503011334,
+   "judge": 0.5973443353725043,
+   "probe_minus_judge": {
+    "auc_a": 0.7167449139280125,
+    "auc_b": 0.5973443353725043,
+    "delta": 0.11940057855550812,
+    "ci_lo": -0.03597918759592222,
+    "ci_hi": 0.2773264109017319
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.5973443353725043,
+    "auc_b": 0.841039503011334,
+    "delta": -0.2436951676388297,
+    "ci_lo": -0.42964798507339735,
+    "ci_hi": -0.09094073161532217
+   },
+   "share_recovered": null
+  },
+  "MiniCpmBfcl": {
+   "side": "confidence",
+   "n_pos": 22,
+   "probe": 0.7148295454545455,
+   "conf": 0.8769886363636363,
+   "judge": 0.5633522727272727,
+   "probe_minus_judge": {
+    "auc_a": 0.7148295454545455,
+    "auc_b": 0.5633522727272727,
+    "delta": 0.1514772727272727,
+    "ci_lo": -0.039601893726484386,
+    "ci_hi": 0.31553578731632365
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.5633522727272727,
+    "auc_b": 0.8769886363636363,
+    "delta": -0.3136363636363636,
+    "ci_lo": -0.4887073729604825,
+    "ci_hi": -0.1302321958994422
+   },
+   "share_recovered": null
+  },
+  "MiniCpmLive": {
+   "side": "confidence",
+   "n_pos": 84,
+   "probe": 0.7308671679197994,
+   "conf": 0.7785714285714286,
+   "judge": 0.6417243107769425,
+   "probe_minus_judge": {
+    "auc_a": 0.7308671679197994,
+    "auc_b": 0.6417243107769425,
+    "delta": 0.08914285714285708,
+    "ci_lo": -0.02656785992466068,
+    "ci_hi": 0.21107102970461325
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.6417243107769425,
+    "auc_b": 0.7785714285714286,
+    "delta": -0.1368471177944862,
+    "ci_lo": -0.2752676688080634,
+    "ci_hi": 0.0027858032479476363
+   },
+   "share_recovered": null
+  },
+  "QwenThreeFiveBfcl": {
+   "side": "confidence",
+   "n_pos": 54,
+   "probe": 0.6678252372975992,
+   "conf": 0.7885259631490787,
+   "judge": 0.6478131397729388,
+   "probe_minus_judge": {
+    "auc_a": 0.6678252372975992,
+    "auc_b": 0.6478131397729388,
+    "delta": 0.020012097524660356,
+    "ci_lo": -0.06616551091227826,
+    "ci_hi": 0.11277995804355016
+   },
+   "judge_minus_conf": {
+    "auc_a": 0.6478131397729388,
+    "auc_b": 0.7885259631490787,
+    "delta": -0.14071282337614,
+    "ci_lo": -0.24794664051093257,
+    "ci_hi": -0.036036842914175055
+   },
+   "share_recovered": null
+  }
+ },
+ "category": {
+  "LlamaThreeBBfcl": {
+   "side": "internals",
+   "n_pos": 25,
+   "n_neg": 576,
+   "indicator_auc": 0.8784722222222222,
+   "probe_auc": 0.904736111111111,
+   "conf_auc": 0.7463194444444444,
+   "share_of_valid_in_parallel": 0.24305555555555555,
+   "share_of_dropped_in_parallel": 1.0
+  },
+  "GemmaBfcl": {
+   "side": "internals",
+   "n_pos": 99,
+   "n_neg": 150,
+   "indicator_auc": 0.9833333333333334,
+   "probe_auc": 0.9519191919191918,
+   "conf_auc": 0.6094276094276094,
+   "share_of_valid_in_parallel": 0.03333333333333333,
+   "share_of_dropped_in_parallel": 1.0
+  },
+  "MiniCpmBfclJson": {
+   "side": "confidence (forced JSON)",
+   "n_pos": 56,
+   "n_neg": 514,
+   "indicator_auc": 0.9571984435797665,
+   "probe_auc": 0.988309477487493,
+   "conf_auc": 0.7875903279599777,
+   "share_of_valid_in_parallel": 0.08560311284046693,
+   "share_of_dropped_in_parallel": 1.0
+  },
+  "QwenThreeFiveBfclJson": {
+   "side": "confidence (forced JSON)",
+   "n_pos": 143,
+   "n_neg": 436,
+   "indicator_auc": 0.9770642201834863,
+   "probe_auc": 0.9852713799961507,
+   "conf_auc": 0.814236222493103,
+   "share_of_valid_in_parallel": 0.045871559633027525,
+   "share_of_dropped_in_parallel": 1.0
+  }
+ },
+ "glaive_dedup": {
+  "LlamaOneBGlaive": {
+   "side": "internals",
+   "n_scored": 580,
+   "n_unique_prompts": 286,
+   "n_pos": 221,
+   "n_pos_unique": 107,
+   "n_unique_failing_prompts": 119,
+   "gap_dedup": {
+    "n_pos": 107,
+    "n_neg": 179,
+    "probe": 0.9515898292695661,
+    "conf": 0.5628047825405942,
+    "delta": 0.388785046728972,
+    "ci_lo": 0.18269876139233127,
+    "ci_hi": 0.6447599373786082
+   },
+   "wav_dedup": {
+    "n_pos": 68,
+    "n_neg": 179,
+    "probe": 0.9335524153795596,
+    "conf": 0.5740387775221821,
+    "delta": 0.3595136378573776,
+    "ci_lo": 0.08726059509705728,
+    "ci_hi": 0.6794736052624137
+   }
+  },
+  "LlamaThreeBGlaive": {
+   "side": "internals",
+   "n_scored": 645,
+   "n_unique_prompts": 324,
+   "n_pos": 90,
+   "n_pos_unique": 49,
+   "n_unique_failing_prompts": 62,
+   "gap_dedup": {
+    "n_pos": 49,
+    "n_neg": 275,
+    "probe": 0.881573283858998,
+    "conf": 0.6911317254174396,
+    "delta": 0.1904415584415585,
+    "ci_lo": 0.038964033743491146,
+    "ci_hi": 0.3562747541110146
+   },
+   "wav_dedup": {
+    "n_pos": 46,
+    "n_neg": 275,
+    "probe": 0.8967747035573123,
+    "conf": 0.6720158102766798,
+    "delta": 0.2247588932806325,
+    "ci_lo": 0.08414064146823161,
+    "ci_hi": 0.3937064017328249
+   }
+  },
+  "GemmaGlaive": {
+   "side": "internals",
+   "n_scored": 618,
+   "n_unique_prompts": 311,
+   "n_pos": 158,
+   "n_pos_unique": 82,
+   "n_unique_failing_prompts": 90,
+   "gap_dedup": {
+    "n_pos": 82,
+    "n_neg": 229,
+    "probe": 0.8951272766002768,
+    "conf": 0.6488443923740548,
+    "delta": 0.2462828842262222,
+    "ci_lo": 0.06985101168343019,
+    "ci_hi": 0.34528529284520804
+   },
+   "wav_dedup": {
+    "n_pos": 53,
+    "n_neg": 229,
+    "probe": 0.8960945868006922,
+    "conf": 0.6609541072752739,
+    "delta": 0.23514047952541822,
+    "ci_lo": -0.03276106992942669,
+    "ci_hi": 0.34335046751243337
+   }
+  }
+ },
+ "provenance": {
+  "LlamaOneBGlaive": {
+   "tag": "base_llama1b_glaive",
+   "run_meta": false,
+   "commit": null,
+   "dirty": null,
+   "extractor": "first"
+  },
+  "LlamaOneBBfcl": {
+   "tag": "v3_llama1b_bfcl",
+   "run_meta": true,
+   "commit": "2e467a7",
+   "dirty": false,
+   "extractor": "corrected"
+  },
+  "LlamaOneBLive": {
+   "tag": "llama1b_live",
+   "run_meta": false,
+   "commit": null,
+   "dirty": null,
+   "extractor": "first"
+  },
+  "LlamaThreeBGlaive": {
+   "tag": "base_llama3b_glaive",
+   "run_meta": false,
+   "commit": null,
+   "dirty": null,
+   "extractor": "first"
+  },
+  "LlamaThreeBBfcl": {
+   "tag": "base_llama3b_bfcl",
+   "run_meta": false,
+   "commit": null,
+   "dirty": null,
+   "extractor": "first"
+  },
+  "GemmaGlaive": {
+   "tag": "base_gemma3_glaive",
+   "run_meta": false,
+   "commit": null,
+   "dirty": null,
+   "extractor": "first"
+  },
+  "GemmaBfcl": {
+   "tag": "v3_gemma3_1b_bfcl",
+   "run_meta": true,
+   "commit": "2e467a7",
+   "dirty": false,
+   "extractor": "corrected"
+  },
+  "QwenThreeBfcl": {
+   "tag": "base_qwen3_17b_bfcl",
+   "run_meta": false,
+   "commit": null,
+   "dirty": null,
+   "extractor": "first"
+  },
+  "MiniCpmBfcl": {
+   "tag": "v3_minicpm5_2b_bfcl",
+   "run_meta": true,
+   "commit": "ab4a544",
+   "dirty": true,
+   "extractor": "corrected"
+  },
+  "MiniCpmLive": {
+   "tag": "v3_minicpm5_2b_live",
+   "run_meta": true,
+   "commit": "ab4a544",
+   "dirty": true,
+   "extractor": "corrected"
+  },
+  "QwenThreeFiveBfcl": {
+   "tag": "v3_qwen35_08b_bfcl",
+   "run_meta": true,
+   "commit": "ab4a544",
+   "dirty": true,
+   "extractor": "corrected"
+  },
+  "MiniCpmBfclJson": {
+   "tag": "v3_minicpm5_2b_bfcl_json",
+   "run_meta": true,
+   "commit": "34a3532",
+   "dirty": true,
+   "extractor": "corrected"
+  },
+  "QwenThreeFiveBfclJson": {
+   "tag": "v3_qwen35_08b_bfcl_json",
+   "run_meta": true,
+   "commit": "5d33c18",
+   "dirty": false,
+   "extractor": "corrected"
+  },
+  "MiniCpmMultiTurn": {
+   "tag": "v3_mt_minicpm",
+   "run_meta": true,
+   "commit": "2e467a7",
+   "dirty": true,
+   "extractor": "corrected"
+  },
+  "QwenThreeThink": {
+   "tag": "v3_qwen3_17b_bfcl_think",
+   "run_meta": true,
+   "commit": "34a3532",
+   "dirty": true,
+   "extractor": "corrected"
+  }
+ },
+ "prompt_route": {
+  "meta-llama/Llama-3.2-1B-Instruct": {
+   "native_template_carries_tools": true,
+   "fallback_used": false
+  },
+  "meta-llama/Llama-3.2-3B-Instruct": {
+   "native_template_carries_tools": true,
+   "fallback_used": false
+  },
+  "google/gemma-3-1b-it": {
+   "native_template_carries_tools": false,
+   "fallback_used": true
+  },
+  "Qwen/Qwen3-1.7B": {
+   "native_template_carries_tools": true,
+   "fallback_used": false
+  },
+  "Qwen/Qwen3.5-0.8B": {
+   "native_template_carries_tools": true,
+   "fallback_used": false
+  },
+  "openbmb/MiniCPM5-2B": {
+   "native_template_carries_tools": true,
+   "fallback_used": false
+  }
+ }
+}

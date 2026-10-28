@@ -1,0 +1,22 @@
+{
+ "key": "GemmaBfcl",
+ "tag": "v3_gemma3_1b_bfcl",
+ "side": "internals",
+ "reader": "Qwen/Qwen3.5-0.8B",
+ "dim": 16384,
+ "n_pos": 364,
+ "n_neg": 150,
+ "reader_auc": 0.9271245421245421,
+ "probe_auc": 0.947915750915751,
+ "conf_auc": 0.710989010989011,
+ "probe_minus_reader": {
+  "delta": 0.020791208791208816,
+  "ci_lo": -0.00887494261089603,
+  "ci_hi": 0.053729814512507516
+ },
+ "reader_minus_conf": {
+  "delta": 0.21613553113553116,
+  "ci_lo": 0.16285924597527557,
+  "ci_hi": 0.2712096282585738
+ }
+}

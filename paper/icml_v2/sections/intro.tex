@@ -1,0 +1,26 @@
+\section{Introduction}
+\label{sec:intro}
+
+\begin{figure*}[t]
+\centering
+\includegraphics{fig1_types}
+\caption{(a) Token-role probe AUC minus mean log-probability AUC on held-out tools, every scored failure against valid calls, dot at the mean over five split seeds, bar the 95\% interval from resampling tools. (b) The same on wrong argument values against valid calls, for runs with at least twenty of them. (c) AUC of the probe (dot), the mean log-probability (open square) and a one-bit flag for a request in a parallel category (grey diamond) on dropped parallel calls against valid calls, for runs with at least twenty dropped calls. Blue Llama-3.2 and Gemma-3, orange Qwen3, Qwen3.5 and MiniCPM5, open markers the forced-JSON runs.}
+\label{fig:types}
+\end{figure*}
+
+A language model agent acts by calling tools. When it calls the wrong tool, or the right one with wrong arguments, the call is usually well formed, so the runtime executes it before anyone reads the transcript. A guardrail therefore has to judge the call between its generation and its execution. Two signals are available there. The output distribution gives the probability of each generated token, which every serving stack returns. The hidden states give a probe something to read, which only a stack that runs the model's own code can expose.
+
+Probes on the residual stream separate wrong calls from right ones with high accuracy \citep{healy2026internal,yeats2026calls}, and \citet{ke2026neurons} separate three failures, invalid arguments, unneeded calls and missing calls, and detect each from a few neurons. \wscitet{} compared token probabilities with probes on tool calls under splits by prompt. What these studies do not report is which wrong calls the model's own token probabilities miss on tools absent from training, and whether a judge that reads only the output text would catch them. That is the question this paper answers.
+
+We answer it with one quantity, the internal advantage: the area under the curve (AUC) of a probe on the residual stream minus that of the mean token log-probability of the call, on tools never seen in training, beside a floor that reads only lengths. We compute it on every scored failure and on each kind of error against valid calls, and we set the probe against two trained comparators that need no access to the deployed model's states: an output-only judge fitted on the same labels and a second small language model that reads the request and the call.
+
+The main result is the value-error split (\cref{fig:types}b). On wrong argument values the probe leads confidence on \nWavInternalsPos{} of the \nInternalsRuns{} Llama-3.2 and Gemma-3 runs, by \wavInternalsMin{} to \wavInternalsMax{} (point estimates, intervals excluding zero on \nWavInternalsCiExcl{}). Confidence leads the probe on all \nWavConfidenceRuns{} Qwen3, Qwen3.5 and MiniCPM5 runs, native or forced into JSON, with intervals excluding zero on \nWavConfidenceCiBelow{}. The two sides are assigned by family and hold \nCkptInternals{} checkpoints each, so the split describes these checkpoints and is not a test. Much of the probe's lead on value errors is readable from the output: the output-only judge recovers at least half of it on \nJwShareMajority{} of the \nJwEligible{} probe-side runs where the probe leads, and none of it on either Llama-3.2-3B run.
+
+In practice this gives an order of operations (\cref{sec:discussion}): score the model's confidence on its value errors on held-out tools first, where it misses them train a judge on the output text and compare it with a probe before choosing, and for parallel requests count the calls, since a one-bit category flag already separates dropped calls on these runs.
+
+\paragraph{Contributions.}
+\begin{enumerate}[topsep=1pt,itemsep=1pt,leftmargin=1.3em]
+\item The value-error split, measured on \nRunsPowered{} powered runs from \nCkpt{} checkpoints of four developers on held-out tools, with a length floor and a paired interval on every difference (\cref{sec:result}). This paper adds the decomposition by kind of error against the model's own confidence on held-out tools. \citet{ke2026neurons} split failures into validity, over-calling and missing calls for internal detectors, without the model's confidence beside them.
+\item The comparators that bound the claim: an output-only judge and a reader model under the probe's protocol, on every scored failure and on value errors, which show on which runs the probe's lead is readable from the text (\cref{sec:judges}).
+\item The controls and the disclosures that condition the split: item difficulty, label budget, the confidence summary, duplicated Glaive requests, the prompt route, extraction provenance, and a dropped-call contrast that a one-bit category flag matches (\cref{sec:result,sec:controls}).
+\end{enumerate}

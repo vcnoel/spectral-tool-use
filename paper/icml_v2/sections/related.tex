@@ -1,0 +1,14 @@
+\section{Related work}
+\label{sec:related}
+
+\paragraph{Probes on hidden states.}
+Probes on the residual stream recover truthfulness \citep{azaria2023internal,marks2024geometry}, hallucination risk \citep{ji2024internal} and sampling-based uncertainty in one pass \citep{kossen2024sep}. \citet{orgad2025know} locate the signal at the exact-answer tokens, which is the observation the token-role probe of \citet{healy2026internal} applies to a call's name, arguments and closing delimiter. \citet{yeats2026calls} train linear probes on eighteen models on BFCL, find that model size predicts probe accuracy first and probing depth second, and find that tool-specific fine-tuning lowers it. \citet{ke2026neurons} split tool-use failures into invalid arguments, over-calling and missing calls and detect each from a few neurons on six models. These results establish that internal detectors of wrong calls work. \citet{healy2026internal} and \citet{yeats2026calls} hold out items, so a tool seen in training can return at test, and none of the three reports the model's own token probabilities on the same items.
+
+\paragraph{Token probabilities against probes on tool calls.}
+\wscitet{} compared the mean token log-probability with the token-role probe and with head-averaged spectral probes on Glaive under splits by prompt, and found the log-probability near chance. Under tool-held-out splits and repaired labels that finding does not hold here: confidence ranges from \confMinPowered{} to \confMaxPowered{} AUC on the powered runs (\cref{sec:result}).
+
+\paragraph{Readouts of attention.}
+LapEigvals trains a probe on the top eigenvalues of the attention Laplacian \citep{binkowski2025lapeigvals}, Lookback Lens on the share of attention paid to the context \citep{chuang2024lookback}, LLM-Check on eigenvalues of attention kernels \citep{sriramanan2024llmcheck} and SinkProbe on attention sinks \citep{binkowski2026sinks}. \citet{noel2025gsp} introduced graph-signal diagnostics on a head-averaged attention graph, and \citet{dahlem2026transport} prove that transpose-invariant spectral diagnostics are blind to the direction of attention flow. We reimplement LapEigvals, Lookback Lens and SinkProbe after their authors' papers and code. No numerical parity check against the original implementations is reported, so their numbers here are those of our reimplementations.
+
+\paragraph{Output confidence.}
+Token probabilities are informative about a model's own correctness on question answering \citep{kadavath2022know}, and sampling-based estimates sharpen them \citep{farquhar2024semantic,manakul2023selfcheckgpt} at a cost in forward passes that an agent about to act does not have. Tool-calling benchmarks measure whether a call is right \citep{patil2025bfcl,patil2024gorilla,qin2024toolllm} and not whether the model's confidence tracks it.
