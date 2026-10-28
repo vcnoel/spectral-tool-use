@@ -1,0 +1,195 @@
+{
+ "runs": {
+  "v3_llama1b_bfcl": {
+   "label": "Llama-3.2-1B BFCL",
+   "side": "probe",
+   "n_valid": 339,
+   "counts": {
+    "copied": 37,
+    "generated": 87,
+    "mixed": 3,
+    "unknown": 0
+   },
+   "share_copied": 0.29133858267716534,
+   "conf_copied": 0.5442876504823407,
+   "probe_copied": 0.8499641234154509,
+   "conf_generated": 0.5963788017495677,
+   "probe_generated": 0.8188621028718679,
+   "p1_eligible": true,
+   "conf_gen_minus_copied": 0.052091151267226965
+  },
+  "base_llama3b_bfcl": {
+   "label": "Llama-3.2-3B BFCL",
+   "side": "probe",
+   "n_valid": 576,
+   "counts": {
+    "copied": 33,
+    "generated": 52,
+    "mixed": 3,
+    "unknown": 0
+   },
+   "share_copied": 0.375,
+   "conf_copied": 0.5744949494949495,
+   "probe_copied": 0.8616319444444445,
+   "conf_generated": 0.7506009615384615,
+   "probe_generated": 0.7839576655982906,
+   "p1_eligible": true,
+   "conf_gen_minus_copied": 0.17610601204351195
+  },
+  "v3_gemma3_1b_bfcl": {
+   "label": "Gemma-3-1B BFCL",
+   "side": "probe",
+   "n_valid": 150,
+   "counts": {
+    "copied": 6,
+    "generated": 21,
+    "mixed": 5,
+    "unknown": 1
+   },
+   "share_copied": 0.18181818181818182,
+   "conf_copied": null,
+   "probe_copied": null,
+   "conf_generated": 0.5619047619047619,
+   "probe_generated": 0.7162539682539683,
+   "p1_eligible": false,
+   "conf_gen_minus_copied": null
+  },
+  "llama1b_live": {
+   "label": "Llama-3.2-1B BFCL-live",
+   "side": "probe",
+   "n_valid": 157,
+   "counts": {
+    "copied": 20,
+    "generated": 54,
+    "mixed": 15,
+    "unknown": 0
+   },
+   "share_copied": 0.2247191011235955,
+   "conf_copied": 0.5802547770700637,
+   "probe_copied": 0.6317834394904459,
+   "conf_generated": 0.6825902335456475,
+   "probe_generated": 0.6967091295116773,
+   "p1_eligible": true,
+   "conf_gen_minus_copied": 0.10233545647558384
+  },
+  "base_qwen3_17b_bfcl": {
+   "label": "Qwen3-1.7B BFCL",
+   "side": "confidence",
+   "n_valid": 639,
+   "counts": {
+    "copied": 21,
+    "generated": 10,
+    "mixed": 2,
+    "unknown": 0
+   },
+   "share_copied": 0.6363636363636364,
+   "conf_copied": 0.8273343766301513,
+   "probe_copied": 0.6935911766897682,
+   "conf_generated": 0.8422535211267606,
+   "probe_generated": 0.7800782472613459,
+   "p1_eligible": true,
+   "conf_gen_minus_copied": 0.014919144496609249
+  },
+  "v3_minicpm5_2b_bfcl": {
+   "label": "MiniCPM5-2B BFCL",
+   "side": "confidence",
+   "n_valid": 640,
+   "counts": {
+    "copied": 11,
+    "generated": 9,
+    "mixed": 1,
+    "unknown": 1
+   },
+   "share_copied": 0.5,
+   "conf_copied": 0.8801136363636364,
+   "probe_copied": 0.6784943181818182,
+   "conf_generated": null,
+   "probe_generated": null,
+   "p1_eligible": false,
+   "conf_gen_minus_copied": null
+  },
+  "v3_minicpm5_2b_live": {
+   "label": "MiniCPM5-2B BFCL-live",
+   "side": "confidence",
+   "n_valid": 475,
+   "counts": {
+    "copied": 38,
+    "generated": 40,
+    "mixed": 6,
+    "unknown": 0
+   },
+   "share_copied": 0.4523809523809524,
+   "conf_copied": 0.7154016620498616,
+   "probe_copied": 0.672354570637119,
+   "conf_generated": 0.8258947368421052,
+   "probe_generated": 0.7723789473684212,
+   "p1_eligible": true,
+   "conf_gen_minus_copied": 0.11049307479224368
+  },
+  "v3_qwen35_08b_bfcl": {
+   "label": "Qwen3.5-0.8B BFCL",
+   "side": "confidence",
+   "n_valid": 398,
+   "counts": {
+    "copied": 28,
+    "generated": 19,
+    "mixed": 7,
+    "unknown": 0
+   },
+   "share_copied": 0.5185185185185185,
+   "conf_copied": 0.7197595118449389,
+   "probe_copied": 0.6267229002153625,
+   "conf_generated": 0.8770166622586617,
+   "probe_generated": 0.6560301507537688,
+   "p1_eligible": true,
+   "conf_gen_minus_copied": 0.1572571504137228
+  },
+  "v3_minicpm5_2b_bfcl_json": {
+   "label": "MiniCPM5-2B BFCL JSON",
+   "side": "confidence",
+   "n_valid": 514,
+   "counts": {
+    "copied": 15,
+    "generated": 4,
+    "mixed": 2,
+    "unknown": 0
+   },
+   "share_copied": 0.7142857142857143,
+   "conf_copied": 0.6931258106355382,
+   "probe_copied": 0.5945006485084307,
+   "conf_generated": null,
+   "probe_generated": null,
+   "p1_eligible": false,
+   "conf_gen_minus_copied": null
+  },
+  "v3_qwen35_08b_bfcl_json": {
+   "label": "Qwen3.5-0.8B BFCL JSON",
+   "side": "confidence",
+   "n_valid": 436,
+   "counts": {
+    "copied": 25,
+    "generated": 30,
+    "mixed": 8,
+    "unknown": 1
+   },
+   "share_copied": 0.390625,
+   "conf_copied": 0.6538532110091744,
+   "probe_copied": 0.5141284403669725,
+   "conf_generated": 0.8703363914373089,
+   "probe_generated": 0.6931345565749234,
+   "p1_eligible": true,
+   "conf_gen_minus_copied": 0.21648318042813453
+  }
+ },
+ "summary": {
+  "n_eligible_p1": 7,
+  "p1_every_run": true,
+  "p1_pooled_diff": 0.11852645284529043,
+  "p1_holds": true,
+  "p2_min_probe_side": 0.18181818181818182,
+  "p2_max_confidence_side": 0.7142857142857143,
+  "p2_holds": false
+ },
+ "min_n": 10,
+ "registration": "docs/REGISTRATION_COPY.md"
+}
