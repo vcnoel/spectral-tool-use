@@ -148,6 +148,12 @@ class StreamedReducer:
         return sorted(self.results)
 
 
+def _layer_metric_vector(w, span) -> np.ndarray:
+    """The five head-averaged metrics from a single eigendecomposition."""
+    d = layer_spectral_metrics(w, span=span)
+    return np.array([d[m] for m in METRIC_NAMES], dtype=np.float32)
+
+
 def reduce_layer(weights, prompt_len: int, seq_len: int, rows: dict, value_tok_lists, spans: dict,
                  tool_spans_tok, gold_tool_index: int, full_graph: bool, full_head: bool) -> dict:
     """Every attention-derived feature of one layer, as numpy arrays.
@@ -156,7 +162,7 @@ def reduce_layer(weights, prompt_len: int, seq_len: int, rows: dict, value_tok_l
     span = (prompt_len, seq_len)
     out = {
         "hspec": np.asarray(per_head_metrics(w, span=span), dtype=np.float32),            # [H,5] call span
-        "lspec_span": np.array([layer_spectral_metrics(w, span=span)[m] for m in METRIC_NAMES], dtype=np.float32),
+        "lspec_span": _layer_metric_vector(w, span),                                    # one eigendecomposition
         "lapeig": np.asarray(lapeigvals_diag_profile(w), dtype=np.float32),                # [H,100]
         "lookback": np.asarray(lookback_ratio(w, prompt_len, seq_len), dtype=np.float32),  # [H,2]
     }
@@ -164,7 +170,7 @@ def reduce_layer(weights, prompt_len: int, seq_len: int, rows: dict, value_tok_l
     out["sink"] = np.asarray(s, dtype=np.float32)
     out["sink_top_pos"] = np.asarray(pos, dtype=np.int32)
     if full_graph:
-        out["lspec_full"] = np.array([layer_spectral_metrics(w)[m] for m in METRIC_NAMES], dtype=np.float32)
+        out["lspec_full"] = _layer_metric_vector(w, None)
     if full_head:
         out["hspec_full"] = np.asarray(per_head_metrics(w), dtype=np.float32)                # [H,5] whole sequence
     a = w[:, :seq_len, :seq_len].to(torch.float32)
