@@ -171,8 +171,8 @@ def main():
         L["G1"] = bool(L["auc"]["value_confidence"] <= 0.65 and L["auc"]["token_role_probe"] >= 0.75
                        and L["probe_minus_value_conf"] >= 0.10 and L["probe_minus_value_conf_ci"][0] > 0)
         L["G3"] = bool(L["auc"]["prevalue_probe"] >= 0.70)
-        a, pr, ph = (L["auc"][k] for k in ("anchored_value_row", "token_role_probe", "per_head_spectra"))
-        L["G4"] = bool(a >= 0.70 and (a - 0.5) >= 0.8 * (pr - 0.5) and a - ph >= 0.05)
+        an, pr, ph = (L["auc"][k] for k in ("anchored_value_row", "token_role_probe", "per_head_spectra"))
+        L["G4"] = bool(an >= 0.70 and (an - 0.5) >= 0.8 * (pr - 0.5) and an - ph >= 0.05)
     if "auc" in Q:
         Q["G2"] = bool(Q["auc"]["value_confidence"] >= 0.75 and Q["probe_minus_value_conf"] <= 0.05)
     OUT.parent.mkdir(parents=True, exist_ok=True)
