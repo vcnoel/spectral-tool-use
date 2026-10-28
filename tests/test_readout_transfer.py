@@ -54,14 +54,16 @@ def test_anchored_readout_bit_identical(device):
 
 
 def test_reducer_spectra_match_one_call_per_metric():
-    RA = pytest.importorskip("rebuild.attention")   # absent from checkouts without the rebuild package
+    # absent from checkouts without the rebuild package
+    RA = pytest.importorskip("rebuild.attention")
     a = _causal_attention(H=4, T=50).unsqueeze(0)
     P, T = 38, 50
     rows = {"name": [40], "value": [42, 43], "close": [49], "last": [49], "gen": list(range(P, T))}
     spans = {"system": (0, 5), "schema": (5, 20), "schema_gold": (5, 12), "request": (20, 38)}
     out = RA.reduce_layer(a, P, T, rows, [[4, 5]], spans, [(5, 12), (12, 20)], 0, True, True)
     w = a[0]
-    ref_span = np.array([M.layer_spectral_metrics(w, span=(P, T))[m] for m in M.METRIC_NAMES], dtype=np.float32)
+    ref_span = np.array([M.layer_spectral_metrics(w, span=(P, T))[m] for m in M.METRIC_NAMES],
+                        dtype=np.float32)
     ref_full = np.array([M.layer_spectral_metrics(w)[m] for m in M.METRIC_NAMES], dtype=np.float32)
     assert np.array_equal(out["lspec_span"], ref_span)
     assert np.array_equal(out["lspec_full"], ref_full)
