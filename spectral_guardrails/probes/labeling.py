@@ -2,7 +2,6 @@ import json
 import re as _re_std
 import torch
 from pathlib import Path
-from tqdm import tqdm
 
 # ── JSON-aware label helpers (schema-agnostic bridge) ─────────────────────────
 
@@ -626,6 +625,7 @@ def build_dataset(model, tokenizer, samples: list[dict], cache_dir: str) -> list
 
     dataset = []
 
+    from tqdm import tqdm  # progress bar for dataset building only
     for i, ex in enumerate(tqdm(samples)):
         prompt = ex.get('prompt', '')
         gt = ex.get('ground_truth', '')
