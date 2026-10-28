@@ -81,3 +81,17 @@ def test_multi_call_dialects_decode():
         assert looked and calls is not None and len(calls) == 2, (dialect, calls)
     single, _ = extract_calls(clean_prediction('<|python_tag|>{"name": "f", "parameters": {"a": 1}}<|eom_id|>'))  # noqa: E501  (fixture literal)
     assert single is not None and len(single) == 1
+
+
+def test_default_probe_depth_is_a_stored_layer():
+    """The fractional default depths of the published probes must resolve to a stored layer.
+    Added after the 28 Oct 2026 pilot gate crash: round(2 L / 3) = 11 on a 16-layer model is
+    not stored under --hidden-layers half."""
+    from rebuild.loader import CleanRun
+    run = object.__new__(CleanRun)
+    for L, stored, want_pre, want_last in (
+            (16, [1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16], 10, 12),
+            (28, [1, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28], 18, 22)):
+        run.meta, run.hidden_layers = {"n_layers": L}, stored
+        assert run.nearest_stored(2 / 3) == want_pre
+        assert run.nearest_stored(0.75) == want_last

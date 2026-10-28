@@ -81,3 +81,13 @@ protocol of the probes:
 
 G4 is reported for Qwen3-1.7B as well. It joins G3 in the decision rule as reported evidence and changes no other
 prediction.
+
+## Correction 1 (28 October 2026, after the gate's first run crashed and before any gate number exists): the pre-value depth
+
+The gate's first run on `pilot_silent_llama1b` stopped with an error before it had computed any statistic. The
+loader's default depth for the pre-value probe was `round(2 L / 3)`, which is layer 11 on Llama-3.2-1B (16 layers)
+and layer 19 on Qwen3-1.7B (28 layers). Neither layer is stored, because the extractor's registered
+`--hidden-layers half` keeps every second block, the last block and the eight registered probe depths. The default is
+now the stored layer nearest 2 L / 3, ties going deeper: layer 10 on Llama-3.2-1B and layer 18 on Qwen3-1.7B. The same
+rule applies to the last-token baseline's default depth, which was already stored on Llama-3.2-1B (layer 12). The
+probe, its position and G3 are unchanged. No gate number had been produced when this was fixed.
