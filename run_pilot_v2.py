@@ -337,9 +337,11 @@ def value_char_spans(gen_text: str) -> list[tuple[int, int]]:
         _JSON_VALUE_RE = re.compile(
             r':\s*("(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'|\[[^\[\]{}]*\]|-?[\w.+\-]+)')
     spans = []
-    for m in re.finditer(r"<parameter\s*=\s*[\w.\-]+\s*>\s*(.*?)\s*</parameter>", gen_text, re.DOTALL):
+    for m in re.finditer(r"<parameter\s*=\s*[\w.\-]+\s*>\s*(.*?)\s*</parameter>",
+                         gen_text, re.DOTALL):
         spans.append((m.start(1), m.end(1)))
-    for m in re.finditer(r"<param\s+name\s*=\s*[\"'][\w.\-]+[\"']\s*>\s*(.*?)\s*</param>", gen_text, re.DOTALL):
+    for m in re.finditer(r"<param\s+name\s*=\s*[\"'][\w.\-]+[\"']\s*>\s*(.*?)\s*</param>",
+                         gen_text, re.DOTALL):
         spans.append((m.start(1), m.end(1)))
     if spans:
         return [s for s in spans if s[1] > s[0]]
@@ -508,7 +510,8 @@ def handle_extract(args):
     FORCE_JSON = bool(getattr(args, "force_json", False))
     FALLBACK_KIND = getattr(args, "fallback", "object") or "object"
     if THINKING_MODE or FORCE_JSON or FALLBACK_KIND != "object":
-        print(f"[extract] thinking={THINKING_MODE} force_json={FORCE_JSON} fallback={FALLBACK_KIND}")
+        print(f"[extract] thinking={THINKING_MODE} force_json={FORCE_JSON} "
+              f"fallback={FALLBACK_KIND}")
     # Budget plan B1: every extraction from a clean commit. Opt-in so that the
     # default behaviour of the stored runs is unchanged.
     if os.environ.get("REQUIRE_CLEAN") == "1":
