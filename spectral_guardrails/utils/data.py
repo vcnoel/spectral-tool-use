@@ -1,5 +1,4 @@
 import re
-from datasets import load_dataset
 
 DOMAIN_KEYWORDS = [
     "calculator", "math", "finance", "currency", "exchange",
@@ -58,6 +57,7 @@ def load_glaive_data(domain="all", limit=1000, offset=0, step=1):
     Loads and filters Glaive dataset with support for strided sampling.
     """
     print(f"Loading Glaive v2 dataset (domain={domain}, limit={limit}, step={step})...")
+    from datasets import load_dataset  # only the data loader needs the datasets package
     ds = load_dataset("glaiveai/glaive-function-calling-v2", split="train")
 
     filtered = []
