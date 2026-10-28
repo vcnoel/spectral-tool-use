@@ -65,3 +65,27 @@ of Llama-3.2-1B BFCL's multi-call predictions are stored as `unparseable_call` a
 About 51 value errors are among them. The same defect was fixed only in `rebuild/labels.py` (Amendment 3 of
 the rebuild registration). The Llama-3.2-1B BFCL and BFCL-live rows above therefore omit those items. The
 analysis is rerun once the labeller is repaired, and both versions are kept.
+
+## Amendment 1 (28 October 2026, before any pilot-v2 number is computed): copy pilot v2
+
+The pilot is rerun under labeller v4 (`<|python_tag|>` stripped, commit 0bfe931), on scores re-evaluated under v4
+wherever repair 4 moves a label. The labeller-v3 results are kept beside the new ones. Definitions are those
+above, with two additions:
+- a **schema copy** is a wrong value that does not occur in the request but does occur in the tool's schema text
+  (an enum, a default, an example or a description), matched as for request copies. Schemas come from the local
+  BFCL v4 question files, joined on category and request;
+- the **length floor** is the stored `Surface (lengths)` score, applied within each stratum.
+
+Statistics: each AUC and each difference gets a 95% interval from 2000 tool-cluster bootstrap draws within the run.
+The pooled difference averages the per-run differences, and its interval resamples tools within every run on each
+draw.
+
+Predictions:
+- **P1'.** The pooled difference (mean log-probability AUC on generated value errors minus that on request copies)
+  is above zero, with its interval excluding zero.
+- **P3 (the hidden state still separates copies).** The probe's AUC on request copies is at least 0.70 on every
+  eligible run, and its pooled difference between the two strata lies within ±0.05.
+- **P4 (not length).** On request copies, mean log-probability exceeds the length floor by at most 0.05 on the pooled
+  estimate.
+
+Eligibility is unchanged: at least 10 errors in each stratum. Every number is reported whatever the outcome.
