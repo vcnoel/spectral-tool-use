@@ -9,9 +9,13 @@ Detectors:
 - value-token confidence: value_mean_logprob or value_min_logprob, whichever has the higher AUC on
   the training folds, with its sign fixed there (the registered statistic);
 - call-level mean log-probability (v2's statistic, for the contrast);
-- token-role probe (CleanRun.probe_matrix), pre-value probe (probe_prevalue) and Healy et al.'s
-  three-position final-layer probe (probe_three_position_final): standardise, PCA to 256 inside the
-  fold, logistic regression with C in {0.01, 0.1, 1} chosen by an inner tool-grouped 3-fold split.
+- token-role probe (CleanRun.probe_matrix), pre-value probe (probe_prevalue), Healy et al.'s
+  three-position final-layer probe (probe_three_position_final), the anchored value-row readout
+  (anchored_matrix('value')) and per-head spectra (per_head_matrix, the relabelling-invariant
+  control): standardise, PCA to 256 inside the fold, logistic regression with C in {0.01, 0.1, 1}
+  chosen by an inner tool-grouped 3-fold split;
+- two label-free scalars of the value rows, mass on the gold schema and on the request, averaged
+  over heads and layers, scored like value-token confidence.
 
     CUDA_VISIBLE_DEVICES= python analysis/silent_gate.py --pin <commit> pilot_silent_llama1b pilot_silent_qwen3_17b
 Writes results/silent_gate/gate.json.
@@ -33,6 +37,7 @@ from sklearn.preprocessing import StandardScaler
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
+from rebuild.attention import KEY_SPANS  # noqa: E402
 from rebuild.loader import CleanRun  # noqa: E402
 
 SEEDS = [0, 1, 2, 3, 4]
@@ -136,8 +141,14 @@ def gate_run(tag, pin):
         "value_confidence": per_seed(lambda s: oof_confidence(y, cands, tool_folds(tools, s))),
         "call_mean_logprob": per_seed(lambda s: oof_confidence(y, call, tool_folds(tools, s))),
     }
+    anch = run.anchored("value")                       # (N, La, H, 7) in KEY_SPANS order
+    for span in ("schema_gold", "request"):
+        v = np.nanmean(anch[..., KEY_SPANS.index(span)], axis=(1, 2))[keep]
+        stacks[f"value_row_{span}_mass"] = per_seed(lambda s, v=v: oof_confidence(y, {"m": v}, tool_folds(tools, s)))
     for name, X in (("token_role_probe", run.probe_matrix()), ("prevalue_probe", run.probe_prevalue()),
-                    ("healy_three_position", run.probe_three_position_final())):
+                    ("healy_three_position", run.probe_three_position_final()),
+                    ("anchored_value_row", run.anchored_matrix("value")),
+                    ("per_head_spectra", np.nan_to_num(run.per_head_matrix()))):
         Xk = X[keep]
         stacks[name] = per_seed(lambda s: oof_probe(Xk, y, tools, tool_folds(tools, s)))
     scores = {k: np.nanmean(v, axis=0) for k, v in stacks.items()}
@@ -160,13 +171,15 @@ def main():
         L["G1"] = bool(L["auc"]["value_confidence"] <= 0.65 and L["auc"]["token_role_probe"] >= 0.75
                        and L["probe_minus_value_conf"] >= 0.10 and L["probe_minus_value_conf_ci"][0] > 0)
         L["G3"] = bool(L["auc"]["prevalue_probe"] >= 0.70)
+        a, pr, ph = (L["auc"][k] for k in ("anchored_value_row", "token_role_probe", "per_head_spectra"))
+        L["G4"] = bool(a >= 0.70 and (a - 0.5) >= 0.8 * (pr - 0.5) and a - ph >= 0.05)
     if "auc" in Q:
         Q["G2"] = bool(Q["auc"]["value_confidence"] >= 0.75 and Q["probe_minus_value_conf"] <= 0.05)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps({"pin": a.pin, "runs": out, "registration": "docs/REGISTRATION_SILENT.md"},
                               indent=1), encoding="utf-8")
     keys = ("auc", "auc_within_fold", "probe_minus_value_conf", "probe_minus_value_conf_ci",
-            "G1", "G2", "G3", "verdict")
+            "G1", "G2", "G3", "G4", "verdict")
     print(json.dumps({t: {k: r.get(k) for k in keys} for t, r in out.items()}, indent=1))
     print("written ->", OUT)
 

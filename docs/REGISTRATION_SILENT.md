@@ -60,3 +60,24 @@ undecided.
   model-dependent at the value tokens.
 
 G3 is reported whatever the outcome. Every number is reported whatever the outcome.
+
+## Amendment 1 (28 October 2026, after the Llama-3.2-1B pilot extraction started and before any pilot data are read): the identity-preserving readout
+
+The companion ICLR 2027 submission on anchored readouts (cited anonymously) shows that summaries invariant to
+relabelling the tokens cannot represent which token attends to which, while the attention rows of a distinguished
+token can. For tool calls, the distinguished tokens are the argument values. Three detectors are added under the
+protocol of the probes:
+- **anchored value-row readout:** `CleanRun.anchored_matrix("value")`. For every layer and head, the value rows' mass
+  on the system prompt, the gold tool's schema, the other schemas, the request, the sink, the call and the rest, and
+  the rows' entropy and maximum. No hidden states are used.
+- **two label-free scalars of the same rows:** mass on the gold schema and mass on the request, each averaged over
+  heads and layers, scored like value-token confidence (sign fixed on the training folds);
+- **per-head spectra over the call span** (`CleanRun.per_head_matrix()`): the relabelling-invariant control.
+
+**G4.** On Llama-3.2-1B:
+- the anchored value-row readout reaches AUC ≥ 0.70 on value errors;
+- it retains at least 80% of the token-role probe's margin above 0.5;
+- it exceeds the per-head spectra by at least 0.05.
+
+G4 is reported for Qwen3-1.7B as well. It joins G3 in the decision rule as reported evidence and changes no other
+prediction.
