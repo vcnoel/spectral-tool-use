@@ -64,8 +64,10 @@ def test_glaive_list_ground_truth_compares_elementwise():
 
 def test_scalars_unchanged():
     gt = [{"f": {"n": [5], "city": ["Paris", "paris"]}}]
-    assert classify_failure_anyof('{"name": "f", "parameters": {"n": 5.0, "city": "Paris"}}', gt, True) == (0, "valid")
-    assert classify_failure_anyof('{"name": "f", "parameters": {"n": 6, "city": "Paris"}}', gt, True)[0] == 1
+    ok = '{"name": "f", "parameters": {"n": 5.0, "city": "Paris"}}'
+    wrong = '{"name": "f", "parameters": {"n": 6, "city": "Paris"}}'
+    assert classify_failure_anyof(ok, gt, True) == (0, "valid")
+    assert classify_failure_anyof(wrong, gt, True)[0] == 1
 
 
 def test_minicpm_and_qwen_xml_unchanged():

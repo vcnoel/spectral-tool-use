@@ -15,9 +15,9 @@ def test_bfcl_port_self_test():
 @pytest.mark.parametrize("text, name, values", [
     ('{"name": "get_weather", "arguments": {"city": "Paris", "unit": "celsius", "days": 3}}',
      "get_weather", ["Paris", "celsius", "3"]),
-    ('<tool_call>\n<function=get_weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>',
+    ('<tool_call>\n<function=get_weather>\n<parameter=city>\nParis\n</parameter>\n</function>\n</tool_call>',  # noqa: E501  (fixture literal)
      "get_weather", ["Paris"]),
-    ('<function name="get_weather"><param name="city">Paris</param></function>', "get_weather", ["Paris"]),
+    ('<function name="get_weather"><param name="city">Paris</param></function>', "get_weather", ["Paris"]),  # noqa: E501  (fixture literal)
 ])
 def test_call_roles_dialects(text, name, values):
     calls = spans.call_roles(text)
@@ -28,14 +28,14 @@ def test_call_roles_dialects(text, name, values):
 
 
 def test_call_roles_list_and_prose():
-    two = spans.call_roles('[{"name": "f", "arguments": {"a": 1}}, {"name": "g", "arguments": {"b": "x"}}]')
+    two = spans.call_roles('[{"name": "f", "arguments": {"a": 1}}, {"name": "g", "arguments": {"b": "x"}}]')  # noqa: E501  (fixture literal)
     assert [c["name"] for c in two] == ["f", "g"]
     assert spans.call_roles("The weather in Paris is mild.") == []
 
 
 def test_failure_type_taxonomy():
-    assert labels.failure_type("missing_args", '{"name":"f","arguments":{"type":"object","properties":{}}}', False) == "schema_echo"
-    assert labels.failure_type("missing_args", '{"name":"f","arguments":{}}', False) == "argument_set"
+    assert labels.failure_type("missing_args", '{"name":"f","arguments":{"type":"object","properties":{}}}', False) == "schema_echo"  # noqa: E501  (fixture literal)
+    assert labels.failure_type("missing_args", '{"name":"f","arguments":{}}', False) == "argument_set"  # noqa: E501  (fixture literal)
     assert labels.failure_type("wrong_arg_values", "x", True) == "truncated"
     assert labels.failure_type("missing_calls", "x", False) == "dropped_parallel_call"
     assert labels.failure_type("valid_nocall", "", False) == "valid"
@@ -43,9 +43,9 @@ def test_failure_type_taxonomy():
 
 
 def test_prompt_spans_and_tool_segments():
-    tools = [{"name": "alpha_tool", "description": "Does alpha", "parameters": {"type": "object", "properties": {"x": {}}}},
-             {"name": "beta_tool", "description": "Does beta", "parameters": {"type": "object", "properties": {"y": {}}}}]
-    text = 'system: tools: {"name": "alpha_tool", "description": "Does alpha", "x"} {"name": "beta_tool", "description": "Does beta", "y"}\nuser: find alpha please\nassistant:'
+    tools = [{"name": "alpha_tool", "description": "Does alpha", "parameters": {"type": "object", "properties": {"x": {}}}},  # noqa: E501  (fixture literal)
+             {"name": "beta_tool", "description": "Does beta", "parameters": {"type": "object", "properties": {"y": {}}}}]  # noqa: E501  (fixture literal)
+    text = 'system: tools: {"name": "alpha_tool", "description": "Does alpha", "x"} {"name": "beta_tool", "description": "Does beta", "y"}\nuser: find alpha please\nassistant:'  # noqa: E501  (fixture literal)
     cs = prompts.prompt_char_spans(text, tools, "find alpha please")
     assert cs["schema"] is not None and cs["request"] is not None
     assert cs["request"][0] >= cs["schema"][1]
@@ -72,12 +72,12 @@ def test_multi_call_dialects_decode():
         "llama_semicolon": '<|python_tag|>{"name": "f", "parameters": {"a": 1}}; '
                            '{"name": "f", "parameters": {"a": 2}}<|eom_id|>',
         "qwen_tool_call": '<tool_call>\n{"name": "f", "arguments": {"a": 1}}\n</tool_call>\n'
-                          '<tool_call>\n{"name": "f", "arguments": {"a": 2}}\n</tool_call><|im_end|>',
+                          '<tool_call>\n{"name": "f", "arguments": {"a": 2}}\n</tool_call><|im_end|>',  # noqa: E501  (fixture literal)
         "json_list": '[{"name": "f", "arguments": {"a": 1}}, {"name": "f", "arguments": {"a": 2}}]',
-        "newline_objects": '{"name": "f", "arguments": {"a": 1}}\n{"name": "f", "arguments": {"a": 2}}',
+        "newline_objects": '{"name": "f", "arguments": {"a": 1}}\n{"name": "f", "arguments": {"a": 2}}',  # noqa: E501  (fixture literal)
     }
     for dialect, text in cases.items():
         calls, looked = extract_calls(clean_prediction(text))
         assert looked and calls is not None and len(calls) == 2, (dialect, calls)
-    single, _ = extract_calls(clean_prediction('<|python_tag|>{"name": "f", "parameters": {"a": 1}}<|eom_id|>'))
+    single, _ = extract_calls(clean_prediction('<|python_tag|>{"name": "f", "parameters": {"a": 1}}<|eom_id|>'))  # noqa: E501  (fixture literal)
     assert single is not None and len(single) == 1
