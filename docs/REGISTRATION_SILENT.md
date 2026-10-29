@@ -119,3 +119,65 @@ Probe minus value-token confidence: +0.136 [+0.077, +0.193].
 - **G4 fails** on its third clause: the anchored readout reaches 0.820 and keeps 96% of the probe's margin, but
   exceeds the per-head spectra by 0.029, short of 0.05.
 - G2 awaits the Qwen3-1.7B run.
+
+## Amendment 2 (29 October 2026, after the Llama-3.2-1B gate and before any panel number exists): the panel
+
+The gate leaves open whether the detectors beat the published attention detectors and a surface baseline, and whether
+the identity of the attended segment carries the signal. `analysis/silent_panel.py` answers this on
+`pilot_silent_llama1b` (and on `pilot_silent_qwen3_17b` once it is complete), under the gate's outer protocol: the
+same population, five tool-grouped folds, five seeds, AUC of the seed-mean out-of-fold score, 2,000 tool-cluster
+bootstrap draws, paired for every difference.
+
+**Detectors added.**
+- **Surface baselines.** `surface_input` covers the BFCL category (one-hot), number of tools, schema characters and
+  prompt tokens. `surface_io` adds generated tokens, value tokens, number of values and number of calls. Both use the
+  probes' protocol.
+- **Yeats et al.'s last-token probe.** `CleanRun.probe_last_token()`, the stored layer nearest 0.75 L, under the
+  probes' protocol.
+- **LapEigvals, official.** Binkowski et al. 2025, github.com/graphml-lab-pwr/lapeigvals at 74f885c. The stored
+  `lapeig` is `laplacian_diagonal_from_attn(vertical_edges=False)` of that repository, sorted descending per layer and
+  head. Top k in {5, 10, 25, 50, 100}, all layers, PCA to min(512, n, d), then logistic regression (balanced,
+  max_iter 2000, random_state 42), as in `train_attn_vs_laplacian.py` and `probe_models/lr.py`.
+- **SinkProbe, official.** Binkowski et al. 2026, github.com/graphml-lab-pwr/sink-probe at 8108351. The stored `sink`
+  is `compute_sink_score_per_token_from_attention_matrix` of that repository, sorted descending. Top k in
+  {1, 2, 3, 4, 5, 10, 25, 50, 100}, all layers, logistic regression (balanced, max_iter 1000), no PCA, as in
+  `study_probes.py`.
+- **Lookback Lens, variant.** Chuang et al. 2024, github.com/voidism/Lookback-Lens at e0a1fa3: the per-head share of
+  the generated rows' attention that falls on the prompt, with logistic regression (max_iter 1000) as in
+  `step03_lookback_lens.py`. The official ratio divides *mean* attention on the context by mean attention on the new
+  tokens, token by token. The stored features are sums averaged over rows, from which that ratio cannot be
+  recovered. This is therefore a variant; the official ratio needs a forward pass and is queued for the GPU.
+- **Chen's attention margin.** `CleanRun.attention_margin()`, scored like value-token confidence.
+
+For the official baselines, k is chosen in each outer training fold on one inner tool-grouped split that holds out a
+third of the training tools. Their classifiers are otherwise unchanged.
+
+**Predictions.**
+- **A1 (beyond surface).** The anchored value-row readout exceeds `surface_io` by at least 0.05, with the paired
+  interval above zero.
+- **A2 (beyond the attention state of the art).** The anchored value-row readout exceeds the better of LapEigvals and
+  SinkProbe (by point estimate), with the paired interval above zero.
+- **T1 (identity).** This is restricted to items whose prompt holds at least two tool segments, with at least 30
+  errors and 30 valid calls; otherwise it is reported as underpowered. From the value rows' mass on each tool segment
+  (`tool_mass`, value-row column), two readouts are built from the same numbers:
+  - the *identity* readout marks the gold tool's mass and sorts the others;
+  - the *invariant* readout sorts all of them.
+
+  Both use the probes' protocol. T1 holds if identity minus invariant is at least 0.05, with the paired interval above
+  zero.
+
+**Decision.**
+- **A1 and A2 hold:** the value-row readout is a contribution beyond published attention detectors.
+- **A1 holds and A2 fails:** attention-only reading matches the state of the art and is reported as parity, with no
+  claim of improvement.
+- **A1 fails:** the detectors largely read surface difficulty, and the attention headline is dropped.
+
+T1 is reported whatever the outcome. The sharper identity test, mass on the gold value's own tokens in the request
+against mass on the wrong value's source, needs per-token masses that are not stored and is queued for the GPU.
+
+**Reported without prediction.**
+- Paired differences: token-role probe minus Healy et al., anchored readout minus per-head spectra, and token-role
+  probe minus anchored readout.
+- AUC of every detector on value errors whose wrong values all occur in the request (copied) and on those none of
+  whose wrong values do (generated), each against all valid calls. A wrong value counts as occurring in the request only as a whole span, never as a fragment of a decimal (correction 2 of `docs/REGISTRATION_COPY.md`).
+- AUC of every detector restricted to calls where the labeller and the BFCL checker port agree.
