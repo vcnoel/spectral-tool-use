@@ -181,3 +181,50 @@ against mass on the wrong value's source, needs per-token masses that are not st
 - AUC of every detector on value errors whose wrong values all occur in the request (copied) and on those none of
   whose wrong values do (generated), each against all valid calls. A wrong value counts as occurring in the request only as a whole span, never as a fragment of a decimal (correction 2 of `docs/REGISTRATION_COPY.md`).
 - AUC of every detector restricted to calls where the labeller and the BFCL checker port agree.
+
+## Outcome of the panel, Llama-3.2-1B (29 October 2026)
+
+`results/silent_gate/panel_pilot_silent_llama1b.json`, analysis at 9964ead. The population is the gate's: 311 value
+errors, 684 valid calls, 598 tools.
+
+| detector | AUC | interval |
+|---|---|---|
+| token-role probe | 0.831 | [0.798, 0.863] |
+| anchored value-row readout (attention only) | 0.820 | [0.781, 0.853] |
+| SinkProbe, official | 0.814 | [0.780, 0.845] |
+| Healy et al. three-position probe | 0.792 | [0.754, 0.827] |
+| per-head spectra | 0.791 | [0.753, 0.824] |
+| Yeats et al. last-token probe | 0.781 | [0.742, 0.816] |
+| LapEigvals, official | 0.765 | [0.726, 0.799] |
+| Lookback Lens, variant | 0.735 | [0.696, 0.772] |
+| value-token confidence | 0.696 | [0.652, 0.743] |
+| surface, input and output | 0.649 | [0.609, 0.687] |
+| surface, input | 0.637 | [0.598, 0.676] |
+| Chen's attention margin | 0.548 | [0.508, 0.589] |
+
+- **A1 holds.** The anchored readout minus surface is +0.171 [+0.120, +0.220]; the detectors do not reduce to surface
+  difficulty.
+- **A2 fails.** The better official attention baseline is SinkProbe. The anchored readout minus SinkProbe is +0.006
+  [−0.025, +0.036]. By the decision rule, attention-only reading matches the state of the art and is reported as
+  parity. Against LapEigvals the difference is +0.055 [+0.020, +0.089].
+- **T1 fails.** On the 470 items with at least two tool segments (156 errors, 314 valid), identity reaches 0.651 and
+  invariant 0.610. The difference is +0.040 [−0.004, +0.087], below 0.05 with an interval that includes zero.
+- **Reported without prediction.**
+  - Token-role probe minus Healy et al. is +0.039 [+0.018, +0.060], and minus Yeats et al. +0.050 [+0.020, +0.081].
+  - Token-role probe minus the anchored readout is +0.012 [−0.014, +0.039].
+  - The anchored readout minus the per-head spectra is +0.029 [−0.005, +0.062].
+- **Source classes, descriptive and not registered.** Of the 311 errors, 53 are copied, 234 generated and 24 mixed.
+  "Generated" includes decimal fragments and missed conversions, which Amendment 2 of `docs/REGISTRATION_COPY.md`
+  separates by hand.
+
+  | | copied (53) | generated (234) |
+  |---|---|---|
+  | value-token confidence | 0.762 | 0.661 |
+  | token-role probe | 0.704 | 0.852 |
+  | anchored readout | 0.715 | 0.835 |
+  | surface, input and output | 0.641 | 0.639 |
+
+  Confidence ranks copied errors better than the probe does, while the probe leads on generated values by +0.19. Any
+  claim from this split needs its own registration and replication.
+- **Labeller and BFCL checker agreement** (304 errors, 563 valid): token-role probe 0.855, anchored readout 0.850,
+  LapEigvals 0.777, value-token confidence 0.731, surface 0.676.
