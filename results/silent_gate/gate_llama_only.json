@@ -1,0 +1,80 @@
+{
+ "pin": "aab3285890db241d20a137e47ef5c2f226502876",
+ "runs": {
+  "pilot_silent_llama1b": {
+   "tag": "pilot_silent_llama1b",
+   "n_value_errors": 311,
+   "n_valid": 684,
+   "n_tools": 598,
+   "auc_within_fold": {
+    "value_confidence": 0.696490123048332,
+    "call_mean_logprob": 0.644397531621824,
+    "value_row_schema_gold_mass": 0.5151874519252689,
+    "value_row_request_mass": 0.5409379109960458,
+    "token_role_probe": 0.8169401400324997,
+    "prevalue_probe": 0.7931989052730529,
+    "healy_three_position": 0.7791611159388165,
+    "anchored_value_row": 0.8109342662058334,
+    "per_head_spectra": 0.7794075488108337
+   },
+   "auc": {
+    "value_confidence": 0.695586769710987,
+    "call_mean_logprob": 0.643881273387112,
+    "value_row_schema_gold_mass": 0.5182215777753716,
+    "value_row_request_mass": 0.5442921344089054,
+    "token_role_probe": 0.8315140745755063,
+    "prevalue_probe": 0.8037503995787969,
+    "healy_three_position": 0.792237829299938,
+    "anchored_value_row": 0.8197617570184841,
+    "per_head_spectra": 0.7910625975442357
+   },
+   "auc_ci": {
+    "value_confidence": [
+     0.6515760986127191,
+     0.7425325445024201
+    ],
+    "call_mean_logprob": [
+     0.5971393496088641,
+     0.693147165632298
+    ],
+    "value_row_schema_gold_mass": [
+     0.4708621743952058,
+     0.5656005646145941
+    ],
+    "value_row_request_mass": [
+     0.49835493104958944,
+     0.588484007059166
+    ],
+    "token_role_probe": [
+     0.7981137925881021,
+     0.8629905499160626
+    ],
+    "prevalue_probe": [
+     0.7674742709434944,
+     0.8360807917425078
+    ],
+    "healy_three_position": [
+     0.7542054090235643,
+     0.827115977888746
+    ],
+    "anchored_value_row": [
+     0.7814422634577901,
+     0.8534836828513797
+    ],
+    "per_head_spectra": [
+     0.7527356732362218,
+     0.824480555931167
+    ]
+   },
+   "probe_minus_value_conf": 0.13592730486451932,
+   "probe_minus_value_conf_ci": [
+    0.07696676996773417,
+    0.193428704966451
+   ],
+   "G1": false,
+   "G3": true,
+   "G4": false
+  }
+ },
+ "registration": "docs/REGISTRATION_SILENT.md"
+}

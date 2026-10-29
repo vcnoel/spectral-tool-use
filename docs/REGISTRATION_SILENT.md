@@ -91,3 +91,31 @@ and layer 19 on Qwen3-1.7B (28 layers). Neither layer is stored, because the ext
 now the stored layer nearest 2 L / 3, ties going deeper: layer 10 on Llama-3.2-1B and layer 18 on Qwen3-1.7B. The same
 rule applies to the last-token baseline's default depth, which was already stored on Llama-3.2-1B (layer 12). The
 probe, its position and G3 are unchanged. No gate number had been produced when this was fixed.
+
+## Outcome, Llama-3.2-1B half (29 October 2026; Qwen3-1.7B extraction paused at 754 of 1,725 items)
+
+`results/silent_gate/gate_llama_only.json`, pin aab3285, analysis at 2886944. 311 value errors against 684 valid
+calls, 598 tools. AUC of the seed-mean out-of-fold score, 95% tool-cluster bootstrap interval:
+
+| detector | AUC | interval |
+|---|---|---|
+| value-token confidence | 0.696 | [0.652, 0.743] |
+| call-level mean log-probability (v2) | 0.644 | [0.597, 0.693] |
+| value-row mass on the gold schema | 0.518 | [0.471, 0.566] |
+| value-row mass on the request | 0.544 | [0.498, 0.588] |
+| token-role probe | 0.832 | [0.798, 0.863] |
+| pre-value probe (layer 10) | 0.804 | [0.767, 0.836] |
+| Healy et al. three-position probe | 0.792 | [0.754, 0.827] |
+| anchored value-row readout | 0.820 | [0.781, 0.853] |
+| per-head spectra (control) | 0.791 | [0.753, 0.824] |
+
+Probe minus value-token confidence: +0.136 [+0.077, +0.193].
+
+- **G1 fails** on its first clause: value-token confidence reaches 0.696, above the 0.65 ceiling. Its other two
+  clauses hold (probe 0.832; difference +0.136 with the interval above zero). The registered branch applies: part of
+  v2's split was dilution by averaging over the call, which costs 0.052 AUC here, and Llama's value errors are not
+  silent at the value tokens. The probe still leads the best token-level confidence by +0.136.
+- **G3 holds:** the pre-value probe reaches 0.804 before the value is written.
+- **G4 fails** on its third clause: the anchored readout reaches 0.820 and keeps 96% of the probe's margin, but
+  exceeds the per-head spectra by 0.029, short of 0.05.
+- G2 awaits the Qwen3-1.7B run.
