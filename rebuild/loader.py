@@ -138,10 +138,15 @@ class CleanRun:
         return np.stack(out)
 
     # ── published probe variants (registry.BASELINES) ───────────────────────
+    def nearest_stored(self, frac: float) -> int:
+        """The stored hidden layer closest to frac * L (ties go deeper): a fractional default
+        depth need not be stored under --hidden-layers half."""
+        x = frac * self.meta["n_layers"]
+        return min(self.hidden_layers, key=lambda d: (abs(d - x), -d))
+
     def probe_last_token(self, depth: int | None = None) -> np.ndarray:
-        """Yeats et al.: last generated token, one layer (default round(0.75 L))."""
-        L = self.meta["n_layers"]
-        return self.hidden_at(depth or max(1, int(round(0.75 * L))), "last")
+        """Yeats et al.: last generated token, one layer (default the stored layer nearest 0.75 L)."""
+        return self.hidden_at(depth or self.nearest_stored(0.75), "last")
 
     def probe_three_position_final(self) -> np.ndarray:
         """Healy et al.: name onset, mean argument span, closing delimiter at the final layer."""
@@ -150,9 +155,8 @@ class CleanRun:
                           self.hidden_at(L, "close", "last")])
 
     def probe_prevalue(self, depth: int | None = None) -> np.ndarray:
-        """Yu et al.: the state just before a parameter value, about 2/3 depth."""
-        L = self.meta["n_layers"]
-        return self.hidden_at(depth or max(1, int(round(2 * L / 3))), "prevalue")
+        """Yu et al.: the state just before a parameter value, at the stored layer nearest 2/3 depth."""
+        return self.hidden_at(depth or self.nearest_stored(2 / 3), "prevalue")
 
     def attention_margin(self) -> np.ndarray:
         """Chen 2606.16364: gold-segment mass minus mean distractor-segment mass, averaged over

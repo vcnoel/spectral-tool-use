@@ -108,6 +108,9 @@ TEMPLATE_DATE = os.environ.get("TEMPLATE_DATE", "01 Jan 2026")
 CONTROL_MARKERS = (
     "<|im_end|>", "<|endoftext|>", "<end_of_turn>", "<|eot_id|>",
     "<|eom_id|>", "<|end|>", "<|end_of_text|>", "</s>", "<|assistant|>",
+    # Llama's native call prefix. Left in, it hid the `{..}; {..}` multi-call
+    # format from the parser, so those calls were labelled unparseable (repair 4).
+    "<|python_tag|>",
 )
 
 
@@ -1564,7 +1567,7 @@ def handle_evaluate(args):
         "min_class_per_subset": MIN_CLASS_PER_SUBSET,
         "underpowered": bool(flagged),
         "train_on": getattr(args, "train_on", "scored"),
-        "labeller": "v3",  # the third labelling repair (BFCL string normalisation)
+        "labeller": "v4",  # repair 4: <|python_tag|> stripped (v3: BFCL string normalisation)
         # pooled cross-fit AUC per seed (the historical quantity)
         "results": _ser(results),
         # mean of within-fold AUCs per seed: free of fold-composition offsets
