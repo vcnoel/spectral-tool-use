@@ -1,0 +1,269 @@
+{
+ "tag": "pilot_silent_llama1b",
+ "pin": "aab3285890db241d20a137e47ef5c2f226502876",
+ "registration": "docs/REGISTRATION_SILENT.md, Amendment 2",
+ "n_value_errors": 311,
+ "n_valid": 684,
+ "n_tools": 598,
+ "auc": {
+  "value_confidence": 0.695586769710987,
+  "attention_margin_chen": 0.5484080541209813,
+  "surface_input": 0.6369591583460259,
+  "surface_io": 0.6490146856960193,
+  "token_role_probe": 0.8314811680863465,
+  "healy_three_position": 0.7922331283729152,
+  "yeats_last_token": 0.7811107350369494,
+  "anchored_value_row": 0.8197617570184841,
+  "per_head_spectra": 0.7910625975442358,
+  "lapeigvals_official": 0.7648314247569621,
+  "sinkprobe_official": 0.813956112145315,
+  "lookback_lens_variant": 0.7351920798781519
+ },
+ "auc_ci": {
+  "value_confidence": [
+   0.6515760986127191,
+   0.7425325445024201
+  ],
+  "attention_margin_chen": [
+   0.5078119306559967,
+   0.5889834422771683
+  ],
+  "surface_input": [
+   0.5984600812380906,
+   0.6757321477342921
+  ],
+  "surface_io": [
+   0.6087618512061153,
+   0.6871561381928126
+  ],
+  "token_role_probe": [
+   0.798102479031336,
+   0.8629993260359644
+  ],
+  "healy_three_position": [
+   0.7542093530007982,
+   0.8271299287816032
+  ],
+  "yeats_last_token": [
+   0.7424511480967779,
+   0.8162146944471534
+  ],
+  "anchored_value_row": [
+   0.7814843232622227,
+   0.8534292126184186
+  ],
+  "per_head_spectra": [
+   0.75272021334328,
+   0.8244757949082755
+  ],
+  "lapeigvals_official": [
+   0.7264703993127678,
+   0.7994038300995822
+  ],
+  "sinkprobe_official": [
+   0.7798642453790258,
+   0.8450764397228552
+  ],
+  "lookback_lens_variant": [
+   0.6957873690070235,
+   0.7722788042776634
+  ]
+ },
+ "auc_within_fold": {
+  "value_confidence": 0.696490123048332,
+  "attention_margin_chen": 0.5487410032891966,
+  "surface_input": 0.6335901861676709,
+  "surface_io": 0.6448991379301492,
+  "token_role_probe": 0.8169584208722946,
+  "healy_three_position": 0.7791743110700102,
+  "yeats_last_token": 0.7709979047400972,
+  "anchored_value_row": 0.8108809487835571,
+  "per_head_spectra": 0.7793948260446537,
+  "lapeigvals_official": 0.7604808417903389,
+  "sinkprobe_official": 0.8107132127391979,
+  "lookback_lens_variant": 0.7345958039476644
+ },
+ "k_chosen": {
+  "lapeigvals_official": {
+   "10": 3,
+   "100": 10,
+   "25": 4,
+   "5": 6,
+   "50": 2
+  },
+  "sinkprobe_official": {
+   "10": 10,
+   "100": 5,
+   "25": 3,
+   "4": 1,
+   "5": 1,
+   "50": 5
+  },
+  "lookback_lens_variant": {
+   "None": 25
+  }
+ },
+ "paired": {
+  "anchored_value_row - surface_io": {
+   "diff": 0.1707470713224648,
+   "ci": [
+    0.12004343215401754,
+    0.220056747818555
+   ]
+  },
+  "anchored_value_row - surface_input": {
+   "diff": 0.18280259867245818,
+   "ci": [
+    0.13136402761342564,
+    0.23048304611996998
+   ]
+  },
+  "anchored_value_row - lapeigvals_official": {
+   "diff": 0.054930332261522,
+   "ci": [
+    0.02031028873584187,
+    0.08904067530171413
+   ]
+  },
+  "anchored_value_row - sinkprobe_official": {
+   "diff": 0.005805644873169036,
+   "ci": [
+    -0.024666011430875514,
+    0.03583099267610163
+   ]
+  },
+  "anchored_value_row - lookback_lens_variant": {
+   "diff": 0.08456967714033214,
+   "ci": [
+    0.05170859315948605,
+    0.11543563952447902
+   ]
+  },
+  "anchored_value_row - attention_margin_chen": {
+   "diff": 0.2713537028975028,
+   "ci": [
+    0.21931754926475372,
+    0.3240983717003702
+   ]
+  },
+  "anchored_value_row - per_head_spectra": {
+   "diff": 0.02869915947424828,
+   "ci": [
+    -0.004738345942518369,
+    0.06197448519499065
+   ]
+  },
+  "token_role_probe - healy_three_position": {
+   "diff": 0.03924803971343138,
+   "ci": [
+    0.01803930876312523,
+    0.059829733192973876
+   ]
+  },
+  "token_role_probe - yeats_last_token": {
+   "diff": 0.050370433049397145,
+   "ci": [
+    0.019959298230303308,
+    0.0808435776788817
+   ]
+  },
+  "token_role_probe - anchored_value_row": {
+   "diff": 0.01171941106786245,
+   "ci": [
+    -0.01423743957313851,
+    0.03853810926648313
+   ]
+  },
+  "token_role_probe - surface_io": {
+   "diff": 0.18246648239032726,
+   "ci": [
+    0.13493128810852176,
+    0.22952993169191183
+   ]
+  }
+ },
+ "best_official_attention": "sinkprobe_official",
+ "A1": true,
+ "A2": false,
+ "identity_test": {
+  "n_items": 470,
+  "n_value_errors": 156,
+  "n_valid": 314,
+  "auc": {
+   "identity": 0.6506818552996896,
+   "invariant": 0.6103625673689368
+  },
+  "auc_ci": {
+   "identity": [
+    0.5855226437401474,
+    0.7087484611864847
+   ],
+   "invariant": [
+    0.5428136807618794,
+    0.678447748016933
+   ]
+  },
+  "identity_minus_invariant": {
+   "diff": 0.04031928793075279,
+   "ci": [
+    -0.0040659370533365985,
+    0.08671437768126428
+   ]
+  },
+  "T1": false
+ },
+ "source_counts": {
+  "copied": 53,
+  "generated": 234,
+  "mixed": 24,
+  "valid": 684
+ },
+ "auc_by_source": {
+  "copied": {
+   "value_confidence": 0.7616683217477657,
+   "attention_margin_chen": 0.6059007154893782,
+   "surface_input": 0.6218829305969327,
+   "surface_io": 0.6407094780977601,
+   "token_role_probe": 0.7039611607635441,
+   "healy_three_position": 0.6664184045018205,
+   "yeats_last_token": 0.6800452388833719,
+   "anchored_value_row": 0.715298466291515,
+   "per_head_spectra": 0.6740041928721174,
+   "lapeigvals_official": 0.6617841774246938,
+   "sinkprobe_official": 0.6969822354628711,
+   "lookback_lens_variant": 0.6448471808451947
+  },
+  "generated": {
+   "value_confidence": 0.6612685560053981,
+   "attention_margin_chen": 0.523713881693384,
+   "surface_input": 0.6295609036837106,
+   "surface_io": 0.6393949617633828,
+   "token_role_probe": 0.8520517818763433,
+   "healy_three_position": 0.8132153746188834,
+   "yeats_last_token": 0.7908419553156396,
+   "anchored_value_row": 0.834745339131304,
+   "per_head_spectra": 0.8036124856300294,
+   "lapeigvals_official": 0.7743977108012194,
+   "sinkprobe_official": 0.8286474733843154,
+   "lookback_lens_variant": 0.7392662568101165
+  }
+ },
+ "agreement": {
+  "n_value_errors": 304,
+  "n_valid": 563,
+  "auc": {
+   "value_confidence": 0.7314842946620547,
+   "attention_margin_chen": 0.568072204532684,
+   "surface_input": 0.6544533514069365,
+   "surface_io": 0.676054033841264,
+   "token_role_probe": 0.8545853977750771,
+   "healy_three_position": 0.8155207067402076,
+   "yeats_last_token": 0.8076271384500328,
+   "anchored_value_row": 0.8502442273534635,
+   "per_head_spectra": 0.8073116294288118,
+   "lapeigvals_official": 0.7765378143404693,
+   "sinkprobe_official": 0.8312143591661214,
+   "lookback_lens_variant": 0.7680015424885482
+  }
+ }
+}
